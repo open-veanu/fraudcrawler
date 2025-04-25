@@ -1,24 +1,24 @@
-# Contributing to vianu-fraudcrawler
+# Contributing to open-veanu/fraudcrawler
 
-First, let us thank you for considering contributing to vianu-fraudcrawler! Your involvement is vital to the project's success.
+First, let us thank you for considering contributing to open-veanu/fraudcrawler! Your involvement is vital to the project's success.
 
 ## How Can You Contribute?
 
-- **Reporting Bugs**: If you encounter any issues, please [open an issue](https://github.com/smc40/vianu/issues) with detailed information.
-- **Suggesting Enhancements**: Have an idea to improve Vianu? [Submit a feature request](https://github.com/smc40/vianu/issues) outlining your suggestion.
+- **Reporting Bugs**: If you encounter any issues, please [open an issue](https://github.com/open-veanu/fraudcrawler/issues) with detailed information.
+- **Suggesting Enhancements**: Have an idea to improve open-veanu/fraudcrawler? [Submit a feature request](https://github.com/open-veanu/fraudcrawler/issues) outlining your suggestion.
 - **Submitting Pull Requests**: Ready to code? Follow the steps below to submit your contributions.
 
 ## Getting Started
 
-1. **Clone the Repository**: Clone the vianu-fraudcrawler repository to your local machine:
+1. **Clone the Repository**: Clone the open-veanu/fraudcrawler repository to your local machine:
    ```bash
-   git clone https://github.com/open-vianu/vianu-fraudcrawler.git
-   cd vianu-fraudcrawler
+   git clone https://github.com/open-veanu/fraudcrawler.git
+   cd fraudcrawler
    ```
 
 2. **Create a Branch**: Start by creating a new branch for your feature or bugfix:
    ```bash
-   git checkout -b feature/your-feature-name
+   git checkout -b feature/<your-github-name>/<your-feature-name>
    ```
    
 
@@ -31,7 +31,7 @@ First, let us thank you for considering contributing to vianu-fraudcrawler! Your
 
 5. **Run Tests**: Ensure all tests pass before submitting:
    ```bash
-   poetry run pytest
+   poetry run pytest tests/unittests/test_* -s -v
    ```
 
 6. **Commit Your Changes**: Use a descriptive commit message:
@@ -42,10 +42,10 @@ First, let us thank you for considering contributing to vianu-fraudcrawler! Your
 
 7. **Push Your Branch**: Push your branch to the main repository:
    ```bash
-   git push origin feature/your-feature-name
+   git push origin feature/<your-github-name>/<your-feature-name>
    ```
 
-8. **Open a Pull Request**: Go to the vianu-fraudcrawler repository on GitHub and open a pull request from your branch.
+8. **Open a Pull Request**: Go to the open-veanu/fraudcrawler repository on GitHub and open a pull request from your branch.
 
 ## Code Style
 

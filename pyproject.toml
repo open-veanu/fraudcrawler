@@ -3,17 +3,17 @@ requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
-name = "vianu-fraudcrawler"
-version = "0.3.2"
+name = "fraudcrawler"
+version = "0.3.3"
 description = "Intelligent Market Monitoring"
 authors = [
-    "chriguBERTO <christoph@vianu.ch>",
-    "alho94 <alexander@vianu.ch>",
-    "nicoapg <nicolas@vianu.ch>"
+    "Domingo Bertus <hello@veanu.ch>",
+    "NicoBerto <hello@veanu.ch>",
+    "Penguin Berthold <hello@veanu.ch>",
 ]
 license = "MIT License"
 readme = "README.md"
-repository = "https://github/open-vianu/vianu-fraudcrawler"
+repository = "https://github/open-veanu/fraudcrawler"
 packages = [
     {include = "fraudcrawler", from = "."}
 ]

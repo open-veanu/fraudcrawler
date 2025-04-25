@@ -1,4 +1,4 @@
-# vianu-fraudcrawler
+# open-veanu/fraudcrawler
 Intelligent Market Monitoring
 
 The pipeline for monitoring the market has the folling main steps:
@@ -10,7 +10,7 @@ The pipeline for monitoring the market has the folling main steps:
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install vianu-fraudcrawler
+pip install fraudcrawler
 ```
 
 ## Usage
@@ -137,4 +137,4 @@ see `CONTRIBUTING.md`
 
 ### Async Setup
 The following image provides a schematic representation of the package's async setup.
-![Async Setup](https://github.com/open-vianu/vianu-fraudcrawler/raw/master/docs/assets/images/Fraudcrawler_Async_Setup.svg)
+![Async Setup](https://github.com/open-veanu/fraudcrawler/raw/master/docs/assets/images/Fraudcrawler_Async_Setup.svg)

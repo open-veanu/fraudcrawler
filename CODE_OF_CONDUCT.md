@@ -18,7 +18,7 @@ We are committed to creating a friendly and welcoming environment for everyone, 
 
 ## Reporting Issues
 
-If you experience or witness unacceptable behavior, please report it by contacting the project maintainers at [hello@vianu.org]. All reports will be handled confidentially.
+If you experience or witness unacceptable behavior, please report it by contacting the project maintainers at [hello@veanu.org]. All reports will be handled confidentially.
 
 ## Consequences
 
