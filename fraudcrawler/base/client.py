@@ -1,6 +1,7 @@
 import asyncio
 import csv
 from datetime import datetime
+import hashlib
 import logging
 from pathlib import Path
 from pydantic import BaseModel
@@ -9,7 +10,7 @@ from typing import List
 import pandas as pd
 
 from fraudcrawler.settings import ROOT_DIR
-from fraudcrawler.base.base import Setup, Language, Location, Deepness, Host, Prompt
+from fraudcrawler.base.base import Setup, Language, DSsettings, Location, Deepness, Host, Prompt
 from fraudcrawler.base.orchestrator import Orchestrator, ProductItem
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class Results(BaseModel):
 class FraudCrawlerClient(Orchestrator):
     """The main client for FraudCrawler."""
 
-    _filename_template = "{search_term}_{language}_{location}_{timestamp}.csv"
+    _filename_template = "{filename_hash}_{search_term}_{language}_{location}_{timestamp}.csv"
 
     def __init__(self):
         setup = Setup()
@@ -82,6 +83,7 @@ class FraudCrawlerClient(Orchestrator):
         location: Location,
         deepness: Deepness,
         prompts: List[Prompt],
+        ds_settings: DSsettings,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
     ) -> None:
@@ -93,11 +95,14 @@ class FraudCrawlerClient(Orchestrator):
             location: The location to use for the query.
             deepness: The search depth and enrichment details.
             prompts: The list of prompts to use for classification.
+            ds_settings: Data Science setting for creating and testing of benchmarks.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
         """
         timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
+        run_hash = hashlib.sha256("{search_term}_{language}_{location}_{timestamp}.csv".encode()).hexdigest()[:8]
         filename = self._results_dir / self._filename_template.format(
+            filename_hash = run_hash,
             search_term=search_term,
             language=language.code,
             location=location.code,
@@ -111,7 +116,9 @@ class FraudCrawlerClient(Orchestrator):
                 language=language,
                 location=location,
                 deepness=deepness,
+                ds_settings=ds_settings,
                 prompts=prompts,
+                timestamp=timestamp,
                 marketplaces=marketplaces,
                 excluded_urls=excluded_urls,
             )

@@ -1,6 +1,6 @@
 import logging
 
-from fraudcrawler import FraudCrawlerClient, Language, Location, Deepness, Prompt
+from fraudcrawler import FraudCrawlerClient, Language, DSsettings, Location, Deepness, Prompt
 
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
 LOG_LVL = "INFO"
@@ -16,7 +16,7 @@ def main():
     search_term = "Kühlschrank"
     language = Language(name="German")
     location = Location(name="Switzerland")
-    deepness = Deepness(num_results=20)
+    deepness = Deepness(num_results=10)
     prompts = [
         Prompt(
             name="relevance",
@@ -49,7 +49,7 @@ def main():
             allowed_classes=[0, 1],
         ),
     ]
-    # # Optional: Add tern ENRICHEMENT
+    # # Optional: Add tern ENRICHMENT
     # from fraudcrawler import Enrichment
 
     # deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
@@ -66,6 +66,9 @@ def main():
     #     Host(name="Brack", domains="brack.ch"),
     # ]
 
+    # Data Science Settings
+    ds_settings = DSsettings(dataset_creation=True)
+
     # Execute the pipeline
     client.execute(
         search_term=search_term,
@@ -73,6 +76,7 @@ def main():
         location=location,
         deepness=deepness,
         prompts=prompts,
+        ds_settings=ds_settings,
         # marketplaces=marketplaces,
         # excluded_urls=excluded_urls,
     )

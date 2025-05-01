@@ -11,7 +11,7 @@ from fraudcrawler.settings import (
     DEFAULT_N_PROC_WKRS,
 )
 from fraudcrawler.settings import PRODUCT_ITEM_DEFAULT_IS_RELEVANT
-from fraudcrawler.base.base import Deepness, Host, Language, Location, Prompt
+from fraudcrawler.base.base import Deepness, Host, Language, DSsettings, Location, Prompt
 from fraudcrawler import SerpApi, Enricher, ZyteApi, Processor
 
 logger = logging.getLogger(__name__)
@@ -33,9 +33,13 @@ class ProductItem(BaseModel):
     product_description: str | None = None
     product_images: List[str] | None = None
     probability: float | None = None
+    encoded_url16: str | None = None
 
     # Processor parameters are set dynamic so we must allow extra fields
     classifications: Dict[str, int] = Field(default_factory=dict)
+
+    # Data Science Conditional Parameters
+    ds_settings: DSsettings
 
     # Filtering parameters
     filtered: bool = False
@@ -88,18 +92,16 @@ class Orchestrator(ABC):
             n_zyte_wkrs: Number of async workers for zyte (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
         """
+        default_ds_settings = DSsettings(dataset_creation=False)
+
         # Setup the variables
         self._collected_urls_current_run: Set[str] = set()
         self._collected_urls_previous_runs: Set[str] = set()
 
         # Setup the clients
-        self._serpapi = SerpApi(
-            api_key=serpapi_key, max_retries=max_retries, retry_delay=retry_delay
-        )
+        self._serpapi = SerpApi(api_key=serpapi_key, max_retries=max_retries, retry_delay=retry_delay)
         self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
-        self._zyteapi = ZyteApi(
-            api_key=zyteapi_key, max_retries=max_retries, retry_delay=retry_delay
-        )
+        self._zyteapi = ZyteApi(api_key=zyteapi_key, ds_settings=default_ds_settings, max_retries=max_retries, retry_delay=retry_delay)
         self._processor = Processor(api_key=openaiapi_key, model=openai_model)
 
         # Setup the async framework
@@ -139,6 +141,7 @@ class Orchestrator(ABC):
                         url=res.url,
                         marketplace_name=res.marketplace_name,
                         domain=res.domain,
+                        ds_settings = item["ds_settings"],
                         filtered=res.filtered,
                         filtered_at_stage=res.filtered_at_stage,
                     )
@@ -169,14 +172,14 @@ class Orchestrator(ABC):
 
                 if url in self._collected_urls_current_run:
                     # deduplicate on current run
-                    product.filtered = True
+                    product.filtered = not product.ds_settings.dataset_creation
                     product.filtered_at_stage = (
                         "URL collection (current run deduplication)"
                     )
                     logger.debug(f"URL {url} already collected in current run")
                 elif url in self._collected_urls_previous_runs:
                     # deduplicate on previous runs coming from a db
-                    product.filtered = True
+                    product.filtered = not product.ds_settings.dataset_creation
                     product.filtered_at_stage = (
                         "URL collection (previous run deduplication)"
                     )
@@ -191,6 +194,7 @@ class Orchestrator(ABC):
         self,
         queue_in: asyncio.Queue[ProductItem | None],
         queue_out: asyncio.Queue[ProductItem | None],
+        timestamp: str,
     ) -> None:
         """Collects the URLs from the queue_in, enriches it with product details metadata, filters them (probability), and puts them into queue_out.
 
@@ -205,29 +209,26 @@ class Orchestrator(ABC):
                 break
 
             if not product.filtered:
+                print('LETS SEE IF NETTO SHOP SHOWS UP HERE:')
+                print(product.url)
                 try:
+                    # Update ds_settings in Zyte client from default value
+                    self._zyteapi._ds_settings = product.ds_settings
                     # Fetch the product details from Zyte API
-                    details = await self._zyteapi.get_details(url=product.url)
-                    product.product_name = self._zyteapi.extract_product_name(
-                        details=details
-                    )
-                    product.product_price = self._zyteapi.extract_product_price(
-                        details=details
-                    )
-                    product.product_description = (
-                        self._zyteapi.extract_product_description(details=details)
-                    )
-                    product.product_images = self._zyteapi.extract_image_urls(
-                        details=details
-                    )
-                    product.probability = self._zyteapi.extract_probability(
-                        details=details
-                    )
-
+                    details = await self._zyteapi.get_details(url=product.url, timestamp=timestamp)
+                    product.product_name = self._zyteapi.extract_product_name(details=details)
+                    product.product_price = self._zyteapi.extract_product_price(details=details)
+                    product.product_description = (self._zyteapi.extract_product_description(details=details))
+                    product.product_images = self._zyteapi.extract_image_urls(details=details)
+                    product.probability = self._zyteapi.extract_probability(details=details)
+                    product.encoded_url16 = self._zyteapi.extract_encoded_url16(details=details)
+                    
                     # Filter the product based on the probability threshold
-                    if not self._zyteapi.keep_product(details=details):
+                    if product.ds_settings.dataset_creation or self._zyteapi.keep_product(details=details):
+                        product.filtered = False
+                    else:
                         product.filtered = True
-                        product.filtered_at_stage = "Zyte probability threshold"
+                    product.filtered_at_stage = "Zyte probability threshold"
 
                 except Exception as e:
                     logger.warning(f"Error executing Zyte API search: {e}.")
@@ -299,6 +300,7 @@ class Orchestrator(ABC):
         n_zyte_wkrs: int,
         n_proc_wkrs: int,
         prompts: List[Prompt],
+        timestamp: str,
     ) -> None:
         """Sets up the necessary queues and workers for the async framework.
 
@@ -307,6 +309,7 @@ class Orchestrator(ABC):
             n_zyte_wkrs: Number of async workers for zyte.
             n_proc_wkrs: Number of async workers for processor.
             prompts: The list of prompts used for the classification by func:`Processor.classify`.
+            timestamp: The timestamp of the run.
         """
 
         # Setup the input/output queues for the workers
@@ -338,6 +341,7 @@ class Orchestrator(ABC):
                 self._zyte_execute(
                     queue_in=zyte_queue,
                     queue_out=proc_queue,
+                    timestamp=timestamp,
                 )
             )
             for _ in range(n_zyte_wkrs)
@@ -381,16 +385,18 @@ class Orchestrator(ABC):
         search_term_type: str,
         language: Language,
         location: Location,
+        ds_settings: DSsettings,
         num_results: int,
         marketplaces: List[Host] | None,
         excluded_urls: List[Host] | None,
     ) -> None:
-        """Adds a search-item to the queue."""
+        """Adds an individual SerpAPI search-item to the queue."""
         item = {
             "search_term": search_term,
             "search_term_type": search_term_type,
             "language": language,
             "location": location,
+            "ds_settings": ds_settings,
             "num_results": num_results,
             "marketplaces": marketplaces,
             "excluded_urls": excluded_urls,
@@ -404,15 +410,17 @@ class Orchestrator(ABC):
         search_term: str,
         language: Language,
         location: Location,
+        ds_settings: DSsettings,
         deepness: Deepness,
         marketplaces: List[Host] | None,
         excluded_urls: List[Host] | None,
     ) -> None:
-        """Adds all the (enriched) search_term (as serp items) to the queue."""
+        """Adds all the search_term (keywords), both original keyword and enriched keywords, as serp items to the queue."""
         common_kwargs = {
             "queue": queue,
             "language": language,
             "location": location,
+            "ds_settings": ds_settings,
             "marketplaces": marketplaces,
             "excluded_urls": excluded_urls,
         }
@@ -453,6 +461,8 @@ class Orchestrator(ABC):
         location: Location,
         deepness: Deepness,
         prompts: List[Prompt],
+        ds_settings: DSsettings,
+        timestamp: str,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
         previously_collected_urls: List[str] | None = None,
@@ -465,6 +475,8 @@ class Orchestrator(ABC):
             location: The location to use for the query.
             deepness: The search depth and enrichment details.
             prompts: The list of prompt to use for classification.
+            ds_settings: Data Science setting for creating and testing of benchmarks.
+            timestamp: Is the time stamp of the query.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
             previously_collected_urls: The urls that have been collected previously and are ignored.
@@ -492,6 +504,7 @@ class Orchestrator(ABC):
             n_zyte_wkrs=n_zyte_wkrs,
             n_proc_wkrs=n_proc_wkrs,
             prompts=prompts,
+            timestamp=timestamp,
         )
 
         # Check setup of async framework
@@ -518,6 +531,7 @@ class Orchestrator(ABC):
             language=language,
             location=location,
             deepness=deepness,
+            ds_settings=ds_settings,
             marketplaces=marketplaces,
             excluded_urls=excluded_urls,
         )
@@ -596,6 +610,8 @@ class Orchestrator(ABC):
         try:
             logger.debug("Waiting for proc_workers to conclude their tasks...")
             proc_res = await asyncio.gather(*proc_workers, return_exceptions=True)
+            print('PROC RES')
+            print(proc_res)
             for i, res in enumerate(proc_res):
                 if isinstance(res, Exception):
                     logger.error(f"Error in proc_worker {i}: {res}")

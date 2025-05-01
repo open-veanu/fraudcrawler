@@ -90,6 +90,14 @@ class Language(BaseModel):
         return {"name": name, "code": code}
 
 
+class DSsettings(BaseModel):
+    """Model for Data Science settings including:
+       1. Creation of Datasets 
+       2. Pipeline Tests with Input Benchmark"""
+
+    dataset_creation: bool = False
+
+
 class Enrichment(BaseModel):
     """Model for enriching initial search_term with alternative ones."""
 

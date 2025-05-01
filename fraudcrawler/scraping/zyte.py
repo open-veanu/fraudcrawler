@@ -2,14 +2,18 @@ import asyncio
 import logging
 from typing import List
 
+from base64 import b64decode
+import os
+import hashlib
 import aiohttp
 
 from fraudcrawler.settings import (
+    DATA_DIR,
     MAX_RETRIES,
     RETRY_DELAY,
     ZYTE_DEFALUT_PROBABILITY_THRESHOLD,
 )
-from fraudcrawler.base.base import AsyncClient
+from fraudcrawler.base.base import AsyncClient, DSsettings
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +37,7 @@ class ZyteApi(AsyncClient):
     def __init__(
         self,
         api_key: str,
+        ds_settings: dict,
         max_retries: int = MAX_RETRIES,
         retry_delay: int = RETRY_DELAY,
     ):
@@ -46,8 +51,9 @@ class ZyteApi(AsyncClient):
         self._aiohttp_basic_auth = aiohttp.BasicAuth(api_key)
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._ds_settings = ds_settings
 
-    async def get_details(self, url: str) -> dict:
+    async def get_details(self, url: str, timestamp: str) -> dict:
         """Fetches product details for a single URL.
 
         Args:
@@ -72,6 +78,13 @@ class ZyteApi(AsyncClient):
             }
         """
         logger.info(f"Fetching product details by Zyte for URL {url}.")
+
+        if self._ds_settings.dataset_creation:
+            _config_data_science = self._config.copy()
+            _config_data_science['browserHtml'] = True 
+            _config_data_science['screenshot'] = True 
+            _config_data_science = {k: v for k, v in _config_data_science.items() if k not in ["product", "productOptions","httpResponseBody"]}
+
         attempts = 0
         err = None
         while attempts < self._max_retries:
@@ -84,8 +97,34 @@ class ZyteApi(AsyncClient):
                     data={"url": url, **self._config},
                     auth=self._aiohttp_basic_auth,
                 )
+                logger.debug(f"DONE FETCHING FOR URL: {url}")
+                # Add a new 'encoded_url16' field to identify individual links in the file with its corresponding screenshot
+                product['encoded_url16'] = hashlib.sha256(product['url'].encode('utf-8')).hexdigest()[:16]
+                print('EXPERIMENT ENCODED - URL')
+                print(url)
+                print('encoded_url16')
+                print(product['encoded_url16'])
+                
+                #-------------------------------------------------------------------------
+                # Execute additional Zyte API call if performing Data Science Validation
+                #-------------------------------------------------------------------------
+                if self._ds_settings.dataset_creation:
+                    # WHEN CREATING A DS DATA SET: Run a second Zyte API request to obtain the screenshot.
+                    zyte_response = await self.post(
+                        url=self._endpoint,
+                        data={"url": url, **_config_data_science},
+                        auth=self._aiohttp_basic_auth,
+                    )
+                    #---------------------------------------------------------------------
+                    # Save Image to File for Data Science Validation
+                    #---------------------------------------------------------------------
+                    os.makedirs(DATA_DIR / timestamp, exist_ok=True)
+                    filename = timestamp  + "_" + product['encoded_url16']+ "_image" + ".jpg"
+                    with open(DATA_DIR / timestamp /  filename, "wb") as f:
+                        f.write(b64decode(zyte_response["screenshot"]))
                 return product
             except Exception as e:
+                print(f'Error is: {e}')
                 logger.debug(
                     f"Exception occurred while fetching product details for URL {url} (Attempt {attempts + 1})."
                 )
@@ -98,9 +137,7 @@ class ZyteApi(AsyncClient):
         return {}
 
     @staticmethod
-    def keep_product(
-        details: dict, threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD
-    ) -> bool:
+    def keep_product(details: dict, threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD) -> bool:
         """Determines whether to keep the product based on the probability threshold.
 
         Args:
@@ -192,3 +229,14 @@ class ZyteApi(AsyncClient):
             }
         """
         return float(details.get("product", {}).get("metadata", {}).get("probability"))
+    
+    @staticmethod
+    def extract_encoded_url16(details: dict) -> str:
+        """Extracts the encoded url16 from the product data.
+
+        The input argument is a dictionary of the following structure:
+            {
+                "encoded_url16": str
+            }
+        """
+        return details.get("encoded_url16", {})        

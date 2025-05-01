@@ -4,6 +4,7 @@ from pathlib import Path
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 ROOT_DIR = Path(__file__).parents[1]
+DATA_DIR  = ROOT_DIR / "data" / "results"
 
 # Serp settings
 GOOGLE_LOCATIONS_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-locations.json"

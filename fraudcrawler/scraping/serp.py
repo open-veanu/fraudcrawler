@@ -5,7 +5,7 @@ from typing import List
 from urllib.parse import urlparse
 
 from fraudcrawler.settings import MAX_RETRIES, RETRY_DELAY
-from fraudcrawler.base.base import Host, Language, Location, AsyncClient
+from fraudcrawler.base.base import Host, Language, Location, DSsettings, AsyncClient
 import re
 
 logger = logging.getLogger(__name__)
@@ -161,6 +161,7 @@ class SerpApi(AsyncClient):
         self,
         url: str,
         location: Location,
+        ds_settings: DSsettings,
         marketplaces: List[Host] | None,
     ) -> SerpResult:
         """From a given url it creates the class:`SerpResult` instance.
@@ -172,9 +173,9 @@ class SerpApi(AsyncClient):
             location:  The location to use for the query.
             marketplaces: The list of marketplaces to compare the URL against.
         """
-        # Filter for county code
-        filtered = not self._keep_url(url=url, country_code=location.code)
-        filtered_at_stage = "country code filtering" if filtered else None
+        # Data Science Settings Conditional for FILTERING
+        filtered = False if ds_settings.dataset_creation else not self._keep_url(url=url, country_code=location.code)
+        filtered_at_stage = "country code filtering" if ds_settings.dataset_creation or filtered else None
 
         # Get marketplace name
         domain = self._get_domain(url=url)
@@ -201,6 +202,7 @@ class SerpApi(AsyncClient):
         search_term: str,
         language: Language,
         location: Location,
+        ds_settings: DSsettings,
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
@@ -235,7 +237,7 @@ class SerpApi(AsyncClient):
         # Form the SerpResult objects
         results = [
             self._create_serp_result(
-                url=url, location=location, marketplaces=marketplaces
+                url=url, location=location, ds_settings=ds_settings, marketplaces=marketplaces
             )
             for url in urls
         ]

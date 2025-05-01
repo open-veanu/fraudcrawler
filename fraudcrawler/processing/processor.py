@@ -61,6 +61,7 @@ class Processor:
         """
         # If required fields are missing, return the prompt's default fallback if provided.
         if name is None or description is None:
+            print(f'This is the URL: {url}')
             logger.warning(
                 f"Missing required fields for classification: name='{name}', description='{description}'"
             )
