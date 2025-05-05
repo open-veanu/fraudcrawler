@@ -10,7 +10,6 @@ from fraudcrawler.settings import (
     DEFAULT_N_ZYTE_WKRS,
     DEFAULT_N_PROC_WKRS,
 )
-from fraudcrawler.settings import PRODUCT_ITEM_DEFAULT_IS_RELEVANT
 from fraudcrawler.base.base import Deepness, Host, Language, Location, Prompt
 from fraudcrawler import SerpApi, Enricher, ZyteApi, Processor
 
@@ -40,7 +39,6 @@ class ProductItem(BaseModel):
     # Filtering parameters
     filtered: bool = False
     filtered_at_stage: str | None = None
-    is_relevant: int = PRODUCT_ITEM_DEFAULT_IS_RELEVANT
 
 
 class Orchestrator(ABC):
