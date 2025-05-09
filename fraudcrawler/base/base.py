@@ -114,7 +114,7 @@ class Prompt(BaseModel):
     context: str
     system_prompt: str
     allowed_classes: List[int]
-    
+
     @field_validator("allowed_classes", mode="before")
     def check_for_positive_value(cls, val):
         """Check if all values are positive."""

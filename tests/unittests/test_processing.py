@@ -37,5 +37,6 @@ async def test_processor_classify_product(processor):
     )
     assert isinstance(classification, int)
     assert (
-        classification in allowed_classes or classification == PROCESSOR_DEFAULT_IF_MISSING
+        classification in allowed_classes
+        or classification == PROCESSOR_DEFAULT_IF_MISSING
     )
