@@ -96,7 +96,9 @@ class DSsettings(BaseModel):
        2. Pipeline Tests with Input Benchmark"""
 
     dataset_creation: bool = False
-
+    use_cached_ds_data: bool =True
+    cached_filename: str
+                            
 
 class Enrichment(BaseModel):
     """Model for enriching initial search_term with alternative ones."""

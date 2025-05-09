@@ -13,14 +13,14 @@ def main():
     client = FraudCrawlerClient()
 
     # Setup the search
-    search_term = "Kühlschrank"
+    search_term = "Borax"
     language = Language(name="German")
     location = Location(name="Switzerland")
-    deepness = Deepness(num_results=10)
+    deepness = Deepness(num_results=150)
     prompts = [
         Prompt(
             name="relevance",
-            context="This organization is interested in checking the energy efficiency of certain devices.",
+            context="This organization is interested in checking for illegal products regarding health and safety.",
             system_prompt=(
                 "You are a helpful and intelligent assistant. Your task is to classify any given product "
                 "as either relevant (1) or not relevant (0), strictly based on the context and product details provided by the user. "
@@ -32,7 +32,7 @@ def main():
         ),
         Prompt(
             name="seriousness",
-            context="This organization is interested in checking the energy efficiency of certain devices.",
+            context="This organization is interested in checking for illegal products regarding health and safety.",
             system_prompt=(
                 "You are an intelligent and discerning assistant. Your task is to classify each item as either "
                 "a product for sale (1) or not a product for sale (0). To make this distinction, consider the following criteria: \n"
@@ -50,9 +50,9 @@ def main():
         ),
     ]
     # # Optional: Add tern ENRICHMENT
-    # from fraudcrawler import Enrichment
+    from fraudcrawler import Enrichment
 
-    # deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
+    deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
 
     # # Optional: Add MARKETPLACES and EXCLUDED_URLS
     # from fraudcrawler import Host
@@ -67,7 +67,11 @@ def main():
     # ]
 
     # Data Science Settings
-    ds_settings = DSsettings(dataset_creation=True)
+    ds_settings = DSsettings(
+                            dataset_creation=False,
+                            use_cached_ds_data =True,
+                            cached_filename="59ab8652_Borax_de_ch_20250502140755.csv"
+                            )
 
     # Execute the pipeline
     client.execute(

@@ -25,6 +25,10 @@ pandas = "^2.2.3"
 aiohttp = "^3.11.14"
 pydantic-settings = "^2.8.1"
 openai = "^1.68.2"
+notebook = "^7.4.1"
+ipykernel = "^6.29.5"
+jupyter = "^1.1.1"
+scikit-learn = "^1.6.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest-cov = "^6.0.0"

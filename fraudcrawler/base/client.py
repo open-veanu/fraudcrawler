@@ -101,13 +101,19 @@ class FraudCrawlerClient(Orchestrator):
         """
         timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
         run_hash = hashlib.sha256("{search_term}_{language}_{location}_{timestamp}.csv".encode()).hexdigest()[:8]
-        filename = self._results_dir / self._filename_template.format(
-            filename_hash = run_hash,
-            search_term=search_term,
-            language=language.code,
-            location=location.code,
-            timestamp=timestamp,
-        )
+        # Filename to be saved for results depends on if data science validations 
+        if not ds_settings.use_cached_ds_data: 
+            filename = self._results_dir / self._filename_template.format(
+                filename_hash = run_hash,
+                search_term=search_term,
+                language=language.code,
+                location=location.code,
+                timestamp=timestamp,
+            )
+        else:
+            filename = ds_settings.cached_filename.removesuffix(".csv") + "_" + datetime.today().strftime("%Y%m%d%H%M%S") + '.csv'
+            filename = self._results_dir / filename
+
         self._results.append(Results(search_term=search_term, filename=filename))
 
         asyncio.run(

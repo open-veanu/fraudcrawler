@@ -100,11 +100,7 @@ class ZyteApi(AsyncClient):
                 logger.debug(f"DONE FETCHING FOR URL: {url}")
                 # Add a new 'encoded_url16' field to identify individual links in the file with its corresponding screenshot
                 product['encoded_url16'] = hashlib.sha256(product['url'].encode('utf-8')).hexdigest()[:16]
-                print('EXPERIMENT ENCODED - URL')
-                print(url)
-                print('encoded_url16')
-                print(product['encoded_url16'])
-                
+                 
                 #-------------------------------------------------------------------------
                 # Execute additional Zyte API call if performing Data Science Validation
                 #-------------------------------------------------------------------------
