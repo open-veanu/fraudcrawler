@@ -4,7 +4,12 @@ import logging
 from pydantic import BaseModel, Field
 from typing import Dict, List, Set, cast
 
-from fraudcrawler.settings import PROCESSOR_DEFAULT_MODEL, MAX_RETRIES, RETRY_DELAY
+from fraudcrawler.settings import (
+    PROCESSOR_DEFAULT_MODEL,
+    PROCESSOR_DEFAULT_IF_MISSING,
+    MAX_RETRIES,
+    RETRY_DELAY,
+)
 from fraudcrawler.settings import (
     DEFAULT_N_SERP_WKRS,
     DEFAULT_N_ZYTE_WKRS,
@@ -67,6 +72,7 @@ class Orchestrator(ABC):
         openai_model: str = PROCESSOR_DEFAULT_MODEL,
         max_retries: int = MAX_RETRIES,
         retry_delay: int = RETRY_DELAY,
+        default_if_missing: int = PROCESSOR_DEFAULT_IF_MISSING,
         n_serp_wkrs: int = DEFAULT_N_SERP_WKRS,
         n_zyte_wkrs: int = DEFAULT_N_ZYTE_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
@@ -98,7 +104,11 @@ class Orchestrator(ABC):
         self._zyteapi = ZyteApi(
             api_key=zyteapi_key, max_retries=max_retries, retry_delay=retry_delay
         )
-        self._processor = Processor(api_key=openaiapi_key, model=openai_model)
+        self._processor = Processor(
+            api_key=openaiapi_key,
+            model=openai_model,
+            default_if_missing=default_if_missing,
+        )
 
         # Setup the async framework
         self._n_serp_wkrs = n_serp_wkrs

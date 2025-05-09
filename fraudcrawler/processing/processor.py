@@ -15,15 +15,22 @@ logger = logging.getLogger(__name__)
 class Processor:
     """Processes product data for classification based on a prompt configuration."""
 
-    def __init__(self, api_key: str, model: str):
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        default_if_missing: int = PROCESSOR_DEFAULT_IF_MISSING,
+    ):
         """Initializes the Processor.
 
         Args:
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
+            default_if_missing: The default classification to return if error occurs.
         """
         self._client = AsyncOpenAI(api_key=api_key)
         self._model = model
+        self._default_if_missing = default_if_missing
 
     async def _call_openai_api(
         self,
@@ -67,7 +74,7 @@ class Processor:
             logger.warning(
                 f"Missing required fields for classification: name='{name}', description='{description}'"
             )
-            return PROCESSOR_DEFAULT_IF_MISSING
+            return self._default_if_missing
 
         # Substitute placeholders in user_prompt with the relevant arguments
         user_prompt = PROCESSOR_USER_PROMPT_TEMPLATE.format(
@@ -94,7 +101,7 @@ class Processor:
                 logger.warning(
                     f"Classification '{classification}' not in allowed classes {prompt.allowed_classes}"
                 )
-                return PROCESSOR_DEFAULT_IF_MISSING
+                return self._default_if_missing
 
             logger.info(
                 f'Classification for "{name}" (prompt={prompt.name}): {classification}'
@@ -105,4 +112,4 @@ class Processor:
             logger.error(
                 f'Error classifying product "{name}" with prompt "{prompt.name}": {e}'
             )
-            return PROCESSOR_DEFAULT_IF_MISSING
+            return self._default_if_missing
