@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "fraudcrawler"
-version = "0.3.4"
+version = "0.3.5"
 description = "Intelligent Market Monitoring"
 authors = [
     "Domingo Bertus <hello@veanu.ch>",
