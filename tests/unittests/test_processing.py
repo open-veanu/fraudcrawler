@@ -1,6 +1,10 @@
 import pytest
 
-from fraudcrawler.settings import PROCESSOR_DEFAULT_MODEL
+from fraudcrawler.settings import (
+    PROCESSOR_DEFAULT_MODEL,
+    PROCESSOR_DEFAULT_IF_MISSING,
+)
+
 from fraudcrawler.base.base import Setup
 from fraudcrawler import Processor, Prompt
 
@@ -33,5 +37,6 @@ async def test_processor_classify_product(processor):
     )
     assert isinstance(classification, int)
     assert (
-        classification in allowed_classes or classification == prompt.default_if_missing
+        classification in allowed_classes
+        or classification == PROCESSOR_DEFAULT_IF_MISSING
     )

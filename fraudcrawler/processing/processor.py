@@ -3,7 +3,10 @@ import logging
 from openai import AsyncOpenAI
 
 from fraudcrawler.base.base import Prompt
-from fraudcrawler.settings import PROCESSOR_USER_PROMPT_TEMPLATE
+from fraudcrawler.settings import (
+    PROCESSOR_USER_PROMPT_TEMPLATE,
+    PROCESSOR_DEFAULT_IF_MISSING,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -54,7 +57,7 @@ class Processor:
             description: Product description (often used in the user_prompt).
 
         Note:
-            This method returns `prompt.default_if_missing` if:
+            This method returns `PROCESSOR_DEFAULT_IF_MISSING` if:
                 - 'name' or 'description' is None
                 - an error occurs during the API call
                 - if the response isn't in allowed_classes.
@@ -64,7 +67,7 @@ class Processor:
             logger.warning(
                 f"Missing required fields for classification: name='{name}', description='{description}'"
             )
-            return prompt.default_if_missing
+            return PROCESSOR_DEFAULT_IF_MISSING
 
         # Substitute placeholders in user_prompt with the relevant arguments
         user_prompt = PROCESSOR_USER_PROMPT_TEMPLATE.format(
@@ -91,7 +94,7 @@ class Processor:
                 logger.warning(
                     f"Classification '{classification}' not in allowed classes {prompt.allowed_classes}"
                 )
-                return prompt.default_if_missing
+                return PROCESSOR_DEFAULT_IF_MISSING
 
             logger.info(
                 f'Classification for "{name}" (prompt={prompt.name}): {classification}'
@@ -102,4 +105,4 @@ class Processor:
             logger.error(
                 f'Error classifying product "{name}" with prompt "{prompt.name}": {e}'
             )
-            return prompt.default_if_missing
+            return PROCESSOR_DEFAULT_IF_MISSING

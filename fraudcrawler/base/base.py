@@ -1,6 +1,10 @@
 import json
 import logging
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -9,7 +13,6 @@ import aiohttp
 from fraudcrawler.settings import (
     GOOGLE_LANGUAGES_FILENAME,
     GOOGLE_LOCATIONS_FILENAME,
-    PROCESSOR_DEFAULT_IF_MISSING,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,7 +114,13 @@ class Prompt(BaseModel):
     context: str
     system_prompt: str
     allowed_classes: List[int]
-    default_if_missing: int = PROCESSOR_DEFAULT_IF_MISSING
+
+    @field_validator("allowed_classes", mode="before")
+    def check_for_positive_value(cls, val):
+        """Check if all values are positive."""
+        if not all(isinstance(i, int) and i >= 0 for i in val):
+            raise ValueError("all values in allowed_classes must be positive integers.")
+        return val
 
 
 class AsyncClient:
