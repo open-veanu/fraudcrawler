@@ -22,9 +22,6 @@ PROCESSOR_USER_PROMPT_TEMPLATE = (
     "Context: {context}\n\nProduct Details: {name}\n{description}\\n\nRelevance:"
 )
 
-# Orchestrator settings
-PRODUCT_ITEM_DEFAULT_IS_RELEVANT = -1
-
 # Async settings
 DEFAULT_N_SERP_WKRS = 10
 DEFAULT_N_ZYTE_WKRS = 10
