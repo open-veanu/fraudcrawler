@@ -13,7 +13,7 @@ authors = [
 ]
 license = "MIT License"
 readme = "README.md"
-repository = "https://github/open-veanu/fraudcrawler"
+repository = "https://github.com/open-veanu/fraudcrawler"
 packages = [
     {include = "fraudcrawler", from = "."}
 ]
