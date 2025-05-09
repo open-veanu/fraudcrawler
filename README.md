@@ -46,7 +46,7 @@ The location used in SerpAPI ('gl' parameter). `location=Location('Switzerland')
 Defines the search depth with the number of results to retrieve and optional enrichment parameters.
 
 #### `prompts: List[Prompt]`
-The list of prompts to classify a given product with (multiple) LLM calls. Each prompt object has a `name`, a `context` (used for defining the user prompt), a `system_prompt` (for defining the classification task), `allowed_classes` (a list of possible classes) and optionally `default_if_missing` (a default class if anything goes wrong).
+The list of prompts to classify a given product with (multiple) LLM calls. Each prompt object has a `name`, a `context` (used for defining the user prompt), a `system_prompt` (for defining the classification task), and `allowed_classes` (a list of possible classes).
 
 ```python
 from fraudcrawler import Language, Location, Deepness, Prompt

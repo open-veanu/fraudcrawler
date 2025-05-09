@@ -1,4 +1,14 @@
-from fraudcrawler.base.base import Setup, Host, Location, Language
+import pytest
+
+from fraudcrawler.base.base import (
+    Setup,
+    Host,
+    Location,
+    Language,
+    Enrichment,
+    Deepness,
+    Prompt,
+)
 
 
 def test_setup():
@@ -46,3 +56,45 @@ def test_language():
     language = Language(name="German")
     assert language.name == "German"
     assert language.code == "de"
+
+
+def test_deepness():
+    deepness = Deepness(num_results=20)
+    assert deepness.num_results == 20
+    assert deepness.enrichment is None
+
+    enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
+    deepness = Deepness(num_results=20, enrichment=enrichment)
+    assert deepness.num_results == 20
+    assert deepness.enrichment == enrichment
+
+def test_prompt():
+    name = 'name'
+    context = 'this is the context'
+    system_prompt = 'this is the system prompt'
+    prompt = Prompt(
+        name=name,
+        context=context,
+        system_prompt=system_prompt,
+        allowed_classes=[0, 1],
+    )
+    assert prompt.name == name
+    assert prompt.context == context
+    assert prompt.system_prompt == system_prompt
+    assert prompt.allowed_classes == [0, 1]
+    
+    with pytest.raises(ValueError):
+        Prompt(
+            name=name,
+            context=context,
+            system_prompt=system_prompt,
+            allowed_classes=[-1, 0, 1],
+        )
+    
+    with pytest.raises(ValueError):
+        Prompt(
+            name=name,
+            context=context,
+            system_prompt=system_prompt,
+            allowed_classes=[0.5, 1],
+        )
