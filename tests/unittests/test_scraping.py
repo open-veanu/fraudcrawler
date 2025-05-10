@@ -54,6 +54,41 @@ def test_serpapi_keep_url(serpapi):
     assert serpapi._keep_url(url="https://example.it", country_code="ch") is False
 
 
+def test_serpapi_is_excluded(serpapi):
+    excluded_urls = [
+        Host(name="Springer", domains="springer.com"),
+        Host(name="Example", domains="example.com"),
+    ]
+    assert (
+        serpapi._is_excluded(
+            domain="example.com",
+            excluded_urls=excluded_urls,
+        )
+        is True
+    )
+    assert (
+        serpapi._is_excluded(
+            domain="springer.ch",
+            excluded_urls=excluded_urls,
+        )
+        is False
+    )
+    assert (
+        serpapi._is_excluded(
+            domain="link.springer.com",
+            excluded_urls=excluded_urls,
+        )
+        is True
+    )
+    assert (
+        serpapi._is_excluded(
+            domain="pringer.com",
+            excluded_urls=excluded_urls,
+        )
+        is False
+    )
+
+
 def test_serpapi_create_serp_result(serpapi):
     url = "https://www.example.ch"
     location = Location(name="Switzerland")
