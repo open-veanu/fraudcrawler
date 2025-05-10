@@ -38,4 +38,4 @@ jobs:
 
     # - name: Run Unit Tests
     #   run: |
-    #     poetry run pytest --cov=src --cov-report=term tests/unittests/test_* -s -v
+    #     poetry run pytest --cov=fraudcrawler --cov-report=term tests/unittests/test_* -s -v

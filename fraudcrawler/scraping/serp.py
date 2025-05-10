@@ -196,6 +196,27 @@ class SerpApi(AsyncClient):
             filtered_at_stage=filtered_at_stage,
         )
 
+    @staticmethod
+    def _is_excluded(domain: str, excluded_urls: List[Host]) -> bool:
+        """Checks if the domain is in the excluded URLs.
+
+        Note:
+            By checking `if dom == excl or dom.endswith(f".{excl}")` we also
+            check for subdomains. For example, if the domain is
+            `link.springer.com` and the excluded URL is `springer.com`,
+            it will be excluded.
+
+        Args:
+            domain: The domain to check.
+            excluded_urls: The list of excluded URLs.
+        """
+        dom = domain.lower()
+        excl_doms = [dom.lower() for excl in excluded_urls for dom in excl.domains]
+        for excl in excl_doms:
+            if dom == excl or dom.endswith(f".{excl}"):
+                return True
+        return False
+
     async def apply(
         self,
         search_term: str,
@@ -242,8 +263,11 @@ class SerpApi(AsyncClient):
 
         # Filter out the excluded URLs
         if excluded_urls:
-            excluded = [dom for excl in excluded_urls for dom in excl.domains]
-            results = [res for res in results if res.domain not in excluded]
+            results = [
+                res
+                for res in results
+                if not self._is_excluded(res.domain, excluded_urls)
+            ]
 
         logger.info(
             f'Produced {len(results)} results from SerpApi search with q="{search_string}".'
