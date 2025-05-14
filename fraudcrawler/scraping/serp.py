@@ -157,11 +157,8 @@ class SerpApi(AsyncClient):
         """
         url = url.lower()
         country_code_relevance = f".{country_code}" in url
-        default_relevance = any(
-            cc in url for cc in SERP_DEFAULT_COUNTRY_CODES
-        )
+        default_relevance = any(cc in url for cc in SERP_DEFAULT_COUNTRY_CODES)
         return country_code_relevance or default_relevance
-
 
     @staticmethod
     def _domain_in_host(domain: str, host: Host) -> bool:
@@ -189,9 +186,7 @@ class SerpApi(AsyncClient):
             domain: The domain to check.
             hosts: The list of hosts to check against.
         """
-        return any(
-            self._domain_in_host(domain=domain, host=hst) for hst in hosts
-        )
+        return any(self._domain_in_host(domain=domain, host=hst) for hst in hosts)
 
     def _is_excluded_url(self, domain: str, excluded_urls: List[Host]) -> bool:
         """Checks if the domain is in the excluded URLs.
@@ -224,9 +219,7 @@ class SerpApi(AsyncClient):
                 return result
 
         # Check if the URL has a relevant country_code
-        if not self._relevant_country_code(
-            url=result.url, country_code=location.code
-        ):
+        if not self._relevant_country_code(url=result.url, country_code=location.code):
             result.filtered = True
             result.filtered_at_stage = "SerpAPI (country code filtering)"
             return result
@@ -259,10 +252,11 @@ class SerpApi(AsyncClient):
         domain = self._get_domain(url=url)
         marketplace_name = self._default_marketplace_name
         if marketplaces:
-
             try:
                 marketplace_name = next(
-                    mp.name for mp in marketplaces if self._domain_in_host(domain=domain, host=mp)
+                    mp.name
+                    for mp in marketplaces
+                    if self._domain_in_host(domain=domain, host=mp)
                 )
             except StopIteration:
                 logger.warning(f'Failed to find marketplace for domain="{domain}".')
