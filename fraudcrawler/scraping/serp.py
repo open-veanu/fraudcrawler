@@ -66,12 +66,12 @@ class SerpApi(AsyncClient):
             logger.warning(
                 f'Failed to extract domain from url="{url}"; full url is returned'
             )
-            return url
+            return url.lower()
 
         # Remove www. prefix
         if hostname and hostname.startswith("www."):
             hostname = hostname[4:]
-        return hostname
+        return hostname.lower()
 
     async def _search(
         self,
@@ -230,14 +230,14 @@ class SerpApi(AsyncClient):
             marketplaces: The list of marketplaces to compare the URL against.
         """
         # Get marketplace name
-        domain = self._get_domain(url=url).lower()
+        domain = self._get_domain(url=url)
         marketplace_name = self._default_marketplace_name
         if marketplaces:
             try:
                 marketplace_name = next(
                     mp.name
                     for mp in marketplaces
-                    if domain.lower() in [d.lower() for d in mp.domains]
+                    if domain in [d for d in mp.domains]
                 )
             except StopIteration:
                 logger.warning(f'Failed to find marketplace for domain="{domain}".')
