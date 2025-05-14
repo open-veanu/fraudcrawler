@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List
 from urllib.parse import urlparse
 
-from fraudcrawler.settings import MAX_RETRIES, RETRY_DELAY
+from fraudcrawler.settings import MAX_RETRIES, RETRY_DELAY, SERP_DEFAULT_COUNTRY_CODES
 from fraudcrawler.base.base import Host, Language, Location, AsyncClient
 import re
 
@@ -148,17 +148,32 @@ class SerpApi(AsyncClient):
         return urls
 
     @staticmethod
-    def _has_included_country_code(url: str, country_code: str) -> bool:
-        """Determines whether to keep the url based on the country_code.
+    def _relevant_country_code(url: str, country_code: str) -> bool:
+        """Determines whether the url shows relevant country codes.
 
         Args:
             url: The URL to investigate.
             country_code: The country code used to filter the products.
         """
-        return f".{country_code}" in url.lower() or ".com" in url.lower()
+        url = url.lower()
+        country_code_relevance = f".{country_code}" in url
+        default_relevance = any(cc in url for cc in SERP_DEFAULT_COUNTRY_CODES)
+        return country_code_relevance or default_relevance
 
     @staticmethod
-    def _domain_is_present(domain: str, hosts: List[Host]) -> bool:
+    def _domain_in_host(domain: str, host: Host) -> bool:
+        """Checks if the domain is present in the host.
+
+        Args:
+            domain: The domain to check.
+            host: The host to check against.
+        """
+        return any(
+            domain == hst_dom or domain.endswith(f".{hst_dom}")
+            for hst_dom in host.domains
+        )
+
+    def _domain_in_hosts(self, domain: str, hosts: List[Host]) -> bool:
         """Checks if the domain is present in the list of hosts.
 
         Note:
@@ -171,10 +186,7 @@ class SerpApi(AsyncClient):
             domain: The domain to check.
             hosts: The list of hosts to check against.
         """
-        for hst_dom in [dom for hst in hosts for dom in hst.domains]:
-            if domain == hst_dom or domain.endswith(f".{hst_dom}"):
-                return True
-        return False
+        return any(self._domain_in_host(domain=domain, host=hst) for hst in hosts)
 
     def _is_excluded_url(self, domain: str, excluded_urls: List[Host]) -> bool:
         """Checks if the domain is in the excluded URLs.
@@ -183,7 +195,7 @@ class SerpApi(AsyncClient):
             domain: The domain to check.
             excluded_urls: The list of excluded URLs.
         """
-        return self._domain_is_present(domain=domain, hosts=excluded_urls)
+        return self._domain_in_hosts(domain=domain, hosts=excluded_urls)
 
     def _apply_filters(
         self,
@@ -203,13 +215,11 @@ class SerpApi(AsyncClient):
         domain = result.domain
         # Check if the URL is in the marketplaces (if yes, keep the result un-touched)
         if marketplaces:
-            if self._domain_is_present(domain=domain, hosts=marketplaces):
+            if self._domain_in_hosts(domain=domain, hosts=marketplaces):
                 return result
 
-        # Check if the URL has the included country code
-        if not self._has_included_country_code(
-            url=result.url, country_code=location.code
-        ):
+        # Check if the URL has a relevant country_code
+        if not self._relevant_country_code(url=result.url, country_code=location.code):
             result.filtered = True
             result.filtered_at_stage = "SerpAPI (country code filtering)"
             return result
@@ -244,7 +254,9 @@ class SerpApi(AsyncClient):
         if marketplaces:
             try:
                 marketplace_name = next(
-                    mp.name for mp in marketplaces if domain in [d for d in mp.domains]
+                    mp.name
+                    for mp in marketplaces
+                    if self._domain_in_host(domain=domain, host=mp)
                 )
             except StopIteration:
                 logger.warning(f'Failed to find marketplace for domain="{domain}".')
