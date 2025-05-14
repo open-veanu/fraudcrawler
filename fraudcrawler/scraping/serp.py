@@ -148,7 +148,7 @@ class SerpApi(AsyncClient):
         return urls
 
     @staticmethod
-    def _keep_url(url: str, country_code: str) -> bool:
+    def _has_included_country_code(url: str, country_code: str) -> bool:
         """Determines whether to keep the url based on the country_code.
 
         Args:
@@ -157,47 +157,8 @@ class SerpApi(AsyncClient):
         """
         return f".{country_code}" in url.lower() or ".com" in url.lower()
 
-    def _create_serp_result(
-        self,
-        url: str,
-        location: Location,
-        marketplaces: List[Host] | None,
-    ) -> SerpResult:
-        """From a given url it creates the class:`SerpResult` instance.
-
-        If marketplaces is None or the domain can not be extracted, the default marketplace name is used.
-
-        Args:
-            url: The URL to be processed.
-            location:  The location to use for the query.
-            marketplaces: The list of marketplaces to compare the URL against.
-        """
-        # Filter for county code
-        filtered = not self._keep_url(url=url, country_code=location.code)
-        filtered_at_stage = "country code filtering" if filtered else None
-
-        # Get marketplace name
-        domain = self._get_domain(url=url)
-        marketplace_name = self._default_marketplace_name
-        if domain and marketplaces:
-            try:
-                marketplace_name = next(
-                    mp.name
-                    for mp in marketplaces
-                    if domain.lower() in [d.lower() for d in mp.domains]
-                )
-            except StopIteration:
-                logger.warning(f'Failed to find marketplace for domain="{domain}".')
-        return SerpResult(
-            url=url,
-            domain=domain,
-            marketplace_name=marketplace_name,
-            filtered=filtered,
-            filtered_at_stage=filtered_at_stage,
-        )
-
     @staticmethod
-    def _is_excluded(domain: str, excluded_urls: List[Host]) -> bool:
+    def _is_excluded_url(domain: str, excluded_urls: List[Host]) -> bool:
         """Checks if the domain is in the excluded URLs.
 
         Note:
@@ -210,12 +171,92 @@ class SerpApi(AsyncClient):
             domain: The domain to check.
             excluded_urls: The list of excluded URLs.
         """
-        dom = domain.lower()
-        excl_doms = [dom.lower() for excl in excluded_urls for dom in excl.domains]
-        for excl in excl_doms:
-            if dom == excl or dom.endswith(f".{excl}"):
+        for excl in [dom for excl in excluded_urls for dom in excl.domains]:
+            if domain == excl or domain.endswith(f".{excl}"):
                 return True
         return False
+
+    def _apply_filters(
+        self,
+        result: SerpResult,
+        location: Location,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+    ) -> SerpResult:
+        """Checks for filters and updates the SerpResult accordingly.
+
+        Args:
+            result: The SerpResult object to check.
+            location: The location to use for the query.
+            marketplaces: The list of marketplaces to compare the URL against.
+            excluded_urls: The list of excluded URLs.
+        """
+        domain = result.domain
+        # Check if the URL is in the marketplaces (if yes, keep the result un-touched)
+        if marketplaces:
+            if domain in [dom for host in marketplaces for dom in host.domains]:
+                return result
+
+        # Check if the URL has the included country code
+        if not self._has_included_country_code(
+            url=result.url, country_code=location.code
+        ):
+            result.filtered = True
+            result.filtered_at_stage = "SerpAPI (country code filtering)"
+            return result
+
+        # Check if the URL is in the excluded URLs
+        if excluded_urls and self._is_excluded_url(result.domain, excluded_urls):
+            result.filtered = True
+            result.filtered_at_stage = "SerpAPI (excluded URLs filtering)"
+            return result
+
+        return result
+
+    def _create_serp_result(
+        self,
+        url: str,
+        location: Location,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+    ) -> SerpResult:
+        """From a given url it creates the class:`SerpResult` instance.
+
+        If marketplaces is None or the domain can not be extracted, the default marketplace name is used.
+
+        Args:
+            url: The URL to be processed.
+            location:  The location to use for the query.
+            marketplaces: The list of marketplaces to compare the URL against.
+        """
+        # Get marketplace name
+        domain = self._get_domain(url=url).lower()
+        marketplace_name = self._default_marketplace_name
+        if marketplaces:
+            try:
+                marketplace_name = next(
+                    mp.name
+                    for mp in marketplaces
+                    if domain.lower() in [d.lower() for d in mp.domains]
+                )
+            except StopIteration:
+                logger.warning(f'Failed to find marketplace for domain="{domain}".')
+
+        # Create the SerpResult object
+        result = SerpResult(
+            url=url,
+            domain=domain,
+            marketplace_name=marketplace_name,
+        )
+
+        # Apply filters
+        result = self._apply_filters(
+            result=result,
+            location=location,
+            marketplaces=marketplaces,
+            excluded_urls=excluded_urls,
+        )
+        return result
 
     async def apply(
         self,
@@ -256,20 +297,16 @@ class SerpApi(AsyncClient):
         # Form the SerpResult objects
         results = [
             self._create_serp_result(
-                url=url, location=location, marketplaces=marketplaces
+                url=url,
+                location=location,
+                marketplaces=marketplaces,
+                excluded_urls=excluded_urls,
             )
             for url in urls
         ]
 
-        # Filter out the excluded URLs
-        if excluded_urls:
-            results = [
-                res
-                for res in results
-                if not self._is_excluded(res.domain, excluded_urls)
-            ]
-
+        num_non_filtered = len([res for res in results if not res.filtered])
         logger.info(
-            f'Produced {len(results)} results from SerpApi search with q="{search_string}".'
+            f'Produced {num_non_filtered} results from SerpApi search with q="{search_string}".'
         )
         return results

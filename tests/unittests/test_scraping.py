@@ -47,56 +47,101 @@ async def test_serpapi_search(serpapi):
     assert all(url.startswith("http") for url in urls)
 
 
-def test_serpapi_keep_url(serpapi):
-    assert serpapi._keep_url(url="https://example.ch", country_code="ch") is True
-    assert serpapi._keep_url(url="https://example.ch/foobar", country_code="ch") is True
-    assert serpapi._keep_url(url="https://example.com", country_code="ch") is True
-    assert serpapi._keep_url(url="https://example.it", country_code="ch") is False
+def test_serpapi_apply_filters(serpapi):
+    location = Location(name="Switzerland")
 
+    # No filters applied
+    result = SerpResult(
+        url="https://www.example.ch",
+        domain="example.ch",
+        marketplace_name="Example",
+    )
+    result = serpapi._apply_filters(result=result, location=location)
+    assert isinstance(result, SerpResult)
+    assert result.url == "https://www.example.ch"
+    assert result.domain == "example.ch"
+    assert result.marketplace_name == "Example"
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
 
-def test_serpapi_is_excluded(serpapi):
-    excluded_urls = [
-        Host(name="Springer", domains="springer.com"),
-        Host(name="Example", domains="example.com"),
-    ]
-    assert (
-        serpapi._is_excluded(
-            domain="example.com",
-            excluded_urls=excluded_urls,
-        )
-        is True
+    # Country code filter applied
+    result = SerpResult(
+        url="https://www.example.org",
+        domain="example.org",
+        marketplace_name="Example",
     )
-    assert (
-        serpapi._is_excluded(
-            domain="springer.ch",
-            excluded_urls=excluded_urls,
-        )
-        is False
+    result = serpapi._apply_filters(result=result, location=location)
+    assert isinstance(result, SerpResult)
+    assert result.url == "https://www.example.org"
+    assert result.domain == "example.org"
+    assert result.marketplace_name == "Example"
+    assert result.filtered is True
+    assert isinstance(result.filtered_at_stage, str)
+    assert result.filtered_at_stage == "SerpAPI (country code filtering)"
+
+    # Marketplace filter not applied (would be applied for country code but is overridden)
+    result = SerpResult(
+        url="https://www.example.org",
+        domain="example.org",
+        marketplace_name="Example",
     )
-    assert (
-        serpapi._is_excluded(
-            domain="link.springer.com",
-            excluded_urls=excluded_urls,
-        )
-        is True
+    marketplaces = [Host(name="Example", domains="example.org")]
+    result = serpapi._apply_filters(
+        result=result, location=location, marketplaces=marketplaces
     )
-    assert (
-        serpapi._is_excluded(
-            domain="pringer.com",
-            excluded_urls=excluded_urls,
-        )
-        is False
+    assert isinstance(result, SerpResult)
+    assert result.url == "https://www.example.org"
+    assert result.domain == "example.org"
+    assert result.marketplace_name == "Example"
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
+
+    # Excluded URLs filter applied
+    result = SerpResult(
+        url="https://de.example.ch",
+        domain="de.example.ch",
+        marketplace_name="Example",
     )
+    excluded_urls = [Host(name="Example", domains="example.ch")]
+    result = serpapi._apply_filters(
+        result=result, location=location, excluded_urls=excluded_urls
+    )
+    assert isinstance(result, SerpResult)
+    assert result.url == "https://de.example.ch"
+    assert result.domain == "de.example.ch"
+    assert result.marketplace_name == "Example"
+    assert result.filtered is True
+    assert isinstance(result.filtered_at_stage, str)
+    assert result.filtered_at_stage == "SerpAPI (excluded URLs filtering)"
+
+    # No filters applied
+    result = SerpResult(
+        url="https://www.example.ch",
+        domain="example.ch",
+        marketplace_name="Example",
+    )
+    marketplaces = [Host(name="Example", domains="example.org")]
+    excluded_urls = [Host(name="Example", domains="example.de")]
+    result = serpapi._apply_filters(
+        result=result,
+        location=location,
+        marketplaces=marketplaces,
+        excluded_urls=excluded_urls,
+    )
+    assert isinstance(result, SerpResult)
+    assert result.url == "https://www.example.ch"
+    assert result.domain == "example.ch"
+    assert result.marketplace_name == "Example"
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
 
 
 def test_serpapi_create_serp_result(serpapi):
     url = "https://www.example.ch"
     location = Location(name="Switzerland")
-    marketplaces = None
     result = serpapi._create_serp_result(
         url=url,
         location=location,
-        marketplaces=marketplaces,
     )
     assert result.url == url
     assert result.domain == "example.ch"

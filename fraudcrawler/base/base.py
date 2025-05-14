@@ -51,7 +51,7 @@ class Host(BaseModel):
     @field_validator("domains", mode="before")
     def split_domains_if_str(cls, val):
         if isinstance(val, str):
-            return [dom.strip() for dom in val.split(",")]
+            return [dom.strip().lower() for dom in val.split(",")]
         return val
 
 
