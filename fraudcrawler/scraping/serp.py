@@ -158,23 +158,32 @@ class SerpApi(AsyncClient):
         return f".{country_code}" in url.lower() or ".com" in url.lower()
 
     @staticmethod
-    def _is_excluded_url(domain: str, excluded_urls: List[Host]) -> bool:
-        """Checks if the domain is in the excluded URLs.
+    def _domain_is_present(domain: str, hosts: List[Host]) -> bool:
+        """Checks if the domain is present in the list of hosts.
 
         Note:
-            By checking `if dom == excl or dom.endswith(f".{excl}")` we also
-            check for subdomains. For example, if the domain is
-            `link.springer.com` and the excluded URL is `springer.com`,
-            it will be excluded.
+            By checking `if domain == hst_dom or domain.endswith(f".{hst_dom}")`
+            it also checks for subdomains. For example, if the domain is
+            `link.springer.com` and the host domain is `springer.com`,
+            it will be detected as being present in the hosts.
+
+        Args:
+            domain: The domain to check.
+            hosts: The list of hosts to check against.
+        """
+        for hst_dom in [dom for hst in hosts for dom in hst.domains]:
+            if domain == hst_dom or domain.endswith(f".{hst_dom}"):
+                return True
+        return False
+
+    def _is_excluded_url(self, domain: str, excluded_urls: List[Host]) -> bool:
+        """Checks if the domain is in the excluded URLs.
 
         Args:
             domain: The domain to check.
             excluded_urls: The list of excluded URLs.
         """
-        for excl in [dom for excl in excluded_urls for dom in excl.domains]:
-            if domain == excl or domain.endswith(f".{excl}"):
-                return True
-        return False
+        return self._domain_is_present(domain=domain, hosts=excluded_urls)
 
     def _apply_filters(
         self,
@@ -194,7 +203,7 @@ class SerpApi(AsyncClient):
         domain = result.domain
         # Check if the URL is in the marketplaces (if yes, keep the result un-touched)
         if marketplaces:
-            if domain in [dom for host in marketplaces for dom in host.domains]:
+            if self._domain_is_present(domain=domain, hosts=marketplaces):
                 return result
 
         # Check if the URL has the included country code
@@ -235,9 +244,7 @@ class SerpApi(AsyncClient):
         if marketplaces:
             try:
                 marketplace_name = next(
-                    mp.name
-                    for mp in marketplaces
-                    if domain in [d for d in mp.domains]
+                    mp.name for mp in marketplaces if domain in [d for d in mp.domains]
                 )
             except StopIteration:
                 logger.warning(f'Failed to find marketplace for domain="{domain}".')
