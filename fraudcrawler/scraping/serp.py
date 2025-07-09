@@ -25,10 +25,7 @@ class SerpApi(AsyncClient):
     """A client to interact with the SerpApi for performing searches."""
 
     _endpoint = "https://serpapi.com/search"
-    _engine_marketplace_map = {
-        "google": "Google",
-        "google_shopping": "Google Shopping"
-    }
+    _engine_marketplace_map = {"google": "Google", "google_shopping": "Google Shopping"}
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
 
     def __init__(
@@ -81,7 +78,7 @@ class SerpApi(AsyncClient):
         language: Language,
         location: Location,
         num_results: int,
-    ) -> List[str]:
+    ) -> List[tuple[str, str]]:
         """Performs a search using SerpApi and returns the URLs of the results.
 
         Args:
@@ -126,7 +123,7 @@ class SerpApi(AsyncClient):
             while attempts < self._max_retries:
                 try:
                     logger.debug(
-                        f'Performing SerpAPI search with q="{search_string}" using engine="{engine}" (Attempt {attempts + 1}).'
+                        f'Performing SerpAPI search with q="{search_string}" (Attempt {attempts + 1}).'
                     )
                     response = await self.get(url=self._endpoint, params=params)
                     break
@@ -139,21 +136,37 @@ class SerpApi(AsyncClient):
             if err is not None:
                 raise err
 
-            # Get the organic_results
-            results = response.get("organic_results")
-            if results is None:
-                logger.warning(
-                    f'No organic_results key in SerpAPI results for search_string="{search_string}" with engine="{engine}".'
-                )
-                continue
+            if engine == "google_shopping":
+                # Get the shopping_results
+                results = response.get("shopping_results")
+                if results is None:
+                    logger.warning(
+                        f'No shopping_results key in SerpAPI results for search_string="{search_string}" with engine="{engine}".'
+                    )
+                    continue
+            elif engine == "google":
+                # Get the organic_results
+                results = response.get("organic_results")
+                if results is None:
+                    logger.warning(
+                        f'No organic_results key in SerpAPI results for search_string="{search_string}" with engine="{engine}".'
+                    )
+                    continue
+            else:
+                raise ValueError(f"Invalid engine: {engine}")
 
             # Extract urls and track which engine found them
-            urls = [res.get("link") for res in results]
+            urls = []
+            for res in results:
+                if engine == "google_shopping":
+                    url = res.get("product_link")
+                else:
+                    url = res.get("link")
+                if url is not None:  # Only add non-None URLs
+                    urls.append(url)
+
             for url in urls:
                 all_urls.append((url, engine))
-            logger.debug(
-                f'Found {len(urls)} URLs from SerpApi search for q="{search_string}" with engine="{engine}".'
-            )
 
         logger.debug(
             f'Found total of {len(all_urls)} URLs from SerpApi search for q="{search_string}".'
@@ -251,7 +264,7 @@ class SerpApi(AsyncClient):
         location: Location,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
-        engine: str = None,
+        engine: str | None = None,
     ) -> SerpResult:
         """From a given url it creates the class:`SerpResult` instance.
 
@@ -265,10 +278,15 @@ class SerpApi(AsyncClient):
         """
         # Get marketplace name
         domain = self._get_domain(url=url)
-        
+
         # Select marketplace name based on engine
-        marketplace_name = self._engine_marketplace_map.get(engine, "Google")  # Default to "Google"
-            
+        if engine is None:
+            marketplace_name = "Google"  # Default to "Google"
+        else:
+            marketplace_name = self._engine_marketplace_map.get(
+                engine, "Google"
+            )  # Default to "Google"
+
         if marketplaces:
             try:
                 marketplace_name = next(
