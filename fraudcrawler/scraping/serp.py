@@ -25,8 +25,10 @@ class SerpApi(AsyncClient):
     """A client to interact with the SerpApi for performing searches."""
 
     _endpoint = "https://serpapi.com/search"
-    _engine = "google"
-    _default_marketplace_name = "Google"
+    _engine_marketplace_map = {
+        "google": "Google",
+        "google_shopping": "Google Shopping"
+    }
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
 
     def __init__(
@@ -99,53 +101,64 @@ class SerpApi(AsyncClient):
             num: The number of results to return.
             api_key: The API key to use for the search.
         """
-        # Setup the parameters
-        params = {
-            "engine": self._engine,
-            "q": search_string,
-            "google_domain": f"google.{location.code}",
-            "location_requested": location.name,
-            "location_used": location.name,
-            "tbs": f"ctr:{location.code.upper()}&cr:country{location.code.upper()}",
-            "gl": location.code,
-            "hl": language.code,
-            "num": num_results,
-            "api_key": self._api_key,
-        }
 
-        # Perform the request
-        attempts = 0
-        err = None
-        while attempts < self._max_retries:
-            try:
-                logger.debug(
-                    f'Performing SerpAPI search with q="{search_string}" (Attempt {attempts + 1}).'
+        all_urls = []
+
+        # Search with each engine
+        for engine in self._engine_marketplace_map.keys():
+            # Setup the parameters
+            params = {
+                "engine": engine,
+                "q": search_string,
+                "google_domain": f"google.{location.code}",
+                "location_requested": location.name,
+                "location_used": location.name,
+                "tbs": f"ctr:{location.code.upper()}&cr:country{location.code.upper()}",
+                "gl": location.code,
+                "hl": language.code,
+                "num": num_results,
+                "api_key": self._api_key,
+            }
+
+            # Perform the request
+            attempts = 0
+            err = None
+            while attempts < self._max_retries:
+                try:
+                    logger.debug(
+                        f'Performing SerpAPI search with q="{search_string}" using engine="{engine}" (Attempt {attempts + 1}).'
+                    )
+                    response = await self.get(url=self._endpoint, params=params)
+                    break
+                except Exception as e:
+                    logger.error(f"SerpAPI search failed with error: {e}.")
+                    err = e
+                attempts += 1
+                if attempts < self._max_retries:
+                    await asyncio.sleep(self._retry_delay)
+            if err is not None:
+                raise err
+
+            # Get the organic_results
+            results = response.get("organic_results")
+            if results is None:
+                logger.warning(
+                    f'No organic_results key in SerpAPI results for search_string="{search_string}" with engine="{engine}".'
                 )
-                response = await self.get(url=self._endpoint, params=params)
-                break
-            except Exception as e:
-                logger.error(f"SerpAPI search failed with error: {e}.")
-                err = e
-            attempts += 1
-            if attempts < self._max_retries:
-                await asyncio.sleep(self._retry_delay)
-        if err is not None:
-            raise err
+                continue
 
-        # Get the organic_results
-        results = response.get("organic_results")
-        if results is None:
-            logger.warning(
-                f'No organic_results key in SerpAPI results for search_string="{search_string}".'
+            # Extract urls and track which engine found them
+            urls = [res.get("link") for res in results]
+            for url in urls:
+                all_urls.append((url, engine))
+            logger.debug(
+                f'Found {len(urls)} URLs from SerpApi search for q="{search_string}" with engine="{engine}".'
             )
-            return []
 
-        # Extract urls
-        urls = [res.get("link") for res in results]
         logger.debug(
-            f'Found {len(urls)} URLs from SerpApi search for q="{search_string}".'
+            f'Found total of {len(all_urls)} URLs from SerpApi search for q="{search_string}".'
         )
-        return urls
+        return all_urls
 
     @staticmethod
     def _relevant_country_code(url: str, country_code: str) -> bool:
@@ -238,6 +251,7 @@ class SerpApi(AsyncClient):
         location: Location,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
+        engine: str = None,
     ) -> SerpResult:
         """From a given url it creates the class:`SerpResult` instance.
 
@@ -247,10 +261,14 @@ class SerpApi(AsyncClient):
             url: The URL to be processed.
             location:  The location to use for the query.
             marketplaces: The list of marketplaces to compare the URL against.
+            engine: The search engine used to find this URL.
         """
         # Get marketplace name
         domain = self._get_domain(url=url)
-        marketplace_name = self._default_marketplace_name
+        
+        # Select marketplace name based on engine
+        marketplace_name = self._engine_marketplace_map.get(engine, "Google")  # Default to "Google"
+            
         if marketplaces:
             try:
                 marketplace_name = next(
@@ -314,15 +332,16 @@ class SerpApi(AsyncClient):
         )
 
         # Form the SerpResult objects
-        results = [
-            self._create_serp_result(
+        results = []
+        for url, engine in urls:
+            result = self._create_serp_result(
                 url=url,
                 location=location,
                 marketplaces=marketplaces,
                 excluded_urls=excluded_urls,
+                engine=engine,
             )
-            for url in urls
-        ]
+            results.append(result)
 
         num_non_filtered = len([res for res in results if not res.filtered])
         logger.info(
