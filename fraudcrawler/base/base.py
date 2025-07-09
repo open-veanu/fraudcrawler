@@ -6,6 +6,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic_settings import BaseSettings
+import re
 from typing import List
 
 import aiohttp
@@ -48,11 +49,17 @@ class Host(BaseModel):
     name: str
     domains: str | List[str]
 
+    @staticmethod
+    def _normalize_domain(domain: str) -> str:
+        """Make it lowercase and strip 'www.' and 'https?://' prefixes from the domain."""
+        domain = domain.strip().lower()
+        return re.sub(r"^(https?://)?(www\.)?", "", domain)
+
     @field_validator("domains", mode="before")
-    def split_domains_if_str(cls, val):
+    def normalize_domains(cls, val):
         if isinstance(val, str):
             val = val.split(",")
-        return [dom.strip().lower() for dom in val]
+        return [cls._normalize_domain(dom.strip()) for dom in val]
 
 
 class Location(BaseModel):

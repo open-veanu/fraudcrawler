@@ -29,6 +29,13 @@ def test_host():
     assert host.name == "Galaxus"
     assert host.domains == ["galaxus.ch", "digitec.ch", "example.com"]
 
+    host = Host(
+        name="Galaxus",
+        domains="www.galaxus.ch, https://digitec.ch, https://www.example.com, my.example.com",
+    )
+    assert host.name == "Galaxus"
+    assert host.domains == ["galaxus.ch", "digitec.ch", "example.com", "my.example.com"]
+
 
 def test_location():
     location = Location(name="Switzerland", code="ch")
