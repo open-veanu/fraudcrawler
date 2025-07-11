@@ -148,7 +148,7 @@ class SerpApi(AsyncClient):
             f'engine="{engine}", '
             f'location="{location.name}", '
             f'language="{language.code}", '
-            f'num_results={num_results}.'
+            f"num_results={num_results}."
         )
 
         # Setup the parameters
@@ -368,15 +368,18 @@ class SerpApi(AsyncClient):
             location=location,
             num_results=num_results,
         )
-        results.extend([
-            self._create_serp_result(
-                url=url,
-                location=location,
-                marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
-                engine=engine,
-            ) for url in urls
-        ])
+        results.extend(
+            [
+                self._create_serp_result(
+                    url=url,
+                    location=location,
+                    marketplaces=marketplaces,
+                    excluded_urls=excluded_urls,
+                    engine=engine,
+                )
+                for url in urls
+            ]
+        )
 
         # Perform the google shopping search
         engine = "google_shopping"
@@ -387,15 +390,18 @@ class SerpApi(AsyncClient):
             location=location,
             num_results=num_results,
         )
-        results.extend([
-            self._create_serp_result(
-                url=url,
-                location=location,
-                marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
-                engine=engine,
-            ) for url in urls
-        ])
+        results.extend(
+            [
+                self._create_serp_result(
+                    url=url,
+                    location=location,
+                    marketplaces=marketplaces,
+                    excluded_urls=excluded_urls,
+                    engine=engine,
+                )
+                for url in urls
+            ]
+        )
 
         num_non_filtered = len([res for res in results if not res.filtered])
         logger.info(
