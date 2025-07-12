@@ -31,12 +31,31 @@ def zyteapi():
 
 
 @pytest.mark.asyncio
-async def test_serpapi_search(serpapi):
+async def test_serpapi_google_search(serpapi):
     search_string = "sildenafil"
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
     urls = await serpapi._search(
+        engine="google",
+        search_string=search_string,
+        language=language,
+        location=location,
+        num_results=num_results,
+    )
+    assert 0 < len(urls) <= num_results
+    assert all(isinstance(url, str) for url in urls)
+    assert all(url.startswith("http") for url in urls)
+
+
+@pytest.mark.asyncio
+async def test_serpapi_google_shopping_search(serpapi):
+    search_string = "sildenafil"
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+    num_results = 5
+    urls = await serpapi._search(
+        engine="google_shopping",
         search_string=search_string,
         language=language,
         location=location,
@@ -137,38 +156,45 @@ def test_serpapi_apply_filters(serpapi):
 
 
 def test_serpapi_create_serp_result(serpapi):
+    engine = "google"
     url = "https://www.example.ch"
     location = Location(name="Switzerland")
     result = serpapi._create_serp_result(
+        engine=engine,
         url=url,
         location=location,
     )
+    assert isinstance(result, SerpResult)
     assert result.url == url
     assert result.domain == "example.ch"
-    assert result.marketplace_name == serpapi._default_marketplace_name
+    assert result.marketplace_name == "Google"
 
     marketplaces = [
         Host(name="Galaxus", domains="galaxus.ch"),
         Host(name="Example", domains="example.ch"),
     ]
     result = serpapi._create_serp_result(
+        engine=engine,
         url=url,
         location=location,
         marketplaces=marketplaces,
     )
+    assert isinstance(result, SerpResult)
     assert result.url == url
     assert result.domain == "example.ch"
     assert result.marketplace_name == "Example"
 
     marketplaces = [Host(name="Galaxus", domains="galaxus.ch")]
     serp_result = serpapi._create_serp_result(
+        engine=engine,
         url=url,
         location=location,
         marketplaces=marketplaces,
     )
+    assert isinstance(serp_result, SerpResult)
     assert serp_result.url == url
     assert serp_result.domain == "example.ch"
-    assert serp_result.marketplace_name == serpapi._default_marketplace_name
+    assert serp_result.marketplace_name == "Google"
 
 
 @pytest.mark.asyncio
