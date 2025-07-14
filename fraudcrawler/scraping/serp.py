@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 class SerpResult(BaseModel):
     """Model for a single search result from SerpApi."""
-
     url: str
     domain: str
     marketplace_name: str
@@ -24,7 +23,6 @@ class SerpResult(BaseModel):
 
 class SearchEngine(Enum):
     """Enum for the supported search engines."""
-
     GOOGLE = "google"
     GOOGLE_SHOPPING = "google_shopping"
 
@@ -33,7 +31,10 @@ class SerpApi(AsyncClient):
     """A client to interact with the SerpApi for performing searches."""
 
     _endpoint = "https://serpapi.com/search"
-    _engine_marketplace_map = {"google": "Google", "google_shopping": "Google Shopping"}
+    _engine_marketplace_names = {
+        SearchEngine.GOOGLE.value: "Google",
+        SearchEngine.GOOGLE_SHOPPING.value: "Google Shopping"
+    }
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
 
     def __init__(
@@ -142,10 +143,10 @@ class SerpApi(AsyncClient):
             num: The number of results to return.
             api_key: The API key to use for the search.
         """
-        if engine not in self._engine_marketplace_map:
+        if engine not in self._engine_marketplace_names:
             raise ValueError(
                 f"Invalid SerpAPI search engine: {engine}. "
-                f"Supported engines are: {list(self._engine_marketplace_map.keys())}."
+                f"Supported engines are: {list(self._engine_marketplace_names.keys())}."
             )
         logger.debug(
             f'Performing SerpAPI search with engine="{engine}", '
@@ -305,7 +306,7 @@ class SerpApi(AsyncClient):
         domain = self._get_domain(url=url)
 
         # Select marketplace name based on engine
-        marketplace_name = self._engine_marketplace_map[engine]
+        marketplace_name = self._engine_marketplace_names[engine]
 
         if marketplaces:
             try:
