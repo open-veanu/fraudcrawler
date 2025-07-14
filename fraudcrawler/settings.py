@@ -9,7 +9,7 @@ ROOT_DIR = Path(__file__).parents[1]
 GOOGLE_LOCATIONS_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-locations.json"
 GOOGLE_LANGUAGES_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-languages.json"
 SERP_DEFAULT_COUNTRY_CODES = [
-    ".com",
+    # ".com",
 ]
 
 # Enrichment settings

@@ -1,4 +1,5 @@
 import asyncio
+from enum import Enum
 import logging
 from pydantic import BaseModel
 from typing import List
@@ -19,6 +20,13 @@ class SerpResult(BaseModel):
     marketplace_name: str
     filtered: bool = False
     filtered_at_stage: str | None = None
+
+
+class SearchEngine(Enum):
+    """Enum for the supported search engines."""
+
+    GOOGLE = "google"
+    GOOGLE_SHOPPING = "google_shopping"
 
 
 class SerpApi(AsyncClient):
@@ -89,7 +97,7 @@ class SerpApi(AsyncClient):
             results = response.get("organic_results")
             if results is None:
                 logger.warning(
-                    f'No organic_results key in SerpAPI results for with engine="{engine}".'
+                    f'No SerpAPI results for engine="{engine}".'
                 )
             else:
                 urls = [url for res in results if (url := res.get("link"))]
@@ -99,7 +107,7 @@ class SerpApi(AsyncClient):
             results = response.get("shopping_results")
             if results is None:
                 logger.warning(
-                    f'No shopping_results key in SerpAPI results with engine="{engine}".'
+                    f'No SerpAPI results for engine="{engine}".'
                 )
             else:
                 urls = [url for res in results if (url := res.get("product_link"))]
@@ -131,7 +139,7 @@ class SerpApi(AsyncClient):
             q: The search string (with potentially added site: parameters).
             google_domain: The Google domain to use for the search (e.g. google.[com]).
             location_[requested|used]: The location to use for the search.
-            tbs: The time-based search parameters (e.g. 'ctr:CH&cr:countryCH').
+            tbs: The to-be-searched  parameters (e.g. 'ctr:CH' or 'cr:countryCH').
             gl: The country code to use for the search.
             hl: The language code to use for the search.
             num: The number of results to return.
@@ -142,10 +150,9 @@ class SerpApi(AsyncClient):
                 f"Invalid SerpAPI search engine: {engine}. "
                 f"Supported engines are: {list(self._engine_marketplace_map.keys())}."
             )
-
         logger.debug(
-            f'Performing SerpAPI search with q="{search_string}", '
-            f'engine="{engine}", '
+            f'Performing SerpAPI search with engine="{engine}", '
+            f'q="{search_string}", '
             f'location="{location.name}", '
             f'language="{language.code}", '
             f"num_results={num_results}."
@@ -158,7 +165,7 @@ class SerpApi(AsyncClient):
             "google_domain": f"google.{location.code}",
             "location_requested": location.name,
             "location_used": location.name,
-            "tbs": f"ctr:{location.code.upper()}&cr:country{location.code.upper()}",
+            "tbs": f"ctr:{location.code.upper()}&tbs=cr:country{location.code.upper()}",
             "gl": location.code,
             "hl": language.code,
             "num": num_results,
@@ -328,9 +335,109 @@ class SerpApi(AsyncClient):
         )
         return result
 
+    async def _search_google(
+        self,
+        search_string: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+    ) -> List[SerpResult]:
+        """Performs a google search using SerpApi and returns SerpResults.
+
+        Args:
+            search_string: The search string (with potentially added site: parameters).
+            language: The language to use for the query ('hl' parameter).
+            location: The location to use for the query ('gl' parameter).
+            num_results: Max number of results to return.
+            marketplaces: The marketplaces to include in the search.
+            excluded_urls: The URLs to exclude from the search.
+        """
+        engine = SearchEngine.GOOGLE.value
+
+        # Perform the search
+        urls = await self._search(
+            engine=engine,
+            search_string=search_string,
+            language=language,
+            location=location,
+            num_results=num_results,
+        )
+
+        # Create SerpResult objects from the URLs
+        results = [
+            self._create_serp_result(
+                url=url,
+                location=location,
+                marketplaces=marketplaces,
+                excluded_urls=excluded_urls,
+                engine=engine,
+            )
+            for url in urls
+        ]
+
+        logger.debug(
+            f'Produced {len(results)} results from SerpApi search with q="{search_string}".'
+        )
+        return results
+    
+    async def _search_google_shopping(
+        self,
+        search_string: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+    ) -> List[SerpResult]:
+        """Performs a google search using SerpApi and returns SerpResults.
+
+        Args:
+            search_string: The search string (with potentially added site: parameters).
+            language: The language to use for the query ('hl' parameter).
+            location: The location to use for the query ('gl' parameter).
+            num_results: Max number of results to return.
+            marketplaces: The marketplaces to include in the search.
+            excluded_urls: The URLs to exclude from the search.
+        """
+        engine = SearchEngine.GOOGLE_SHOPPING.value
+
+        # Perform the search
+        urls = await self._search(
+            engine=engine,
+            search_string=search_string,
+            language=language,
+            location=location,
+            num_results=num_results,
+        )
+
+        # !!! NOTE !!!: Google Shopping results do not properly support the 'num' parameter,
+        # so we might get more results than requested. This is a known issue with SerpAPI
+        # and Google Shopping searches (see https://github.com/serpapi/public-roadmap/issues/1858)
+        urls = urls[:num_results]
+
+        # Create SerpResult objects from the URLs
+        results = [
+            self._create_serp_result(
+                url=url,
+                location=location,
+                marketplaces=marketplaces,
+                excluded_urls=excluded_urls,
+                engine=engine,
+            )
+            for url in urls
+        ]
+
+        logger.debug(
+            f'Produced {len(results)} results from SerpApi search with q="{search_string}".'
+        )
+        return results
+
     async def apply(
         self,
         search_term: str,
+        search_engines: List[SearchEngine],
         language: Language,
         location: Location,
         num_results: int,
@@ -356,52 +463,32 @@ class SerpApi(AsyncClient):
             sites = [dom for host in marketplaces for dom in host.domains]
             search_string += " site:" + " OR site:".join(s for s in sites)
 
-        # Setup the results list
+        # Initialize the results list
         results: List[SerpResult] = []
-
+        
         # Perform the google search
-        engine = "google"
-        urls = await self._search(
-            engine="google",
-            search_string=search_string,
-            language=language,
-            location=location,
-            num_results=num_results,
-        )
-        results.extend(
-            [
-                self._create_serp_result(
-                    url=url,
-                    location=location,
-                    marketplaces=marketplaces,
-                    excluded_urls=excluded_urls,
-                    engine=engine,
-                )
-                for url in urls
-            ]
-        )
+        if SearchEngine.GOOGLE in search_engines:
+            ggl_res = await self._search_google(
+                search_string=search_string,
+                language=language,
+                location=location,
+                num_results=num_results,
+                marketplaces=marketplaces,
+                excluded_urls=excluded_urls,
+            )
+            results.extend(ggl_res)
 
         # Perform the google shopping search
-        engine = "google_shopping"
-        urls = await self._search(
-            engine=engine,
-            search_string=search_string,
-            language=language,
-            location=location,
-            num_results=num_results,
-        )
-        results.extend(
-            [
-                self._create_serp_result(
-                    url=url,
-                    location=location,
-                    marketplaces=marketplaces,
-                    excluded_urls=excluded_urls,
-                    engine=engine,
-                )
-                for url in urls
-            ]
-        )
+        if SearchEngine.GOOGLE_SHOPPING in search_engines:
+            shp_res = await self._search_google_shopping(
+                search_string=search_string,
+                language=language,
+                location=location,
+                num_results=num_results,
+                marketplaces=marketplaces,
+                excluded_urls=excluded_urls,
+            )
+            results.extend(shp_res)
 
         num_non_filtered = len([res for res in results if not res.filtered])
         logger.info(

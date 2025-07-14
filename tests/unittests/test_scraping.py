@@ -2,7 +2,7 @@ import pytest
 
 from fraudcrawler.base.base import Setup, Host, Location, Language
 from fraudcrawler.scraping.serp import SerpResult
-from fraudcrawler import SerpApi, Enricher, ZyteApi
+from fraudcrawler import SerpApi, SearchEngine, Enricher, ZyteApi
 from fraudcrawler.scraping.enrich import Keyword
 
 
@@ -32,38 +32,36 @@ def zyteapi():
 
 @pytest.mark.asyncio
 async def test_serpapi_google_search(serpapi):
-    search_string = "sildenafil"
+    search_string = "Kaffee"
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    urls = await serpapi._search(
-        engine="google",
+    results = await serpapi._search_google(
         search_string=search_string,
         language=language,
         location=location,
         num_results=num_results,
     )
-    assert 0 < len(urls) <= num_results
-    assert all(isinstance(url, str) for url in urls)
-    assert all(url.startswith("http") for url in urls)
+    assert 0 < len(results) <= num_results
+    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
 
 
 @pytest.mark.asyncio
 async def test_serpapi_google_shopping_search(serpapi):
-    search_string = "sildenafil"
+    search_string = "Kaffee"
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    urls = await serpapi._search(
-        engine="google_shopping",
+    results = await serpapi._search_google_shopping(
         search_string=search_string,
         language=language,
         location=location,
         num_results=num_results,
     )
-    assert 0 < len(urls) <= num_results
-    assert all(isinstance(url, str) for url in urls)
-    assert all(url.startswith("http") for url in urls)
+    assert 0 < len(results) <= num_results
+    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
 
 
 def test_serpapi_apply_filters(serpapi):
@@ -206,6 +204,7 @@ async def test_serpapi_apply_marketplaces(serpapi):
     num_results = 5
     results = await serpapi.apply(
         search_term=search_term,
+        search_engines=[SearchEngine.GOOGLE],
         language=language,
         location=location,
         num_results=num_results,
@@ -224,6 +223,7 @@ async def test_serpapi_apply_excluded_urls(serpapi):
     num_results = 5
     results = await serpapi.apply(
         search_term=search_term,
+        search_engines=[SearchEngine.GOOGLE, SearchEngine.GOOGLE_SHOPPING],
         language=language,
         location=location,
         num_results=num_results,
