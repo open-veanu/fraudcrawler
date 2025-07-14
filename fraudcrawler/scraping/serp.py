@@ -96,9 +96,7 @@ class SerpApi(AsyncClient):
             # Get the organic_results
             results = response.get("organic_results")
             if results is None:
-                logger.warning(
-                    f'No SerpAPI results for engine="{engine}".'
-                )
+                logger.warning(f'No SerpAPI results for engine="{engine}".')
             else:
                 urls = [url for res in results if (url := res.get("link"))]
 
@@ -106,9 +104,7 @@ class SerpApi(AsyncClient):
             # Get the shopping_results
             results = response.get("shopping_results")
             if results is None:
-                logger.warning(
-                    f'No SerpAPI results for engine="{engine}".'
-                )
+                logger.warning(f'No SerpAPI results for engine="{engine}".')
             else:
                 urls = [url for res in results if (url := res.get("product_link"))]
 
@@ -381,7 +377,7 @@ class SerpApi(AsyncClient):
             f'Produced {len(results)} results from SerpApi search with q="{search_string}".'
         )
         return results
-    
+
     async def _search_google_shopping(
         self,
         search_string: str,
@@ -465,7 +461,7 @@ class SerpApi(AsyncClient):
 
         # Initialize the results list
         results: List[SerpResult] = []
-        
+
         # Perform the google search
         if SearchEngine.GOOGLE in search_engines:
             ggl_res = await self._search_google(
