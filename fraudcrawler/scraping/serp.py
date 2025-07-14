@@ -377,7 +377,7 @@ class SerpApi(AsyncClient):
         ]
 
         logger.debug(
-            f'Produced {len(results)} results from SerpApi search with q="{search_string}".'
+            f'Produced {len(results)} results from google search with q="{search_string}".'
         )
         return results
 
@@ -429,7 +429,7 @@ class SerpApi(AsyncClient):
         ]
 
         logger.debug(
-            f'Produced {len(results)} results from SerpApi search with q="{search_string}".'
+            f'Produced {len(results)} results from google shopping search with q="{search_string}".'
         )
         return results
 
@@ -491,6 +491,6 @@ class SerpApi(AsyncClient):
 
         num_non_filtered = len([res for res in results if not res.filtered])
         logger.info(
-            f'Produced {num_non_filtered} results from SerpApi search with q="{search_string}".'
+            f'Produced a total of {num_non_filtered} results from SerpApi search with q="{search_string}".'
         )
         return results
