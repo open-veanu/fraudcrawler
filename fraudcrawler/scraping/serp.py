@@ -1,4 +1,5 @@
 import asyncio
+from enum import Enum
 import logging
 from pydantic import BaseModel
 from typing import List
@@ -13,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 class SerpResult(BaseModel):
     """Model for a single search result from SerpApi."""
-
     url: str
     domain: str
     marketplace_name: str
@@ -21,12 +21,20 @@ class SerpResult(BaseModel):
     filtered_at_stage: str | None = None
 
 
+class SearchEngine(Enum):
+    """Enum for the supported search engines."""
+    GOOGLE = "google"
+    GOOGLE_SHOPPING = "google_shopping"
+
+
 class SerpApi(AsyncClient):
     """A client to interact with the SerpApi for performing searches."""
 
     _endpoint = "https://serpapi.com/search"
-    _engine = "google"
-    _default_marketplace_name = "Google"
+    _engine_marketplace_names = {
+        SearchEngine.GOOGLE.value: "Google",
+        SearchEngine.GOOGLE_SHOPPING.value: "Google Shopping"
+    }
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
 
     def __init__(
@@ -73,8 +81,42 @@ class SerpApi(AsyncClient):
             hostname = hostname[4:]
         return hostname.lower()
 
+    @staticmethod
+    def _extract_search_results(response: dict, engine: str) -> List[str]:
+        """Extracts search results from the response based on the engine type.
+
+        Args:
+            response: The response from the SerpApi search.
+            engine: The search engine used.
+
+        Returns:
+            A list of URLs extracted from the response.
+        """
+        urls = []
+        if engine == SearchEngine.GOOGLE.value:
+            # Get the organic_results
+            results = response.get("organic_results")
+            if results is None:
+                logger.warning(f'No SerpAPI results for engine="{engine}".')
+            else:
+                urls = [url for res in results if (url := res.get("link"))]
+
+        elif engine == SearchEngine.GOOGLE_SHOPPING.value:
+            # Get the shopping_results
+            results = response.get("shopping_results")
+            if results is None:
+                logger.warning(f'No SerpAPI results for engine="{engine}".')
+            else:
+                urls = [url for res in results if (url := res.get("product_link"))]
+
+        else:
+            raise ValueError(f"Invalid SerpAPI search engine: {engine}")
+
+        return urls
+
     async def _search(
         self,
+        engine: str,
         search_string: str,
         language: Language,
         location: Location,
@@ -83,6 +125,7 @@ class SerpApi(AsyncClient):
         """Performs a search using SerpApi and returns the URLs of the results.
 
         Args:
+            engine: The search engine to use.
             search_string: The search string (with potentially added site: parameters).
             language: The language to use for the query ('hl' parameter).
             location: The location to use for the query ('gl' parameter).
@@ -93,20 +136,35 @@ class SerpApi(AsyncClient):
             q: The search string (with potentially added site: parameters).
             google_domain: The Google domain to use for the search (e.g. google.[com]).
             location_[requested|used]: The location to use for the search.
-            tbs: The time-based search parameters (e.g. 'ctr:CH&cr:countryCH').
+            tbs: The to-be-searched  parameters (e.g. 'ctr:CH').
+            cr: The country code to limit the search to (e.g. 'countryCH').
             gl: The country code to use for the search.
             hl: The language code to use for the search.
             num: The number of results to return.
             api_key: The API key to use for the search.
         """
+        if engine not in self._engine_marketplace_names:
+            raise ValueError(
+                f"Invalid SerpAPI search engine: {engine}. "
+                f"Supported engines are: {list(self._engine_marketplace_names.keys())}."
+            )
+        logger.debug(
+            f'Performing SerpAPI search with engine="{engine}", '
+            f'q="{search_string}", '
+            f'location="{location.name}", '
+            f'language="{language.code}", '
+            f"num_results={num_results}."
+        )
+
         # Setup the parameters
         params = {
-            "engine": self._engine,
+            "engine": engine,
             "q": search_string,
             "google_domain": f"google.{location.code}",
             "location_requested": location.name,
             "location_used": location.name,
-            "tbs": f"ctr:{location.code.upper()}&cr:country{location.code.upper()}",
+            "tbs": f"ctr:{location.code.upper()}",
+            "cr": f"country{location.code.upper()}",
             "gl": location.code,
             "hl": language.code,
             "num": num_results,
@@ -132,18 +190,11 @@ class SerpApi(AsyncClient):
         if err is not None:
             raise err
 
-        # Get the organic_results
-        results = response.get("organic_results")
-        if results is None:
-            logger.warning(
-                f'No organic_results key in SerpAPI results for search_string="{search_string}".'
-            )
-            return []
+        # Extract the URLs from the response
+        urls = self._extract_search_results(response=response, engine=engine)
 
-        # Extract urls
-        urls = [res.get("link") for res in results]
         logger.debug(
-            f'Found {len(urls)} URLs from SerpApi search for q="{search_string}".'
+            f'Found total of {len(urls)} URLs from SerpApi search for q="{search_string}" and engine="{engine}".'
         )
         return urls
 
@@ -234,6 +285,7 @@ class SerpApi(AsyncClient):
 
     def _create_serp_result(
         self,
+        engine: str,
         url: str,
         location: Location,
         marketplaces: List[Host] | None = None,
@@ -244,13 +296,18 @@ class SerpApi(AsyncClient):
         If marketplaces is None or the domain can not be extracted, the default marketplace name is used.
 
         Args:
+            engine: The search engine used.
             url: The URL to be processed.
             location:  The location to use for the query.
             marketplaces: The list of marketplaces to compare the URL against.
+            excluded_urls: The list of excluded URLs.
         """
         # Get marketplace name
         domain = self._get_domain(url=url)
-        marketplace_name = self._default_marketplace_name
+
+        # Select marketplace name based on engine
+        marketplace_name = self._engine_marketplace_names[engine]
+
         if marketplaces:
             try:
                 marketplace_name = next(
@@ -277,9 +334,109 @@ class SerpApi(AsyncClient):
         )
         return result
 
+    async def _search_google(
+        self,
+        search_string: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+    ) -> List[SerpResult]:
+        """Performs a google search using SerpApi and returns SerpResults.
+
+        Args:
+            search_string: The search string (with potentially added site: parameters).
+            language: The language to use for the query ('hl' parameter).
+            location: The location to use for the query ('gl' parameter).
+            num_results: Max number of results to return.
+            marketplaces: The marketplaces to include in the search.
+            excluded_urls: The URLs to exclude from the search.
+        """
+        engine = SearchEngine.GOOGLE.value
+
+        # Perform the search
+        urls = await self._search(
+            engine=engine,
+            search_string=search_string,
+            language=language,
+            location=location,
+            num_results=num_results,
+        )
+
+        # Create SerpResult objects from the URLs
+        results = [
+            self._create_serp_result(
+                url=url,
+                location=location,
+                marketplaces=marketplaces,
+                excluded_urls=excluded_urls,
+                engine=engine,
+            )
+            for url in urls
+        ]
+
+        logger.debug(
+            f'Produced {len(results)} results from google search with q="{search_string}".'
+        )
+        return results
+
+    async def _search_google_shopping(
+        self,
+        search_string: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+    ) -> List[SerpResult]:
+        """Performs a google search using SerpApi and returns SerpResults.
+
+        Args:
+            search_string: The search string (with potentially added site: parameters).
+            language: The language to use for the query ('hl' parameter).
+            location: The location to use for the query ('gl' parameter).
+            num_results: Max number of results to return.
+            marketplaces: The marketplaces to include in the search.
+            excluded_urls: The URLs to exclude from the search.
+        """
+        engine = SearchEngine.GOOGLE_SHOPPING.value
+
+        # Perform the search
+        urls = await self._search(
+            engine=engine,
+            search_string=search_string,
+            language=language,
+            location=location,
+            num_results=num_results,
+        )
+
+        # !!! NOTE !!!: Google Shopping results do not properly support the 'num' parameter,
+        # so we might get more results than requested. This is a known issue with SerpAPI
+        # and Google Shopping searches (see https://github.com/serpapi/public-roadmap/issues/1858)
+        urls = urls[:num_results]
+
+        # Create SerpResult objects from the URLs
+        results = [
+            self._create_serp_result(
+                url=url,
+                location=location,
+                marketplaces=marketplaces,
+                excluded_urls=excluded_urls,
+                engine=engine,
+            )
+            for url in urls
+        ]
+
+        logger.debug(
+            f'Produced {len(results)} results from google shopping search with q="{search_string}".'
+        )
+        return results
+
     async def apply(
         self,
         search_term: str,
+        search_engines: List[SearchEngine],
         language: Language,
         location: Location,
         num_results: int,
@@ -305,27 +462,35 @@ class SerpApi(AsyncClient):
             sites = [dom for host in marketplaces for dom in host.domains]
             search_string += " site:" + " OR site:".join(s for s in sites)
 
-        # Perform the search
-        urls = await self._search(
-            search_string=search_string,
-            language=language,
-            location=location,
-            num_results=num_results,
-        )
+        # Initialize the results list
+        results: List[SerpResult] = []
 
-        # Form the SerpResult objects
-        results = [
-            self._create_serp_result(
-                url=url,
+        # Perform the google search
+        if SearchEngine.GOOGLE in search_engines:
+            ggl_res = await self._search_google(
+                search_string=search_string,
+                language=language,
                 location=location,
+                num_results=num_results,
                 marketplaces=marketplaces,
                 excluded_urls=excluded_urls,
             )
-            for url in urls
-        ]
+            results.extend(ggl_res)
+
+        # Perform the google shopping search
+        if SearchEngine.GOOGLE_SHOPPING in search_engines:
+            shp_res = await self._search_google_shopping(
+                search_string=search_string,
+                language=language,
+                location=location,
+                num_results=num_results,
+                marketplaces=marketplaces,
+                excluded_urls=excluded_urls,
+            )
+            results.extend(shp_res)
 
         num_non_filtered = len([res for res in results if not res.filtered])
         logger.info(
-            f'Produced {num_non_filtered} results from SerpApi search with q="{search_string}".'
+            f'Produced a total of {num_non_filtered} results from SerpApi search with q="{search_string}".'
         )
         return results

@@ -2,7 +2,7 @@ import pytest
 
 from fraudcrawler.base.base import Setup, Host, Location, Language
 from fraudcrawler.scraping.serp import SerpResult
-from fraudcrawler import SerpApi, Enricher, ZyteApi
+from fraudcrawler import SerpApi, SearchEngine, Enricher, ZyteApi
 from fraudcrawler.scraping.enrich import Keyword
 
 
@@ -31,20 +31,37 @@ def zyteapi():
 
 
 @pytest.mark.asyncio
-async def test_serpapi_search(serpapi):
-    search_string = "sildenafil"
+async def test_serpapi_google_search(serpapi):
+    search_string = "Kaffee"
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    urls = await serpapi._search(
+    results = await serpapi._search_google(
         search_string=search_string,
         language=language,
         location=location,
         num_results=num_results,
     )
-    assert 0 < len(urls) <= num_results
-    assert all(isinstance(url, str) for url in urls)
-    assert all(url.startswith("http") for url in urls)
+    assert 0 < len(results) <= num_results
+    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
+
+
+@pytest.mark.asyncio
+async def test_serpapi_google_shopping_search(serpapi):
+    search_string = "Kaffee"
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+    num_results = 5
+    results = await serpapi._search_google_shopping(
+        search_string=search_string,
+        language=language,
+        location=location,
+        num_results=num_results,
+    )
+    assert 0 < len(results) <= num_results
+    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
 
 
 def test_serpapi_apply_filters(serpapi):
@@ -137,38 +154,45 @@ def test_serpapi_apply_filters(serpapi):
 
 
 def test_serpapi_create_serp_result(serpapi):
+    engine = "google"
     url = "https://www.example.ch"
     location = Location(name="Switzerland")
     result = serpapi._create_serp_result(
+        engine=engine,
         url=url,
         location=location,
     )
+    assert isinstance(result, SerpResult)
     assert result.url == url
     assert result.domain == "example.ch"
-    assert result.marketplace_name == serpapi._default_marketplace_name
+    assert result.marketplace_name == "Google"
 
     marketplaces = [
         Host(name="Galaxus", domains="galaxus.ch"),
         Host(name="Example", domains="example.ch"),
     ]
     result = serpapi._create_serp_result(
+        engine=engine,
         url=url,
         location=location,
         marketplaces=marketplaces,
     )
+    assert isinstance(result, SerpResult)
     assert result.url == url
     assert result.domain == "example.ch"
     assert result.marketplace_name == "Example"
 
     marketplaces = [Host(name="Galaxus", domains="galaxus.ch")]
     serp_result = serpapi._create_serp_result(
+        engine=engine,
         url=url,
         location=location,
         marketplaces=marketplaces,
     )
+    assert isinstance(serp_result, SerpResult)
     assert serp_result.url == url
     assert serp_result.domain == "example.ch"
-    assert serp_result.marketplace_name == serpapi._default_marketplace_name
+    assert serp_result.marketplace_name == "Google"
 
 
 @pytest.mark.asyncio
@@ -180,6 +204,7 @@ async def test_serpapi_apply_marketplaces(serpapi):
     num_results = 5
     results = await serpapi.apply(
         search_term=search_term,
+        search_engines=[SearchEngine.GOOGLE],
         language=language,
         location=location,
         num_results=num_results,
@@ -198,6 +223,7 @@ async def test_serpapi_apply_excluded_urls(serpapi):
     num_results = 5
     results = await serpapi.apply(
         search_term=search_term,
+        search_engines=[SearchEngine.GOOGLE, SearchEngine.GOOGLE_SHOPPING],
         language=language,
         location=location,
         num_results=num_results,

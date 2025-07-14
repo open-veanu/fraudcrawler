@@ -1,4 +1,4 @@
-from fraudcrawler.scraping.serp import SerpApi
+from fraudcrawler.scraping.serp import SerpApi, SearchEngine
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.zyte import ZyteApi
 from fraudcrawler.processing.processor import Processor
@@ -15,6 +15,7 @@ from fraudcrawler.base.base import (
 
 __all__ = [
     "SerpApi",
+    "SearchEngine",
     "Enricher",
     "ZyteApi",
     "Processor",

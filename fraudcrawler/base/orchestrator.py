@@ -16,7 +16,7 @@ from fraudcrawler.settings import (
     DEFAULT_N_PROC_WKRS,
 )
 from fraudcrawler.base.base import Deepness, Host, Language, Location, Prompt
-from fraudcrawler import SerpApi, Enricher, ZyteApi, Processor
+from fraudcrawler import SerpApi, SearchEngine, Enricher, ZyteApi, Processor
 
 logger = logging.getLogger(__name__)
 
@@ -387,6 +387,7 @@ class Orchestrator(ABC):
         queue: asyncio.Queue[dict | None],
         search_term: str,
         search_term_type: str,
+        search_engines: List[SearchEngine],
         language: Language,
         location: Location,
         num_results: int,
@@ -397,6 +398,7 @@ class Orchestrator(ABC):
         item = {
             "search_term": search_term,
             "search_term_type": search_term_type,
+            "search_engines": search_engines,
             "language": language,
             "location": location,
             "num_results": num_results,
@@ -410,6 +412,7 @@ class Orchestrator(ABC):
         self,
         queue: asyncio.Queue[dict | None],
         search_term: str,
+        search_engines: List[SearchEngine],
         language: Language,
         location: Location,
         deepness: Deepness,
@@ -429,6 +432,7 @@ class Orchestrator(ABC):
         await self._add_serp_items_for_search_term(
             search_term=search_term,
             search_term_type="initial",
+            search_engines=search_engines,
             num_results=deepness.num_results,
             **common_kwargs,  # type: ignore[arg-type]
         )
@@ -450,6 +454,7 @@ class Orchestrator(ABC):
                 await self._add_serp_items_for_search_term(
                     search_term=trm,
                     search_term_type="enriched",
+                    search_engines=search_engines,
                     num_results=enrichment.additional_urls_per_term,
                     **common_kwargs,  # type: ignore[arg-type]
                 )
@@ -457,6 +462,7 @@ class Orchestrator(ABC):
     async def run(
         self,
         search_term: str,
+        search_engines: List[SearchEngine],
         language: Language,
         location: Location,
         deepness: Deepness,
@@ -469,6 +475,7 @@ class Orchestrator(ABC):
 
         Args:
             search_term: The search term for the query.
+            search_engines: The list of search engines to use for the SerpAPI query.
             language: The language to use for the query.
             location: The location to use for the query.
             deepness: The search depth and enrichment details.
@@ -523,6 +530,7 @@ class Orchestrator(ABC):
         await self._add_serp_items(
             queue=serp_queue,
             search_term=search_term,
+            search_engines=search_engines,
             language=language,
             location=location,
             deepness=deepness,
