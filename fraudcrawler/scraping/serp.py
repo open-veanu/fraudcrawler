@@ -86,13 +86,13 @@ class SerpApi(AsyncClient):
 
         Args:
             response: The response from the SerpApi search.
-            engine: The search engine used ('google' or 'google_shopping').
+            engine: The search engine used.
 
         Returns:
             A list of URLs extracted from the response.
         """
         urls = []
-        if engine == "google":
+        if engine == SearchEngine.GOOGLE.value:
             # Get the organic_results
             results = response.get("organic_results")
             if results is None:
@@ -100,7 +100,7 @@ class SerpApi(AsyncClient):
             else:
                 urls = [url for res in results if (url := res.get("link"))]
 
-        elif engine == "google_shopping":
+        elif engine == SearchEngine.GOOGLE_SHOPPING.value:
             # Get the shopping_results
             results = response.get("shopping_results")
             if results is None:
