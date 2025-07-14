@@ -116,7 +116,6 @@ class FraudCrawlerClient(Orchestrator):
             ]
 
         # Run the pipeline by calling the orchestrator's run method
-        search_engines = search_engines or list(SearchEngine)
         asyncio.run(
             super().run(
                 search_term=search_term,
