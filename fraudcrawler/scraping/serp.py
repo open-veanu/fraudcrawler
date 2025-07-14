@@ -135,7 +135,8 @@ class SerpApi(AsyncClient):
             q: The search string (with potentially added site: parameters).
             google_domain: The Google domain to use for the search (e.g. google.[com]).
             location_[requested|used]: The location to use for the search.
-            tbs: The to-be-searched  parameters (e.g. 'ctr:CH' or 'cr:countryCH').
+            tbs: The to-be-searched  parameters (e.g. 'ctr:CH').
+            cr: The country code to limit the search to (e.g. 'countryCH').
             gl: The country code to use for the search.
             hl: The language code to use for the search.
             num: The number of results to return.
