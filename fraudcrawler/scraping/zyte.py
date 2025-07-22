@@ -203,7 +203,7 @@ class ZyteApi(AsyncClient):
 
         The input argument is a dictionary of the following structure:
             {
-                "httpResponseBody": str,  # if browserHtml was requested
+                "httpResponseBody": base64
             }
         """
 
