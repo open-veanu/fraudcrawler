@@ -49,7 +49,7 @@ class ZyteApi(AsyncClient):
         self._retry_delay = retry_delay
 
     async def get_details(self, url: str) -> dict:
-        """Fetches product details for a single URL, optionally enabling browserHtml.
+        """Fetches product details for a single URL.
 
         Args:
             url: The URL to fetch product details from.
