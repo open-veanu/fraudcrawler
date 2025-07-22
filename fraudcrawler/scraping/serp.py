@@ -247,6 +247,8 @@ class SerpApi(AsyncClient):
             "utm_campaign",
             "utm_term",
             "utm_content",
+            "ar",
+            "ps",
         ]
 
         parsed = urlparse(url)
