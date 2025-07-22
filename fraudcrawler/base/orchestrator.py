@@ -262,7 +262,7 @@ class Orchestrator(ABC):
                                         field_name=field, field_value=value
                                     )
                                 )
-                        product_details = "\n".join(details)
+                        product_details = "\n\n".join(details)
                         logger.debug(
                             f"Classify product at {url} with prompt {prompt.name} and details: {product_details}"
                         )
