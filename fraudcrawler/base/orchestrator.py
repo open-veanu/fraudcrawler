@@ -156,7 +156,8 @@ class Orchestrator(ABC):
                 break
 
             if not product.filtered:
-                url = product.url
+                url = SerpApi._remove_tracking_parameters(product.url)
+                product.url = url  # Update the product URL to the cleaned version
 
                 if url in self._collected_urls_current_run:
                     # deduplicate on current run

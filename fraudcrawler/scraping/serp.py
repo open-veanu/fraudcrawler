@@ -3,11 +3,11 @@ from enum import Enum
 import logging
 from pydantic import BaseModel
 from typing import List
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qsl, urlencode, quote, urlunparse, ParseResult
+import re
 
 from fraudcrawler.settings import MAX_RETRIES, RETRY_DELAY, SERP_DEFAULT_COUNTRY_CODES
 from fraudcrawler.base.base import Host, Language, Location, AsyncClient
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +225,50 @@ class SerpApi(AsyncClient):
             domain == hst_dom or domain.endswith(f".{hst_dom}")
             for hst_dom in host.domains
         )
+
+    @staticmethod
+    def _remove_tracking_parameters(url: str) -> str:
+        """Remove tracking parameters from URLs.
+        
+        Args:
+            url: The URL to clean.
+            
+        Returns:
+            The cleaned URL without tracking parameters.
+        """
+        # All query parameters are tracking parameters on ebay
+        remove_all = url.startswith("https://www.ebay")
+
+        # Remove known trackers
+        known_trackers = [
+            "srsltid",
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_term",
+            "utm_content",
+        ]
+
+        parsed = urlparse(url)
+        queries = parse_qsl(parsed.query, keep_blank_values=True)
+        filtered = (
+            list(
+                (k[0], k[1])
+                for k in queries
+                if all([not k[0].startswith(y) for y in known_trackers])
+            )
+            if not remove_all
+            else list()
+        )
+        newurl = ParseResult(
+            scheme=parsed.scheme,
+            netloc=parsed.netloc,
+            path=parsed.path,
+            params=parsed.params,
+            query=urlencode(filtered, quote_via=quote),
+            fragment=parsed.fragment,
+        )
+        return urlunparse(newurl)
 
     def _domain_in_hosts(self, domain: str, hosts: List[Host]) -> bool:
         """Checks if the domain is present in the list of hosts.
