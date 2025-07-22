@@ -7,6 +7,7 @@ from typing import Dict, List, Set, cast
 from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,
     PROCESSOR_DEFAULT_IF_MISSING,
+    PROCESSOR_PRODUCT_DETAILS_TEMPLATE,
     MAX_RETRIES,
     RETRY_DELAY,
 )
@@ -271,19 +272,22 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     url = product.url
-                    name = product.product_name
-                    description = product.product_description
-
                     # Run all the configured prompts
                     for prompt in prompts:
+                        # Dynamically build product_details string
+                        details = []
+                        for field in prompt.product_item_fields:
+                            value = getattr(product, field, None)
+                            if value is not None:
+                                details.append(PROCESSOR_PRODUCT_DETAILS_TEMPLATE.format(field_name=field, field_value=value))
+                        product_details = "\n".join(details)
                         logger.debug(
-                            f"Classify product {name} with prompt {prompt.name}"
+                            f"Classify product at {url} with prompt {prompt.name} and details: {product_details}"
                         )
                         classification = await self._processor.classify(
                             prompt=prompt,
                             url=url,
-                            name=name,
-                            description=description,
+                            product_details=product_details,
                         )
                         product.classifications[prompt.name] = classification
                 except Exception as e:

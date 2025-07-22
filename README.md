@@ -58,7 +58,6 @@ deepness = Deepness(num_results=50)
 prompts = [
     Prompt(
         name="relevance",
-        context="This organization is interested in medical products and drugs.",
         system_prompt=(
             "You are a helpful and intelligent assistant. Your task is to classify any given product "
             "as either relevant (1) or not relevant (0), strictly based on the context and product details provided by the user. "

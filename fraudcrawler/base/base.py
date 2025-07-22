@@ -129,6 +129,16 @@ class Prompt(BaseModel):
             raise ValueError("all values in allowed_classes must be positive integers.")
         return val
 
+    @field_validator("product_item_fields", mode="before")
+    def validate_product_item_fields(cls, val):
+        """Ensure all product_item_fields are valid ProductItem attributes."""
+        from fraudcrawler.base.orchestrator import ProductItem
+        valid_fields = set(ProductItem.model_fields.keys())
+        for field in val:
+            if field not in valid_fields:
+                raise ValueError(f"Invalid product_item_field: '{field}'. Must be one of: {sorted(valid_fields)}")
+        return val
+
 
 class AsyncClient:
     """Base class for sub-classes using async HTTP requests."""
