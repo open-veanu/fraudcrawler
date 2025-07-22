@@ -48,12 +48,11 @@ class ZyteApi(AsyncClient):
         self._max_retries = max_retries
         self._retry_delay = retry_delay
 
-    async def get_details(self, url: str, browser_html: bool = False) -> dict:
+    async def get_details(self, url: str) -> dict:
         """Fetches product details for a single URL, optionally enabling browserHtml.
 
         Args:
             url: The URL to fetch product details from.
-            browser_html: Whether to enable browserHtml.
 
         Returns:
             A dictionary containing the product details, fields include:
@@ -70,11 +69,12 @@ class ZyteApi(AsyncClient):
                     "metadata": {
                         "probability": float,
                     },
-                }
+                },
+                "httpResponseBody": base64
             }
         """
         logger.info(
-            f"Fetching product details by Zyte for URL {url}. browserHtml={browser_html}"
+            f"Fetching product details by Zyte for URL {url}."
         )
         attempts = 0
         err = None
@@ -83,12 +83,9 @@ class ZyteApi(AsyncClient):
                 logger.debug(
                     f"Fetch product details for URL {url} (Attempt {attempts + 1})."
                 )
-                config = dict(self._config)
-                # if browser_html:
-                #     config["browserHtml"] = True
                 product = await self.post(
                     url=self._endpoint,
-                    data={"url": url, **config},
+                    data={"url": url, **self._config},
                     auth=self._aiohttp_basic_auth,
                 )
                 return product
