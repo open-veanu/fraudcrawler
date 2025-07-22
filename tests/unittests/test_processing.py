@@ -27,13 +27,11 @@ async def test_processor_classify_product(processor):
         system_prompt=system_prompt,
         allowed_classes=allowed_classes,
     )
-    name = "sildenafil"
-    description = "buy sildenafil online"
+    product_details = ["product_name", "product_description"]
     classification = await processor.classify(
         prompt=prompt,
         url="https://example.com",
-        name=name,
-        description=description,
+        product_details=product_details,
     )
     assert isinstance(classification, int)
     assert (

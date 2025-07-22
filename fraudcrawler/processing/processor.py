@@ -52,9 +52,7 @@ class Processor:
             raise ValueError("Empty response from OpenAI API")
         return content
 
-    async def classify(
-        self, prompt: Prompt, url: str, product_details: str
-    ) -> int:
+    async def classify(self, prompt: Prompt, url: str, product_details: str) -> int:
         """A generic classification method that classifies a product based on a prompt object.
 
         Args:
@@ -70,9 +68,7 @@ class Processor:
         """
         # If required fields are missing, return the prompt's default fallback if provided.
         if not product_details:
-            logger.warning(
-                f"Missing required product_details for classification."
-            )
+            logger.warning("Missing required product_details for classification.")
             return self._default_if_missing
 
         # Substitute placeholders in user_prompt with the relevant arguments

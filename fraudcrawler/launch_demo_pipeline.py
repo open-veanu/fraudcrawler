@@ -3,7 +3,7 @@ import logging
 from fraudcrawler import FraudCrawlerClient, Language, Location, Deepness, Prompt
 
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
-LOG_LVL = "DEBUG"
+LOG_LVL = "INFO"
 DATE_FMT = "%Y-%m-%d %H:%M:%S"
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
@@ -19,15 +19,16 @@ def main():
     deepness = Deepness(num_results=10)
     prompts = [
         Prompt(
-            name="relevance",
+            name="availability",
             system_prompt=(
-                "You are a helpful and intelligent assistant helping an organization that is interested in checking the energy efficiency of certain devices."
-                "Your task is to classify any given product as either relevant (1) or not relevant (0), strictly based on the context and product details provided by the user. "
+                "You are a helpful and intelligent assistant helping an organization that is interested in checking the availability of certain products."
+                "Your task is to classify any given product as either available (1) or not available (0), strictly based on the context and product details provided by the user. "
                 "You must consider all aspects of the given context and make a binary decision accordingly. "
-                "If the product aligns with the user's needs, classify it as 1 (relevant); otherwise, classify it as 0 (not relevant). "
+                "If the product can be purchased, added to a shopping basket, delivered, or is listed as available in any form, classify it as 1 (available); "
+                "if there is any mention of out of stock, not available, no longer shippable, or similar, classify it as 0 (not available). "
                 "Respond only with the number 1 or 0."
             ),
-            product_item_fields=["product_name"],
+            product_item_fields=["product_name", "html_clean"],
             allowed_classes=[0, 1],
         ),
         # Prompt(

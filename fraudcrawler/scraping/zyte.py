@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import List
+from base64 import b64decode
 
 import aiohttp
 
@@ -47,11 +48,12 @@ class ZyteApi(AsyncClient):
         self._max_retries = max_retries
         self._retry_delay = retry_delay
 
-    async def get_details(self, url: str) -> dict:
-        """Fetches product details for a single URL.
+    async def get_details(self, url: str, browser_html: bool = False) -> dict:
+        """Fetches product details for a single URL, optionally enabling browserHtml.
 
         Args:
             url: The URL to fetch product details from.
+            browser_html: Whether to enable browserHtml.
 
         Returns:
             A dictionary containing the product details, fields include:
@@ -71,7 +73,9 @@ class ZyteApi(AsyncClient):
                 }
             }
         """
-        logger.info(f"Fetching product details by Zyte for URL {url}.")
+        logger.info(
+            f"Fetching product details by Zyte for URL {url}. browserHtml={browser_html}"
+        )
         attempts = 0
         err = None
         while attempts < self._max_retries:
@@ -79,9 +83,12 @@ class ZyteApi(AsyncClient):
                 logger.debug(
                     f"Fetch product details for URL {url} (Attempt {attempts + 1})."
                 )
+                config = dict(self._config)
+                # if browser_html:
+                #     config["browserHtml"] = True
                 product = await self.post(
                     url=self._endpoint,
-                    data={"url": url, **self._config},
+                    data={"url": url, **config},
                     auth=self._aiohttp_basic_auth,
                 )
                 return product
@@ -192,3 +199,24 @@ class ZyteApi(AsyncClient):
             }
         """
         return float(details.get("product", {}).get("metadata", {}).get("probability"))
+
+    @staticmethod
+    def extract_html(details: dict) -> str | None:
+        """Extracts the HTML from the Zyte API response.
+
+        The input argument is a dictionary of the following structure:
+            {
+                "httpResponseBody": str,  # if browserHtml was requested
+            }
+        """
+
+        # Get the Base64-encoded content
+        encoded = details.get("httpResponseBody")
+
+        # Decode it into bytes
+        if isinstance(encoded, str):
+            decoded_bytes = b64decode(encoded)
+
+        # Convert bytes to string (assuming UTF-8 encoding)
+        decoded_string = decoded_bytes.decode("utf-8")
+        return decoded_string

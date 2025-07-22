@@ -3,6 +3,7 @@ import asyncio
 import logging
 from pydantic import BaseModel, Field
 from typing import Dict, List, Set, cast
+from bs4 import BeautifulSoup
 
 from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,
@@ -39,7 +40,7 @@ class ProductItem(BaseModel):
     product_images: List[str] | None = None
     probability: float | None = None
     html: str | None = None
-    html_cleane: str | None = None
+    html_clean: str | None = None
 
     # Processor parameters are set dynamic so we must allow extra fields
     classifications: Dict[str, int] = Field(default_factory=dict)
@@ -98,6 +99,7 @@ class Orchestrator(ABC):
         # Setup the variables
         self._collected_urls_current_run: Set[str] = set()
         self._collected_urls_previous_runs: Set[str] = set()
+        self._needs_browser_html = False
 
         # Setup the clients
         self._serpapi = SerpApi(
@@ -218,7 +220,9 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Fetch the product details from Zyte API
-                    details = await self._zyteapi.get_details(url=product.url)
+                    details = await self._zyteapi.get_details(
+                        url=product.url, browser_html=self._needs_browser_html
+                    )
                     product.product_name = self._zyteapi.extract_product_name(
                         details=details
                     )
@@ -234,15 +238,20 @@ class Orchestrator(ABC):
                     product.probability = self._zyteapi.extract_probability(
                         details=details
                     )
-
+                    if self._needs_browser_html:
+                        # Extract html and html_clean
+                        product.html = self._zyteapi.extract_html(details=details)
+                        if product.html:
+                            soup = BeautifulSoup(product.html, "html.parser")
+                            product.html_clean = soup.get_text(
+                                separator=" ", strip=True
+                            )
                     # Filter the product based on the probability threshold
                     if not self._zyteapi.keep_product(details=details):
                         product.filtered = True
                         product.filtered_at_stage = "Zyte probability threshold"
-
                 except Exception as e:
                     logger.warning(f"Error executing Zyte API search: {e}.")
-
             await queue_out.put(product)
             queue_in.task_done()
 
@@ -279,7 +288,11 @@ class Orchestrator(ABC):
                         for field in prompt.product_item_fields:
                             value = getattr(product, field, None)
                             if value is not None:
-                                details.append(PROCESSOR_PRODUCT_DETAILS_TEMPLATE.format(field_name=field, field_value=value))
+                                details.append(
+                                    PROCESSOR_PRODUCT_DETAILS_TEMPLATE.format(
+                                        field_name=field, field_value=value
+                                    )
+                                )
                         product_details = "\n".join(details)
                         logger.debug(
                             f"Classify product at {url} with prompt {prompt.name} and details: {product_details}"
@@ -490,6 +503,11 @@ class Orchestrator(ABC):
             excluded_urls: The URLs to exclude from the search.
             previously_collected_urls: The urls that have been collected previously and are ignored.
         """
+        # Set browserHtml flag based on prompts
+        self._needs_browser_html = any(
+            any(f in ("html", "html_clean") for f in prompt.product_item_fields)
+            for prompt in prompts
+        )
 
         # ---------------------------
         #        INITIAL SETUP

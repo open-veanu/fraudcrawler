@@ -133,10 +133,13 @@ class Prompt(BaseModel):
     def validate_product_item_fields(cls, val):
         """Ensure all product_item_fields are valid ProductItem attributes."""
         from fraudcrawler.base.orchestrator import ProductItem
+
         valid_fields = set(ProductItem.model_fields.keys())
         for field in val:
             if field not in valid_fields:
-                raise ValueError(f"Invalid product_item_field: '{field}'. Must be one of: {sorted(valid_fields)}")
+                raise ValueError(
+                    f"Invalid product_item_field: '{field}'. Must be one of: {sorted(valid_fields)}"
+                )
         return val
 
 

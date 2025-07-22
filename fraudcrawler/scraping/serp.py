@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class SerpResult(BaseModel):
     """Model for a single search result from SerpApi."""
+
     url: str
     domain: str
     marketplace_name: str
@@ -23,6 +24,7 @@ class SerpResult(BaseModel):
 
 class SearchEngine(Enum):
     """Enum for the supported search engines."""
+
     GOOGLE = "google"
     GOOGLE_SHOPPING = "google_shopping"
 
@@ -33,7 +35,7 @@ class SerpApi(AsyncClient):
     _endpoint = "https://serpapi.com/search"
     _engine_marketplace_names = {
         SearchEngine.GOOGLE.value: "Google",
-        SearchEngine.GOOGLE_SHOPPING.value: "Google Shopping"
+        SearchEngine.GOOGLE_SHOPPING.value: "Google Shopping",
     }
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
 
