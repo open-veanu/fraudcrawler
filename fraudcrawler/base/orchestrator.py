@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-from pydantic import BaseModel, Field
 from typing import Dict, List, Set, cast
+from bs4 import BeautifulSoup
 
 from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,
     PROCESSOR_DEFAULT_IF_MISSING,
+    PROCESSOR_PRODUCT_DETAILS_TEMPLATE,
     MAX_RETRIES,
     RETRY_DELAY,
 )
@@ -15,35 +16,17 @@ from fraudcrawler.settings import (
     DEFAULT_N_ZYTE_WKRS,
     DEFAULT_N_PROC_WKRS,
 )
-from fraudcrawler.base.base import Deepness, Host, Language, Location, Prompt
+from fraudcrawler.base.base import (
+    Deepness,
+    Host,
+    Language,
+    Location,
+    Prompt,
+    ProductItem,
+)
 from fraudcrawler import SerpApi, SearchEngine, Enricher, ZyteApi, Processor
 
 logger = logging.getLogger(__name__)
-
-
-class ProductItem(BaseModel):
-    """Model representing a product item."""
-
-    # Serp/Enrich parameters
-    search_term: str
-    search_term_type: str
-    url: str
-    marketplace_name: str
-    domain: str
-
-    # Zyte parameters
-    product_name: str | None = None
-    product_price: str | None = None
-    product_description: str | None = None
-    product_images: List[str] | None = None
-    probability: float | None = None
-
-    # Processor parameters are set dynamic so we must allow extra fields
-    classifications: Dict[str, int] = Field(default_factory=dict)
-
-    # Filtering parameters
-    filtered: bool = False
-    filtered_at_stage: str | None = None
 
 
 class Orchestrator(ABC):
@@ -231,15 +214,16 @@ class Orchestrator(ABC):
                     product.probability = self._zyteapi.extract_probability(
                         details=details
                     )
-
+                    product.html = self._zyteapi.extract_html(details=details)
+                    if product.html:
+                        soup = BeautifulSoup(product.html, "html.parser")
+                        product.html_clean = soup.get_text(separator=" ", strip=True)
                     # Filter the product based on the probability threshold
                     if not self._zyteapi.keep_product(details=details):
                         product.filtered = True
                         product.filtered_at_stage = "Zyte probability threshold"
-
                 except Exception as e:
                     logger.warning(f"Error executing Zyte API search: {e}.")
-
             await queue_out.put(product)
             queue_in.task_done()
 
@@ -269,19 +253,26 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     url = product.url
-                    name = product.product_name
-                    description = product.product_description
-
                     # Run all the configured prompts
                     for prompt in prompts:
+                        # Dynamically build product_details string
+                        details = []
+                        for field in prompt.product_item_fields:
+                            value = getattr(product, field, None)
+                            if value is not None:
+                                details.append(
+                                    PROCESSOR_PRODUCT_DETAILS_TEMPLATE.format(
+                                        field_name=field, field_value=value
+                                    )
+                                )
+                        product_details = "\n\n".join(details)
                         logger.debug(
-                            f"Classify product {name} with prompt {prompt.name}"
+                            f"Classify product at {url} with prompt {prompt.name} and details: {product_details}"
                         )
                         classification = await self._processor.classify(
                             prompt=prompt,
                             url=url,
-                            name=name,
-                            description=description,
+                            product_details=product_details,
                         )
                         product.classifications[prompt.name] = classification
                 except Exception as e:

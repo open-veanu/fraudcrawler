@@ -18,22 +18,20 @@ def processor():
 
 @pytest.mark.asyncio
 async def test_processor_classify_product(processor):
-    context = "We are interested in medical products"
+    product_item_fields = ["product_name", "product_description"]
     system_prompt = "You are a specialist for medical products."
     allowed_classes = [0, 1]
     prompt = Prompt(
         name="test_prompt",
-        context=context,
+        product_item_fields=product_item_fields,
         system_prompt=system_prompt,
         allowed_classes=allowed_classes,
     )
-    name = "sildenafil"
-    description = "buy sildenafil online"
+    product_details = ["product_name", "product_description"]
     classification = await processor.classify(
         prompt=prompt,
         url="https://example.com",
-        name=name,
-        description=description,
+        product_details=product_details,
     )
     assert isinstance(classification, int)
     assert (

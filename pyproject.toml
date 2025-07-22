@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "fraudcrawler"
-version = "0.4.0"
+version = "0.4.2"
 description = "Intelligent Market Monitoring"
 authors = [
     "Domingo Bertus <hello@veanu.ch>",
@@ -25,6 +25,7 @@ pandas = "^2.2.3"
 aiohttp = "^3.11.14"
 pydantic-settings = "^2.8.1"
 openai = "^1.68.2"
+beautifulsoup4 = "^4.13.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest-cov = "^6.0.0"

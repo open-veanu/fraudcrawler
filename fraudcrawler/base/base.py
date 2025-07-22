@@ -2,12 +2,13 @@ import json
 import logging
 from pydantic import (
     BaseModel,
+    Field,
     field_validator,
     model_validator,
 )
 from pydantic_settings import BaseSettings
 import re
-from typing import List
+from typing import List, Dict
 
 import aiohttp
 
@@ -114,12 +115,39 @@ class Deepness(BaseModel):
     enrichment: Enrichment | None = None
 
 
+class ProductItem(BaseModel):
+    """Model representing a product item."""
+
+    # Serp/Enrich parameters
+    search_term: str
+    search_term_type: str
+    url: str
+    marketplace_name: str
+    domain: str
+
+    # Zyte parameters
+    product_name: str | None = None
+    product_price: str | None = None
+    product_description: str | None = None
+    product_images: List[str] | None = None
+    probability: float | None = None
+    html: str | None = None
+    html_clean: str | None = None
+
+    # Processor parameters are set dynamic so we must allow extra fields
+    classifications: Dict[str, int] = Field(default_factory=dict)
+
+    # Filtering parameters
+    filtered: bool = False
+    filtered_at_stage: str | None = None
+
+
 class Prompt(BaseModel):
     """Model for prompts."""
 
     name: str
-    context: str
     system_prompt: str
+    product_item_fields: List[str]
     allowed_classes: List[int]
 
     @field_validator("allowed_classes", mode="before")
@@ -127,6 +155,17 @@ class Prompt(BaseModel):
         """Check if all values are positive."""
         if not all(isinstance(i, int) and i >= 0 for i in val):
             raise ValueError("all values in allowed_classes must be positive integers.")
+        return val
+
+    @field_validator("product_item_fields", mode="before")
+    def validate_product_item_fields(cls, val):
+        """Ensure all product_item_fields are valid ProductItem attributes."""
+        valid_fields = set(ProductItem.model_fields.keys())
+        for field in val:
+            if field not in valid_fields:
+                raise ValueError(
+                    f"Invalid product_item_field: '{field}'. Must be one of: {sorted(valid_fields)}"
+                )
         return val
 
 

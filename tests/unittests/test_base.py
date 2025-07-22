@@ -78,31 +78,31 @@ def test_deepness():
 
 def test_prompt():
     name = "name"
-    context = "this is the context"
     system_prompt = "this is the system prompt"
+    product_item_fields = ["product_name", "product_description"]
     prompt = Prompt(
         name=name,
-        context=context,
         system_prompt=system_prompt,
+        product_item_fields=product_item_fields,
         allowed_classes=[0, 1],
     )
     assert prompt.name == name
-    assert prompt.context == context
+    assert prompt.product_item_fields == product_item_fields
     assert prompt.system_prompt == system_prompt
     assert prompt.allowed_classes == [0, 1]
 
     with pytest.raises(ValueError):
         Prompt(
             name=name,
-            context=context,
             system_prompt=system_prompt,
+            product_item_fields=product_item_fields,
             allowed_classes=[-1, 0, 1],
         )
 
     with pytest.raises(ValueError):
         Prompt(
             name=name,
-            context=context,
             system_prompt=system_prompt,
+            product_item_fields=product_item_fields,
             allowed_classes=[0.5, 1],
         )

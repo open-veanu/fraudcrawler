@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import List
+from base64 import b64decode
 
 import aiohttp
 
@@ -68,7 +69,8 @@ class ZyteApi(AsyncClient):
                     "metadata": {
                         "probability": float,
                     },
-                }
+                },
+                "httpResponseBody": base64
             }
         """
         logger.info(f"Fetching product details by Zyte for URL {url}.")
@@ -192,3 +194,24 @@ class ZyteApi(AsyncClient):
             }
         """
         return float(details.get("product", {}).get("metadata", {}).get("probability"))
+
+    @staticmethod
+    def extract_html(details: dict) -> str | None:
+        """Extracts the HTML from the Zyte API response.
+
+        The input argument is a dictionary of the following structure:
+            {
+                "httpResponseBody": base64
+            }
+        """
+
+        # Get the Base64-encoded content
+        encoded = details.get("httpResponseBody")
+
+        # Decode it into bytes
+        if isinstance(encoded, str):
+            decoded_bytes = b64decode(encoded)
+
+        # Convert bytes to string (assuming UTF-8 encoding)
+        decoded_string = decoded_bytes.decode("utf-8")
+        return decoded_string

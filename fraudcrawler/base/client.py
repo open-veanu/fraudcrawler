@@ -9,8 +9,16 @@ from typing import List
 import pandas as pd
 
 from fraudcrawler.settings import ROOT_DIR
-from fraudcrawler.base.base import Setup, Language, Location, Deepness, Host, Prompt
-from fraudcrawler.base.orchestrator import Orchestrator, ProductItem
+from fraudcrawler.base.base import (
+    Setup,
+    Language,
+    Location,
+    Deepness,
+    Host,
+    Prompt,
+    ProductItem,
+)
+from fraudcrawler.base.orchestrator import Orchestrator
 from fraudcrawler.scraping.serp import SearchEngine
 
 logger = logging.getLogger(__name__)
