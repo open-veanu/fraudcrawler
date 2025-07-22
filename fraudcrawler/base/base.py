@@ -11,6 +11,7 @@ from typing import List
 
 import aiohttp
 
+from fraudcrawler.base.orchestrator import ProductItem
 from fraudcrawler.settings import (
     GOOGLE_LANGUAGES_FILENAME,
     GOOGLE_LOCATIONS_FILENAME,
@@ -132,8 +133,6 @@ class Prompt(BaseModel):
     @field_validator("product_item_fields", mode="before")
     def validate_product_item_fields(cls, val):
         """Ensure all product_item_fields are valid ProductItem attributes."""
-        from fraudcrawler.base.orchestrator import ProductItem
-
         valid_fields = set(ProductItem.model_fields.keys())
         for field in val:
             if field not in valid_fields:
