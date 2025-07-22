@@ -16,7 +16,14 @@ from fraudcrawler.settings import (
     DEFAULT_N_ZYTE_WKRS,
     DEFAULT_N_PROC_WKRS,
 )
-from fraudcrawler.base.base import Deepness, Host, Language, Location, Prompt, ProductItem
+from fraudcrawler.base.base import (
+    Deepness,
+    Host,
+    Language,
+    Location,
+    Prompt,
+    ProductItem,
+)
 from fraudcrawler import SerpApi, SearchEngine, Enricher, ZyteApi, Processor
 
 logger = logging.getLogger(__name__)
@@ -191,9 +198,7 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Fetch the product details from Zyte API
-                    details = await self._zyteapi.get_details(
-                        url=product.url
-                    )
+                    details = await self._zyteapi.get_details(url=product.url)
                     product.product_name = self._zyteapi.extract_product_name(
                         details=details
                     )
@@ -212,9 +217,7 @@ class Orchestrator(ABC):
                     product.html = self._zyteapi.extract_html(details=details)
                     if product.html:
                         soup = BeautifulSoup(product.html, "html.parser")
-                        product.html_clean = soup.get_text(
-                            separator=" ", strip=True
-                            )
+                        product.html_clean = soup.get_text(separator=" ", strip=True)
                     # Filter the product based on the probability threshold
                     if not self._zyteapi.keep_product(details=details):
                         product.filtered = True

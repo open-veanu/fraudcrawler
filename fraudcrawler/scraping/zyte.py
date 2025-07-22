@@ -73,9 +73,7 @@ class ZyteApi(AsyncClient):
                 "httpResponseBody": base64
             }
         """
-        logger.info(
-            f"Fetching product details by Zyte for URL {url}."
-        )
+        logger.info(f"Fetching product details by Zyte for URL {url}.")
         attempts = 0
         err = None
         while attempts < self._max_retries:
