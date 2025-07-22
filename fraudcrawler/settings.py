@@ -23,7 +23,10 @@ ZYTE_DEFALUT_PROBABILITY_THRESHOLD = 0.1
 PROCESSOR_DEFAULT_MODEL = "gpt-4o"
 PROCESSOR_DEFAULT_IF_MISSING = -1
 PROCESSOR_USER_PROMPT_TEMPLATE = (
-    "Context: {context}\n\nProduct Details: {name}\n{description}\\n\nRelevance:"
+    "Product Details: {product_details}\\n\nRelevance:"
+)
+PROCESSOR_PRODUCT_DETAILS_TEMPLATE = (
+    "{field_name}: {field_value}"
 )
 
 # Async settings

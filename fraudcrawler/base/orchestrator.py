@@ -37,6 +37,8 @@ class ProductItem(BaseModel):
     product_description: str | None = None
     product_images: List[str] | None = None
     probability: float | None = None
+    html: str | None = None
+    html_cleane: str | None = None
 
     # Processor parameters are set dynamic so we must allow extra fields
     classifications: Dict[str, int] = Field(default_factory=dict)

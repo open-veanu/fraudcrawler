@@ -118,8 +118,8 @@ class Prompt(BaseModel):
     """Model for prompts."""
 
     name: str
-    context: str
     system_prompt: str
+    product_item_fields: List[str]
     allowed_classes: List[int]
 
     @field_validator("allowed_classes", mode="before")
