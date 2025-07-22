@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-from pydantic import BaseModel, Field
 from typing import Dict, List, Set, cast
 from bs4 import BeautifulSoup
 
@@ -17,37 +16,10 @@ from fraudcrawler.settings import (
     DEFAULT_N_ZYTE_WKRS,
     DEFAULT_N_PROC_WKRS,
 )
-from fraudcrawler.base.base import Deepness, Host, Language, Location, Prompt
+from fraudcrawler.base.base import Deepness, Host, Language, Location, Prompt, ProductItem
 from fraudcrawler import SerpApi, SearchEngine, Enricher, ZyteApi, Processor
 
 logger = logging.getLogger(__name__)
-
-
-class ProductItem(BaseModel):
-    """Model representing a product item."""
-
-    # Serp/Enrich parameters
-    search_term: str
-    search_term_type: str
-    url: str
-    marketplace_name: str
-    domain: str
-
-    # Zyte parameters
-    product_name: str | None = None
-    product_price: str | None = None
-    product_description: str | None = None
-    product_images: List[str] | None = None
-    probability: float | None = None
-    html: str | None = None
-    html_clean: str | None = None
-
-    # Processor parameters are set dynamic so we must allow extra fields
-    classifications: Dict[str, int] = Field(default_factory=dict)
-
-    # Filtering parameters
-    filtered: bool = False
-    filtered_at_stage: str | None = None
 
 
 class Orchestrator(ABC):

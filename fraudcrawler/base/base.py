@@ -2,16 +2,16 @@ import json
 import logging
 from pydantic import (
     BaseModel,
+    Field,
     field_validator,
     model_validator,
 )
 from pydantic_settings import BaseSettings
 import re
-from typing import List
+from typing import List, Dict
 
 import aiohttp
 
-from fraudcrawler.base.orchestrator import ProductItem
 from fraudcrawler.settings import (
     GOOGLE_LANGUAGES_FILENAME,
     GOOGLE_LOCATIONS_FILENAME,
@@ -140,6 +140,33 @@ class Prompt(BaseModel):
                     f"Invalid product_item_field: '{field}'. Must be one of: {sorted(valid_fields)}"
                 )
         return val
+    
+
+class ProductItem(BaseModel):
+    """Model representing a product item."""
+
+    # Serp/Enrich parameters
+    search_term: str
+    search_term_type: str
+    url: str
+    marketplace_name: str
+    domain: str
+
+    # Zyte parameters
+    product_name: str | None = None
+    product_price: str | None = None
+    product_description: str | None = None
+    product_images: List[str] | None = None
+    probability: float | None = None
+    html: str | None = None
+    html_clean: str | None = None
+
+    # Processor parameters are set dynamic so we must allow extra fields
+    classifications: Dict[str, int] = Field(default_factory=dict)
+
+    # Filtering parameters
+    filtered: bool = False
+    filtered_at_stage: str | None = None
 
 
 class AsyncClient:
