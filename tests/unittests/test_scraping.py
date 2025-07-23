@@ -319,8 +319,10 @@ async def test_enricher_apply(enricher):
 
 def test_remove_tracking_parameters_ricardo_urls(url_collector, ricardo_urls):
     """Test that Ricardo URLs are cleaned correctly by removing tracking parameters."""
-    expected_clean = "https://www.ricardo.ch/it/a/party-cooler-50l-edelstahl-1258654784/"
-    
+    expected_clean = (
+        "https://www.ricardo.ch/it/a/party-cooler-50l-edelstahl-1258654784/"
+    )
+
     for url in ricardo_urls:
         cleaned = url_collector.remove_tracking_parameters(url)
         assert cleaned == expected_clean, f"Failed to clean URL: {url}"
@@ -330,10 +332,10 @@ def test_remove_tracking_parameters_ebay_urls(url_collector, ebay_urls):
     """Test that eBay URLs have all query parameters removed."""
     expected_clean_urls = [
         "https://www.ebay.com/itm/123456",
-        "https://www.ebay.com/itm/789012", 
+        "https://www.ebay.com/itm/789012",
         "https://www.ebay.com/itm/345678",
     ]
-    
+
     for url, expected in zip(ebay_urls, expected_clean_urls):
         cleaned = url_collector.remove_tracking_parameters(url)
         assert cleaned == expected, f"Failed to clean eBay URL: {url}"
@@ -346,7 +348,7 @@ def test_remove_tracking_parameters_other_urls(url_collector, other_urls):
         "https://www.galaxus.ch/de/product/456",
         "https://www.digitec.ch/fr/product/789?other_param=value",
     ]
-    
+
     for url, expected in zip(other_urls, expected_clean_urls):
         cleaned = url_collector.remove_tracking_parameters(url)
         assert cleaned == expected, f"Failed to clean other URL: {url}"
@@ -359,7 +361,7 @@ def test_remove_tracking_parameters_no_tracking(url_collector):
         "https://www.ebay.com/itm/123456",
         "https://www.amazon.com/product/123?param1=value1",
     ]
-    
+
     for url in clean_urls:
         cleaned = url_collector.remove_tracking_parameters(url)
         assert cleaned == url, f"Clean URL was modified: {url}"
@@ -369,20 +371,31 @@ def test_remove_tracking_parameters_edge_cases(url_collector):
     """Test edge cases for URL cleaning."""
     test_cases = [
         # URL with only tracking parameters
-        ("https://www.ricardo.ch/product/?srsltid=test", "https://www.ricardo.ch/product/"),
+        (
+            "https://www.ricardo.ch/product/?srsltid=test",
+            "https://www.ricardo.ch/product/",
+        ),
         # URL with mixed tracking and non-tracking parameters
-        ("https://www.ricardo.ch/product/?param1=value1&srsltid=test&param2=value2", 
-         "https://www.ricardo.ch/product/?param1=value1&param2=value2"),
+        (
+            "https://www.ricardo.ch/product/?param1=value1&srsltid=test&param2=value2",
+            "https://www.ricardo.ch/product/?param1=value1&param2=value2",
+        ),
         # URL with fragment
-        ("https://www.ricardo.ch/product/?srsltid=test#section", "https://www.ricardo.ch/product/#section"),
+        (
+            "https://www.ricardo.ch/product/?srsltid=test#section",
+            "https://www.ricardo.ch/product/#section",
+        ),
         # URL with path parameters
-        ("https://www.ricardo.ch/product/123/?srsltid=test", "https://www.ricardo.ch/product/123/"),
+        (
+            "https://www.ricardo.ch/product/123/?srsltid=test",
+            "https://www.ricardo.ch/product/123/",
+        ),
         # Empty URL
         ("", ""),
         # URL without scheme
         ("//www.ricardo.ch/product/?srsltid=test", "//www.ricardo.ch/product/"),
     ]
-    
+
     for url, expected in test_cases:
         cleaned = url_collector.remove_tracking_parameters(url)
         assert cleaned == expected, f"Failed to clean edge case URL: {url}"
@@ -390,12 +403,21 @@ def test_remove_tracking_parameters_edge_cases(url_collector):
 
 def test_remove_tracking_parameters_known_trackers(url_collector):
     """Test that all known tracking parameters are removed."""
-    known_trackers = ["srsltid", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]
-    
+    known_trackers = [
+        "srsltid",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+    ]
+
     for tracker in known_trackers:
         url = f"https://www.ricardo.ch/product/?{tracker}=test_value"
         cleaned = url_collector.remove_tracking_parameters(url)
-        assert cleaned == "https://www.ricardo.ch/product/", f"Failed to remove tracker: {tracker}" 
+        assert cleaned == "https://www.ricardo.ch/product/", (
+            f"Failed to remove tracker: {tracker}"
+        )
 
 
 @pytest.mark.asyncio

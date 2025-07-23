@@ -25,7 +25,14 @@ from fraudcrawler.base.base import (
     Prompt,
     ProductItem,
 )
-from fraudcrawler import SerpApi, SearchEngine, Enricher, URLCollector, ZyteApi, Processor
+from fraudcrawler import (
+    SerpApi,
+    SearchEngine,
+    Enricher,
+    URLCollector,
+    ZyteApi,
+    Processor,
+)
 
 logger = logging.getLogger(__name__)
 
