@@ -13,6 +13,18 @@ SERP_DEFAULT_COUNTRY_CODES: List[str] = [
     # ".com",
 ]
 
+# URL De-duplication settings
+KNOWN_TRACKERS = [
+    "srsltid",
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "ar",
+    "ps",
+]
+
 # Enrichment settings
 ENRICHMENT_DEFAULT_LIMIT = 10
 

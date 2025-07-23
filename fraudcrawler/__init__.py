@@ -1,5 +1,6 @@
 from fraudcrawler.scraping.serp import SerpApi, SearchEngine
 from fraudcrawler.scraping.enrich import Enricher
+from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteApi
 from fraudcrawler.processing.processor import Processor
 from fraudcrawler.base.orchestrator import Orchestrator
@@ -18,6 +19,7 @@ __all__ = [
     "SerpApi",
     "SearchEngine",
     "Enricher",
+    "URLCollector",
     "ZyteApi",
     "Processor",
     "Orchestrator",
