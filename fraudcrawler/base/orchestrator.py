@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-from typing import Dict, List, Set, cast
+from typing import Dict, List, cast
 
 from bs4 import BeautifulSoup
 
