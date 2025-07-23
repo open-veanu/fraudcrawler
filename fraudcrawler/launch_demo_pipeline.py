@@ -13,7 +13,7 @@ def main():
     client = FraudCrawlerClient()
 
     # Setup the search
-    search_term = "Kühlschrank"
+    search_term = "Medion Kühlbox MD 37454"
     language = Language(name="German")
     location = Location(name="Switzerland")
     deepness = Deepness(num_results=10)

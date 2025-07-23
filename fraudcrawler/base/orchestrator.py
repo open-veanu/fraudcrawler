@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-from typing import Dict, List, Set, cast
+from typing import Dict, List, cast
+
 from bs4 import BeautifulSoup
 
 from fraudcrawler.settings import (
@@ -24,7 +25,14 @@ from fraudcrawler.base.base import (
     Prompt,
     ProductItem,
 )
-from fraudcrawler import SerpApi, SearchEngine, Enricher, ZyteApi, Processor
+from fraudcrawler import (
+    SerpApi,
+    SearchEngine,
+    Enricher,
+    URLCollector,
+    ZyteApi,
+    Processor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,15 +83,12 @@ class Orchestrator(ABC):
             n_zyte_wkrs: Number of async workers for zyte (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
         """
-        # Setup the variables
-        self._collected_urls_current_run: Set[str] = set()
-        self._collected_urls_previous_runs: Set[str] = set()
-
         # Setup the clients
         self._serpapi = SerpApi(
             api_key=serpapi_key, max_retries=max_retries, retry_delay=retry_delay
         )
         self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
+        self._url_collector = URLCollector()
         self._zyteapi = ZyteApi(
             api_key=zyteapi_key, max_retries=max_retries, retry_delay=retry_delay
         )
@@ -156,16 +161,18 @@ class Orchestrator(ABC):
                 break
 
             if not product.filtered:
-                url = product.url
+                # Clean the URL by removing tracking parameters
+                url = self._url_collector.remove_tracking_parameters(product.url)
+                product.url = url
 
-                if url in self._collected_urls_current_run:
+                if url in self._url_collector.collected_currently:
                     # deduplicate on current run
                     product.filtered = True
                     product.filtered_at_stage = (
                         "URL collection (current run deduplication)"
                     )
                     logger.debug(f"URL {url} already collected in current run")
-                elif url in self._collected_urls_previous_runs:
+                elif url in self._url_collector.collected_previously:
                     # deduplicate on previous runs coming from a db
                     product.filtered = True
                     product.filtered_at_stage = (
@@ -173,7 +180,7 @@ class Orchestrator(ABC):
                     )
                     logger.debug(f"URL {url} as already collected in previous run")
                 else:
-                    self._collected_urls_current_run.add(url)
+                    self._url_collector.collected_currently.add(url)
 
             await queue_out.put(product)
             queue_in.task_done()
@@ -480,7 +487,7 @@ class Orchestrator(ABC):
         #        INITIAL SETUP
         # ---------------------------
         if previously_collected_urls:
-            self._collected_urls_previous_runs = set(self._collected_urls_current_run)
+            self._url_collector.collected_previously = set(previously_collected_urls)
 
         # Setup the async framework
         n_terms_max = 1 + (

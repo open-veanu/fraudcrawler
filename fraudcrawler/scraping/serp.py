@@ -4,10 +4,10 @@ import logging
 from pydantic import BaseModel
 from typing import List
 from urllib.parse import urlparse
+import re
 
 from fraudcrawler.settings import MAX_RETRIES, RETRY_DELAY, SERP_DEFAULT_COUNTRY_CODES
 from fraudcrawler.base.base import Host, Language, Location, AsyncClient
-import re
 
 logger = logging.getLogger(__name__)
 
