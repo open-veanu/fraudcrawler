@@ -281,7 +281,13 @@ class Orchestrator(ABC):
                             url=url,
                             product_details=product_details,
                         )
-                        product.classifications[prompt.name] = classification
+                        product.classifications[prompt.name] = int(
+                            classification.result
+                        )
+                        product.usage[prompt.name] = {
+                            "input_tokens": classification.input_tokens,
+                            "output_tokens": classification.output_tokens,
+                        }
                 except Exception as e:
                     logger.warning(f"Error processing product: {e}.")
 
