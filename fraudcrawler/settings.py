@@ -47,6 +47,7 @@ KNOWN_TRACKERS = [
     "hash",           # Generic hash identifier, often for state or cache
     "user",           # User ID or identifier passed in URL (should be avoided)
     "src",            # Generic source indicator, less formal than `utm_source`
+    "selsort",        # Sorting parameter for search results
 ]
 
 # Enrichment settings
