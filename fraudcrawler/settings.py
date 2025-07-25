@@ -48,6 +48,10 @@ KNOWN_TRACKERS = [
     "user",           # User ID or identifier passed in URL (should be avoided)
     "src",            # Generic source indicator, less formal than `utm_source`
     "selsort",        # Sorting parameter for search results
+    "shid",           # Shop ID (used in ecommerce)
+    "shoparea",       # Shop area (used in ecommerce)
+    "shopid",         # Shop ID (used in ecommerce)
+    "shoparea",       # Shop area (used in ecommerce)
 ]
 
 # Enrichment settings
