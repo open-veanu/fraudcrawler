@@ -63,6 +63,14 @@ class Host(BaseModel):
         return [cls._normalize_domain(dom.strip()) for dom in val]
 
 
+class ClassificationResult(BaseModel):
+    """Model for classification results."""
+
+    result: int
+    input_tokens: int
+    output_tokens: int
+
+
 class Location(BaseModel):
     """Model for location details (e.g. `Location(name="Switzerland", code="ch")`)."""
 
@@ -136,6 +144,9 @@ class ProductItem(BaseModel):
 
     # Processor parameters are set dynamic so we must allow extra fields
     classifications: Dict[str, int] = Field(default_factory=dict)
+
+    # Usage parameters
+    usage: Dict[str, Dict[str, int]] = Field(default_factory=dict)
 
     # Filtering parameters
     filtered: bool = False
