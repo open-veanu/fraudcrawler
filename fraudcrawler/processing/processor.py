@@ -81,10 +81,6 @@ class Processor:
             url: Product URL (often used in the user_prompt).
             product_details: String with product details, formatted per prompt.product_item_fields.
 
-        Returns:
-            tuple: (classification, input_tokens, output_tokens)
-                - On error or missing data, returns (default_if_missing, 0, 0)
-
         Note:
             This method returns `PROCESSOR_DEFAULT_IF_MISSING` if:
                 - product_details is empty
