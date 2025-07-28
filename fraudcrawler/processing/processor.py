@@ -29,7 +29,7 @@ class Processor:
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
             default_if_missing: The default classification to return if error occurs.
-            empty_token_count: The default value to return as tokens if the classification is empty.
+            empty_token_count: The default value to return as tokensif the classification is empty.
         """
         self._client = AsyncOpenAI(api_key=api_key)
         self._model = model
@@ -57,6 +57,9 @@ class Processor:
         content = response.choices[0].message.content
         if not content:
             raise ValueError("Empty response from OpenAI API")
+
+        # Convert the content to an integer
+        content = int(content.strip())
 
         # For tracking consumption we alre return the tokens used
         classification = ClassificationResult(
@@ -108,10 +111,6 @@ class Processor:
                 user_prompt=user_prompt,
                 max_tokens=1,
             )
-            if isinstance(classification.result, str):
-                classification.result = int(classification.result.strip())
-            else:
-                classification.result = int(classification.result)
 
             # Enforce that the classification is in the allowed classes
             if classification.result not in prompt.allowed_classes:

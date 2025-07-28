@@ -66,7 +66,7 @@ class Host(BaseModel):
 class ClassificationResult(BaseModel):
     """Model for classification results."""
 
-    result: str | int  # str for openai answers, int for default_is_missing
+    result: int
     input_tokens: int
     output_tokens: int
 
