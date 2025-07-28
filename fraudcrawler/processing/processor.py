@@ -29,7 +29,7 @@ class Processor:
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
             default_if_missing: The default classification to return if error occurs.
-            empty_token_count: The default value to return as tokensif the classification is empty.
+            empty_token_count: The default value to return as tokens if the classification is empty.
         """
         self._client = AsyncOpenAI(api_key=api_key)
         self._model = model
