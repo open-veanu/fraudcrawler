@@ -48,6 +48,28 @@ class Enricher(AsyncClient):
         }
 
     @staticmethod
+    def _before(search_term: str, retry_state: RetryCallState | None) -> None:
+        """Logs the search attempt before performing a search."""
+        if retry_state:
+            logger.debug(
+                f'DataForSEO suggested search with search="{search_term}" (attempt {retry_state.attempt_number}).'
+            )
+        else:
+            logger.debug(f'retry_state is {retry_state}, not logging before.')
+    
+    @staticmethod
+    def _before_sleep(search_term: str, retry_state: RetryCallState | None) -> None:
+        """Logs the search term and retry state before sleeping."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f'Attempt {retry_state.attempt_number} DataForSEO suggested search with search_term="{search_term}" '
+                f'failed with error: {retry_state.outcome.exception()}. '
+                f'Retrying in {retry_state.upcoming_sleep:.0f} seconds.'
+            )
+        else:
+            logger.debug(f'retry_state is {retry_state}, not logging before_sleep.')
+
+    @staticmethod
     def _extract_items_from_data(data: dict) -> Iterator[dict]:
         """Extracts the items from the DataForSEO response.
 
@@ -147,22 +169,12 @@ class Enricher(AsyncClient):
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping 
         retry = deepcopy(RETRY)
-        def _before(retry_state: RetryCallState | None) -> None:
-            if retry_state:
-                logger.debug(
-                    f'DataForSEO suggested search with search="{search_term}" (attempt {retry_state.attempt_number}).'
-                )
-            else:
-                logger.debug(f'retry_state is {retry_state}, not logging before.')
-        retry.before = _before
-        def _before_sleep(retry_state: RetryCallState | None) -> None:
-            if retry_state and retry_state.outcome:
-                logger.warning(
-                    f'Attempt {retry_state.attempt_number} DataForSEO suggested search '
-                    f'failed with error: {retry_state.outcome.exception()}. '
-                    f'Retrying in {retry_state.upcoming_sleep:.0f} seconds.'
-                )
-        retry.before_sleep = _before_sleep
+        retry.before = lambda retry_state: self._before(
+            search_term=search_term, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._before_sleep(
+            search_term=search_term, retry_state=retry_state
+        )
         async for attempt in retry:
             with attempt:
                 sugg_data = await self.post(url=url, headers=self._headers, data=data)
