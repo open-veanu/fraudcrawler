@@ -1,10 +1,29 @@
 from pathlib import Path
 from typing import List
 
+from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential_jitter
+
 # Generic settings
-MAX_RETRIES = 3
-RETRY_DELAY = 2
 ROOT_DIR = Path(__file__).parents[1]
+
+# Service retry settings
+# With the following setup (neglecting the jitter) we have 6 attempts with delays:
+#   0s, 1s, 4s, 16s, 64s, 64s (because of the max delay)
+_RETRY_STOP_AFTER_ATTEMPT = 6
+_RETRY_INITIAL_DELAY = 1
+_RETRY_MAX_DELAY = 64
+_RETRY_EXP_BASE = 4
+_RETRY_JITTER = 1
+RETRY = AsyncRetrying(
+    stop=stop_after_attempt(_RETRY_STOP_AFTER_ATTEMPT),
+    wait=wait_exponential_jitter(
+        initial=_RETRY_INITIAL_DELAY,
+        max=_RETRY_MAX_DELAY,
+        exp_base=_RETRY_EXP_BASE,
+        jitter=_RETRY_JITTER,
+    ),
+    reraise=True,
+)
 
 # Serp settings
 GOOGLE_LOCATIONS_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-locations.json"

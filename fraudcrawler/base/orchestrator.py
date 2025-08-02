@@ -7,10 +7,7 @@ from bs4 import BeautifulSoup
 
 from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,
-    PROCESSOR_DEFAULT_IF_MISSING,
     PROCESSOR_PRODUCT_DETAILS_TEMPLATE,
-    MAX_RETRIES,
-    RETRY_DELAY,
 )
 from fraudcrawler.settings import (
     DEFAULT_N_SERP_WKRS,
@@ -61,9 +58,6 @@ class Orchestrator(ABC):
         zyteapi_key: str,
         openaiapi_key: str,
         openai_model: str = PROCESSOR_DEFAULT_MODEL,
-        max_retries: int = MAX_RETRIES,
-        retry_delay: int = RETRY_DELAY,
-        default_if_missing: int = PROCESSOR_DEFAULT_IF_MISSING,
         n_serp_wkrs: int = DEFAULT_N_SERP_WKRS,
         n_zyte_wkrs: int = DEFAULT_N_ZYTE_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
@@ -77,16 +71,12 @@ class Orchestrator(ABC):
             zyteapi_key: The API key for Zyte API.
             openaiapi_key: The API key for OpenAI.
             openai_model: The model to use for the processing (optional).
-            max_retries: Maximum number of retries for API calls (optional).
-            retry_delay: Delay between retries in seconds (optional).
             n_serp_wkrs: Number of async workers for serp (optional).
             n_zyte_wkrs: Number of async workers for zyte (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
         """
         # Setup the clients
-        self._serpapi = SerpApi(
-            api_key=serpapi_key, max_retries=max_retries, retry_delay=retry_delay
-        )
+        self._serpapi = SerpApi(api_key=serpapi_key)
         self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
         self._url_collector = URLCollector()
         self._zyteapi = ZyteApi(
@@ -95,7 +85,6 @@ class Orchestrator(ABC):
         self._processor = Processor(
             api_key=openaiapi_key,
             model=openai_model,
-            default_if_missing=default_if_missing,
         )
 
         # Setup the async framework

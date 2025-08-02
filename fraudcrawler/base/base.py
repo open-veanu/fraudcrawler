@@ -180,6 +180,15 @@ class Prompt(BaseModel):
         return val
 
 
+class Retry(BaseModel):
+    """Model for tenacity retry settings."""
+    stop_after_attempt: int
+    initial_delay: int
+    max_delay: int
+    exp_base: int
+    jitter: int
+
+
 class AsyncClient:
     """Base class for sub-classes using async HTTP requests."""
 

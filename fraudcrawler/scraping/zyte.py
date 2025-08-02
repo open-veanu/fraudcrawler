@@ -5,11 +5,7 @@ from base64 import b64decode
 
 import aiohttp
 
-from fraudcrawler.settings import (
-    MAX_RETRIES,
-    RETRY_DELAY,
-    ZYTE_DEFALUT_PROBABILITY_THRESHOLD,
-)
+from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
 from fraudcrawler.base.base import AsyncClient
 
 logger = logging.getLogger(__name__)

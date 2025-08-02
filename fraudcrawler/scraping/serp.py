@@ -1,4 +1,4 @@
-import asyncio
+from copy import deepcopy
 from enum import Enum
 import logging
 from pydantic import BaseModel
@@ -6,7 +6,7 @@ from typing import List
 from urllib.parse import urlparse
 import re
 
-from fraudcrawler.settings import MAX_RETRIES, RETRY_DELAY, SERP_DEFAULT_COUNTRY_CODES
+from fraudcrawler.settings import SERP_DEFAULT_COUNTRY_CODES, RETRY
 from fraudcrawler.base.base import Host, Language, Location, AsyncClient
 
 logger = logging.getLogger(__name__)
@@ -42,20 +42,14 @@ class SerpApi(AsyncClient):
     def __init__(
         self,
         api_key: str,
-        max_retries: int = MAX_RETRIES,
-        retry_delay: int = RETRY_DELAY,
     ):
         """Initializes the SerpApiClient with the given API key.
 
         Args:
             api_key: The API key for SerpApi.
-            max_retries: Maximum number of retries for API calls.
-            retry_delay: Delay between retries in seconds.
         """
         super().__init__()
         self._api_key = api_key
-        self._max_retries = max_retries
-        self._retry_delay = retry_delay
 
     def _get_domain(self, url: str) -> str:
         """Extracts the second-level domain together with the top-level domain (e.g. `google.com`).
@@ -173,24 +167,22 @@ class SerpApi(AsyncClient):
             "api_key": self._api_key,
         }
 
-        # Perform the request
-        attempts = 0
-        err = None
-        while attempts < self._max_retries:
-            try:
-                logger.debug(
-                    f'Performing SerpAPI search with q="{search_string}" (Attempt {attempts + 1}).'
-                )
+        # Perform the request and retry if necessary. There is some context aware logging:
+        #  - `before`: before the request is made (or before retrying)
+        #  - `before_sleep`: if the request fails before sleeping 
+        logger.debug(f"SerpAPI search with params: {params}")
+        retry = deepcopy(RETRY)
+        retry.before = lambda retry_state: logger.debug(
+            f'Performing SerpAPI search with q="{search_string}" (attempt {retry_state.attempt_number}).'
+        )
+        retry.before_sleep = lambda retry_state: logger.warning(
+            f'Attempt {retry_state.attempt_number} of SerpAPI search with q="{search_string}" '
+            f'failed with error: {retry_state.outcome.exception()}. '
+            f'Retrying in {retry_state.upcoming_sleep:.0f} seconds.'
+        )
+        async for attempt in retry:
+            with attempt:
                 response = await self.get(url=self._endpoint, params=params)
-                break
-            except Exception as e:
-                logger.error(f"SerpAPI search failed with error: {e}.")
-                err = e
-            attempts += 1
-            if attempts < self._max_retries:
-                await asyncio.sleep(self._retry_delay)
-        if err is not None:
-            raise err
 
         # Extract the URLs from the response
         urls = self._extract_search_results(response=response, engine=engine)
