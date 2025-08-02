@@ -6,6 +6,8 @@ from typing import List
 from urllib.parse import urlparse
 import re
 
+from tenacity import RetryCallState
+
 from fraudcrawler.settings import SERP_DEFAULT_COUNTRY_CODES, RETRY
 from fraudcrawler.base.base import Host, Language, Location, AsyncClient
 
@@ -110,6 +112,29 @@ class SerpApi(AsyncClient):
 
         return urls
 
+    @staticmethod
+    def _before(search_string: str, retry_state: RetryCallState | None) -> None:
+        """Logs the search string and retry state before performing a search."""
+        if retry_state:
+            logger.debug(
+                f'Performing SerpAPI search with q="{search_string}" '
+                f'(attempt {retry_state.attempt_number}).'
+            )
+        else:
+            logger.debug(f'retry_state is {retry_state}, not logging before.')
+    
+    @staticmethod
+    def _before_sleep(search_string: str, retry_state: RetryCallState | None) -> None:
+        """Logs the search string and retry state before sleeping."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f'Attempt {retry_state.attempt_number} of SerpAPI search with q="{search_string}" '
+                f'failed with error: {retry_state.outcome.exception()}. '
+                f'Retrying in {retry_state.upcoming_sleep:.0f} seconds.'
+            )
+        else:
+            logger.debug(f'retry_state is {retry_state}, not logging before_sleep.')
+
     async def _search(
         self,
         engine: str,
@@ -166,19 +191,17 @@ class SerpApi(AsyncClient):
             "num": num_results,
             "api_key": self._api_key,
         }
+        logger.debug(f"SerpAPI search with params: {params}")
 
         # Perform the request and retry if necessary. There is some context aware logging:
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping 
-        logger.debug(f"SerpAPI search with params: {params}")
         retry = deepcopy(RETRY)
-        retry.before = lambda retry_state: logger.debug(
-            f'Performing SerpAPI search with q="{search_string}" (attempt {retry_state.attempt_number}).'
+        retry.before = lambda retry_state: self._before(
+            search_string=search_string, retry_state=retry_state
         )
-        retry.before_sleep = lambda retry_state: logger.warning(
-            f'Attempt {retry_state.attempt_number} of SerpAPI search with q="{search_string}" '
-            f'failed with error: {retry_state.outcome.exception()}. '
-            f'Retrying in {retry_state.upcoming_sleep:.0f} seconds.'
+        retry.before_sleep = lambda retry_state: self._before_sleep(
+            search_string=search_string, retry_state=retry_state
         )
         async for attempt in retry:
             with attempt:

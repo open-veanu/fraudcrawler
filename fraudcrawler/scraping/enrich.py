@@ -5,6 +5,8 @@ import logging
 from pydantic import BaseModel
 from typing import Dict, List, Iterator
 
+from tenacity import RetryCallState
+
 from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT, RETRY
 from fraudcrawler.base.base import Location, Language, AsyncClient
 
@@ -139,19 +141,28 @@ class Enricher(AsyncClient):
             }
         ]
         url = f"{self._base_endpoint}{self._suggestions_endpoint}"
+        logger.debug(f'DataForSEO url="{url}" with data="{data}".')
 
         # Perform the request and retry if necessary. There is some context aware logging
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping 
         retry = deepcopy(RETRY)
-        retry.before = lambda retry_state: logger.debug(
-            f'DataForSEO url="{url}" with data="{data}" (attempt {retry_state.attempt_number}).'
-        )
-        retry.before_sleep = lambda retry_state: logger.warning(
-            f'Attempt {retry_state.attempt_number} DataForSEO suggested search '
-            f'failed with error: {retry_state.outcome.exception()}. '
-            f'Retrying in {retry_state.upcoming_sleep:.0f} seconds.'
-        )
+        def _before(retry_state: RetryCallState | None) -> None:
+            if retry_state:
+                logger.debug(
+                    f'DataForSEO suggested search with search="{search_term}" (attempt {retry_state.attempt_number}).'
+                )
+            else:
+                logger.debug(f'retry_state is {retry_state}, not logging before.')
+        retry.before = _before
+        def _before_sleep(retry_state: RetryCallState | None) -> None:
+            if retry_state and retry_state.outcome:
+                logger.warning(
+                    f'Attempt {retry_state.attempt_number} DataForSEO suggested search '
+                    f'failed with error: {retry_state.outcome.exception()}. '
+                    f'Retrying in {retry_state.upcoming_sleep:.0f} seconds.'
+                )
+        retry.before_sleep = _before_sleep
         async for attempt in retry:
             with attempt:
                 sugg_data = await self.post(url=url, headers=self._headers, data=data)
