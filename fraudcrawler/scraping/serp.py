@@ -113,8 +113,8 @@ class SerpApi(AsyncClient):
         return urls
 
     @staticmethod
-    def _before(search_string: str, retry_state: RetryCallState | None) -> None:
-        """Logs the search string and retry state before performing a search."""
+    def _log_before(search_string: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before the request is made."""
         if retry_state:
             logger.debug(
                 f'Performing SerpAPI search with q="{search_string}" '
@@ -124,8 +124,8 @@ class SerpApi(AsyncClient):
             logger.debug(f'retry_state is {retry_state}, not logging before.')
     
     @staticmethod
-    def _before_sleep(search_string: str, retry_state: RetryCallState | None) -> None:
-        """Logs the search string and retry state before sleeping."""
+    def _log_before_sleep(search_string: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
                 f'Attempt {retry_state.attempt_number} of SerpAPI search with q="{search_string}" '
@@ -133,7 +133,7 @@ class SerpApi(AsyncClient):
                 f'Retrying in {retry_state.upcoming_sleep:.0f} seconds.'
             )
         else:
-            logger.debug(f'retry_state is {retry_state}, not logging before_sleep.')
+            logger.debug(f'retry_state is {retry_state}; not logging before_sleep.')
 
     async def _search(
         self,
@@ -194,13 +194,13 @@ class SerpApi(AsyncClient):
         logger.debug(f"SerpAPI search with params: {params}")
 
         # Perform the request and retry if necessary. There is some context aware logging:
-        #  - `before`: before the request is made (or before retrying)
+        #  - `before`: before the request is made (and before retrying)
         #  - `before_sleep`: if the request fails before sleeping 
         retry = deepcopy(RETRY)
-        retry.before = lambda retry_state: self._before(
+        retry.before = lambda retry_state: self._log_before(
             search_string=search_string, retry_state=retry_state
         )
-        retry.before_sleep = lambda retry_state: self._before_sleep(
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
             search_string=search_string, retry_state=retry_state
         )
         async for attempt in retry:

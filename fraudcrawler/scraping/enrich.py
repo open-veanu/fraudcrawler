@@ -48,8 +48,8 @@ class Enricher(AsyncClient):
         }
 
     @staticmethod
-    def _before(search_term: str, retry_state: RetryCallState | None) -> None:
-        """Logs the search attempt before performing a search."""
+    def _log_before(search_term: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before the request is made."""
         if retry_state:
             logger.debug(
                 f'DataForSEO suggested search with search="{search_term}" (attempt {retry_state.attempt_number}).'
@@ -58,8 +58,8 @@ class Enricher(AsyncClient):
             logger.debug(f'retry_state is {retry_state}, not logging before.')
     
     @staticmethod
-    def _before_sleep(search_term: str, retry_state: RetryCallState | None) -> None:
-        """Logs the search term and retry state before sleeping."""
+    def _log_before_sleep(search_term: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
                 f'Attempt {retry_state.attempt_number} DataForSEO suggested search with search_term="{search_term}" '
@@ -169,10 +169,10 @@ class Enricher(AsyncClient):
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping 
         retry = deepcopy(RETRY)
-        retry.before = lambda retry_state: self._before(
+        retry.before = lambda retry_state: self._log_before(
             search_term=search_term, retry_state=retry_state
         )
-        retry.before_sleep = lambda retry_state: self._before_sleep(
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
             search_term=search_term, retry_state=retry_state
         )
         async for attempt in retry:
