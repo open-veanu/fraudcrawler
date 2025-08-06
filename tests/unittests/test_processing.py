@@ -13,7 +13,7 @@ from fraudcrawler import Processor, Prompt, ProductItem
 def product_item():
     return ProductItem(
         search_term="test product",
-        search_term_type='original',
+        search_term_type="original",
         url="https://example.com",
         marketplace_name="Example Marketplace",
         domain="example.com",
@@ -21,6 +21,7 @@ def product_item():
         product_description="This is a test product.",
         product_price="9.99",
     )
+
 
 @pytest.fixture
 def prompt():
@@ -30,6 +31,7 @@ def prompt():
         system_prompt="You are a random classifier. Choose either 0 or 1.",
         allowed_classes=[0, 1],
     )
+
 
 @pytest.fixture
 def processor():
@@ -44,7 +46,7 @@ def test_processor_get_product_details(product_item, prompt):
     assert "product_name:\nTest Product" in details
     assert "product_description:\nThis is a test product." in details
 
-    prompt.product_item_fields = ['not_a_field']
+    prompt.product_item_fields = ["not_a_field"]
     details = Processor._get_product_details(product_item, prompt)
     assert details == ""
 

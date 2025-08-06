@@ -258,7 +258,9 @@ class Orchestrator(ABC):
                             "output_tokens": classification.output_tokens,
                         }
                 except Exception as e:
-                    logger.warning(f"Error processing product with url={product.url}: {e}.")
+                    logger.warning(
+                        f"Error processing product with url={product.url}: {e}."
+                    )
 
             await queue_out.put(product)
             queue_in.task_done()

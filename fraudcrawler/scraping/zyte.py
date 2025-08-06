@@ -39,7 +39,6 @@ class ZyteApi(AsyncClient):
         """
         self._aiohttp_basic_auth = aiohttp.BasicAuth(api_key)
 
-
     def _log_before(self, url: str, retry_state: RetryCallState | None) -> None:
         """Context aware logging before the request is made."""
         if retry_state:
@@ -47,19 +46,17 @@ class ZyteApi(AsyncClient):
                 f"Zyte fetching product details for URL {url} (Attempt {retry_state.attempt_number})."
             )
         else:
-            logger.debug(f'retry_state is {retry_state}; not logging before.')
-
+            logger.debug(f"retry_state is {retry_state}; not logging before.")
 
     def _log_before_sleep(self, url: str, retry_state: RetryCallState | None) -> None:
         """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
                 f'Attempt {retry_state.attempt_number} of Zyte fetching product details for URL "{url}" '
-                f'Retrying in {retry_state.upcoming_sleep:.0f} seconds.'
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
         else:
-            logger.debug(f'retry_state is {retry_state}; not logging before_sleep.')
-
+            logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
     async def get_details(self, url: str) -> dict:
         """Fetches product details for a single URL.
@@ -106,7 +103,6 @@ class ZyteApi(AsyncClient):
                     auth=self._aiohttp_basic_auth,
                 )
         return product
-
 
     @staticmethod
     def keep_product(

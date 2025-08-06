@@ -15,10 +15,12 @@ from fraudcrawler.settings import (
     RETRY_SKIP_IF_CODE,
 )
 
-def _is_retryable_exception(err: Exception) -> bool:
+
+def _is_retryable_exception(err: BaseException) -> bool:
     if isinstance(err, HTTPException) and err.status_code in RETRY_SKIP_IF_CODE:
         return False
     return True
+
 
 def get_async_retry() -> AsyncRetrying:
     """returns the retry configuration for async operations."""

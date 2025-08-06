@@ -52,7 +52,7 @@ class Processor:
         """
         details = []
         for field in prompt.product_item_fields:
-            if (value := getattr(product, field, None)):
+            if value := getattr(product, field, None):
                 details.append(
                     PROCESSOR_PRODUCT_DETAILS_TEMPLATE.format(
                         field_name=field, field_value=value
@@ -64,7 +64,6 @@ class Processor:
                 )
         return "\n\n".join(details)
 
-
     @staticmethod
     def _log_before(url: str, prompt: Prompt, retry_state: RetryCallState) -> None:
         """Context aware logging before the request is made."""
@@ -73,10 +72,12 @@ class Processor:
                 f"Classifying product with url={url} using prompt={prompt} (Attempt {retry_state.attempt_number})."
             )
         else:
-            logger.debug(f'retry_state is {retry_state}; not logging before.')
-    
+            logger.debug(f"retry_state is {retry_state}; not logging before.")
+
     @staticmethod
-    def _log_before_sleep(url: str, prompt: Prompt, retry_state: RetryCallState) -> None:
+    def _log_before_sleep(
+        url: str, prompt: Prompt, retry_state: RetryCallState
+    ) -> None:
         """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
@@ -122,7 +123,9 @@ class Processor:
         return classification
 
     async def classify(
-        self, product: ProductItem, prompt: Prompt,
+        self,
+        product: ProductItem,
+        prompt: Prompt,
     ) -> ClassificationResult:
         """A generic classification method that classifies a product based on a prompt object and returns
           the classification, input tokens, and output tokens.
@@ -144,7 +147,7 @@ class Processor:
         if not product_details:
             logger.warning("Missing required product_details for classification.")
             return self._error_response
-        
+
         # Prepare the user prompt
         user_prompt = PROCESSOR_USER_PROMPT_TEMPLATE.format(
             product_details=product_details,
@@ -157,7 +160,7 @@ class Processor:
             )
             # Perform the request and retry if necessary. There is some context aware logging
             #  - `before`: before the request is made (or before retrying)
-            #  - `before_sleep`: if the request fails before sleeping 
+            #  - `before_sleep`: if the request fails before sleeping
             retry = get_async_retry()
             retry.before = lambda retry_state: self._log_before(
                 url=url, prompt=prompt, retry_state=retry_state
