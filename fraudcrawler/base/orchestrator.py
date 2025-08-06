@@ -79,9 +79,7 @@ class Orchestrator(ABC):
         self._serpapi = SerpApi(api_key=serpapi_key)
         self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
         self._url_collector = URLCollector()
-        self._zyteapi = ZyteApi(
-            api_key=zyteapi_key, max_retries=max_retries, retry_delay=retry_delay
-        )
+        self._zyteapi = ZyteApi(api_key=zyteapi_key)
         self._processor = Processor(
             api_key=openaiapi_key,
             model=openai_model,

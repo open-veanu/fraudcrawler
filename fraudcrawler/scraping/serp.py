@@ -1,4 +1,3 @@
-from copy import deepcopy
 from enum import Enum
 import logging
 from pydantic import BaseModel
@@ -8,8 +7,9 @@ import re
 
 from tenacity import RetryCallState
 
-from fraudcrawler.settings import SERP_DEFAULT_COUNTRY_CODES, RETRY
+from fraudcrawler.settings import SERP_DEFAULT_COUNTRY_CODES
 from fraudcrawler.base.base import Host, Language, Location, AsyncClient
+from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +196,7 @@ class SerpApi(AsyncClient):
         # Perform the request and retry if necessary. There is some context aware logging:
         #  - `before`: before the request is made (and before retrying)
         #  - `before_sleep`: if the request fails before sleeping 
-        retry = deepcopy(RETRY)
+        retry = get_async_retry()
         retry.before = lambda retry_state: self._log_before(
             search_string=search_string, retry_state=retry_state
         )

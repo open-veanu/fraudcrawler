@@ -1,14 +1,14 @@
 from base64 import b64encode
 from collections import defaultdict
-from copy import deepcopy
 import logging
 from pydantic import BaseModel
 from typing import Dict, List, Iterator
 
 from tenacity import RetryCallState
 
-from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT, RETRY
+from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
 from fraudcrawler.base.base import Location, Language, AsyncClient
+from fraudcrawler.base.retry import get_async_retry
 
 
 logger = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ class Enricher(AsyncClient):
         # Perform the request and retry if necessary. There is some context aware logging
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping 
-        retry = deepcopy(RETRY)
+        retry = get_async_retry()
         retry.before = lambda retry_state: self._log_before(
             search_term=search_term, retry_state=retry_state
         )
