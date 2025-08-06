@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 
 from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,
-    PROCESSOR_PRODUCT_DETAILS_TEMPLATE,
 )
 from fraudcrawler.settings import (
     DEFAULT_N_SERP_WKRS,
@@ -236,7 +235,6 @@ class Orchestrator(ABC):
         """
 
         # Process the products
-
         while True:
             product = await queue_in.get()
             if product is None:
@@ -246,27 +244,11 @@ class Orchestrator(ABC):
 
             if not product.filtered:
                 try:
-                    url = product.url
                     # Run all the configured prompts
                     for prompt in prompts:
-                        # Dynamically build product_details string
-                        details = []
-                        for field in prompt.product_item_fields:
-                            value = getattr(product, field, None)
-                            if value is not None:
-                                details.append(
-                                    PROCESSOR_PRODUCT_DETAILS_TEMPLATE.format(
-                                        field_name=field, field_value=value
-                                    )
-                                )
-                        product_details = "\n\n".join(details)
-                        logger.debug(
-                            f"Classify product at {url} with prompt {prompt.name} and details: {product_details}"
-                        )
                         classification = await self._processor.classify(
+                            product=product,
                             prompt=prompt,
-                            url=url,
-                            product_details=product_details,
                         )
                         product.classifications[prompt.name] = int(
                             classification.result
@@ -276,7 +258,7 @@ class Orchestrator(ABC):
                             "output_tokens": classification.output_tokens,
                         }
                 except Exception as e:
-                    logger.warning(f"Error processing product: {e}.")
+                    logger.warning(f"Error processing product with url={product.url}: {e}.")
 
             await queue_out.put(product)
             queue_in.task_done()
