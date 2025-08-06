@@ -25,8 +25,6 @@ class Enricher(AsyncClient):
     """A client to interact with the DataForSEO API for enhancing searches (producing alternative search_terms)."""
 
     _auth_encoding = "ascii"
-    _max_retries = 3
-    _retry_delay = 2
     _base_endpoint = "https://api.dataforseo.com"
     _suggestions_endpoint = "/v3/dataforseo_labs/google/keyword_suggestions/live"
     _keywords_endpoint = "/v3/dataforseo_labs/google/related_keywords/live"
