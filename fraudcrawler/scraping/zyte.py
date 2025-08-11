@@ -1,16 +1,13 @@
-import asyncio
 import logging
 from typing import List
 from base64 import b64decode
 
 import aiohttp
+from tenacity import RetryCallState
 
-from fraudcrawler.settings import (
-    MAX_RETRIES,
-    RETRY_DELAY,
-    ZYTE_DEFALUT_PROBABILITY_THRESHOLD,
-)
+from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
 from fraudcrawler.base.base import AsyncClient
+from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
 
@@ -34,19 +31,32 @@ class ZyteApi(AsyncClient):
     def __init__(
         self,
         api_key: str,
-        max_retries: int = MAX_RETRIES,
-        retry_delay: int = RETRY_DELAY,
     ):
         """Initializes the ZyteApiClient with the given API key and retry configurations.
 
         Args:
             api_key: The API key for Zyte API.
-            max_retries: Maximum number of retries for API calls.
-            retry_delay: Delay between retries in seconds.
         """
         self._aiohttp_basic_auth = aiohttp.BasicAuth(api_key)
-        self._max_retries = max_retries
-        self._retry_delay = retry_delay
+
+    def _log_before(self, url: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before the request is made."""
+        if retry_state:
+            logger.debug(
+                f"Zyte fetching product details for URL {url} (Attempt {retry_state.attempt_number})."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before.")
+
+    def _log_before_sleep(self, url: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before sleeping after a failed request."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f'Attempt {retry_state.attempt_number} of Zyte fetching product details for URL "{url}" '
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
     async def get_details(self, url: str) -> dict:
         """Fetches product details for a single URL.
@@ -74,30 +84,25 @@ class ZyteApi(AsyncClient):
             }
         """
         logger.info(f"Fetching product details by Zyte for URL {url}.")
-        attempts = 0
-        err = None
-        while attempts < self._max_retries:
-            try:
-                logger.debug(
-                    f"Fetch product details for URL {url} (Attempt {attempts + 1})."
-                )
+
+        # Perform the request and retry if necessary. There is some context aware logging:
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_before(
+            url=url, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            url=url, retry_state=retry_state
+        )
+        async for attempt in retry:
+            with attempt:
                 product = await self.post(
                     url=self._endpoint,
                     data={"url": url, **self._config},
                     auth=self._aiohttp_basic_auth,
                 )
-                return product
-            except Exception as e:
-                logger.debug(
-                    f"Exception occurred while fetching product details for URL {url} (Attempt {attempts + 1})."
-                )
-                err = e
-            attempts += 1
-            if attempts < self._max_retries:
-                await asyncio.sleep(self._retry_delay)
-        if err is not None:
-            raise err
-        return {}
+        return product
 
     @staticmethod
     def keep_product(

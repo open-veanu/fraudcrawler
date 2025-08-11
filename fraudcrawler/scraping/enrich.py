@@ -4,8 +4,11 @@ import logging
 from pydantic import BaseModel
 from typing import Dict, List, Iterator
 
+from tenacity import RetryCallState
+
 from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
 from fraudcrawler.base.base import Location, Language, AsyncClient
+from fraudcrawler.base.retry import get_async_retry
 
 
 logger = logging.getLogger(__name__)
@@ -22,8 +25,6 @@ class Enricher(AsyncClient):
     """A client to interact with the DataForSEO API for enhancing searches (producing alternative search_terms)."""
 
     _auth_encoding = "ascii"
-    _max_retries = 3
-    _retry_delay = 2
     _base_endpoint = "https://api.dataforseo.com"
     _suggestions_endpoint = "/v3/dataforseo_labs/google/keyword_suggestions/live"
     _keywords_endpoint = "/v3/dataforseo_labs/google/related_keywords/live"
@@ -43,6 +44,28 @@ class Enricher(AsyncClient):
             "Authorization": f"Basic {auth}",
             "Content-Encoding": "gzip",
         }
+
+    @staticmethod
+    def _log_before(search_term: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before the request is made."""
+        if retry_state:
+            logger.debug(
+                f'DataForSEO suggested search with search="{search_term}" (attempt {retry_state.attempt_number}).'
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}, not logging before.")
+
+    @staticmethod
+    def _log_before_sleep(search_term: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before sleeping after a failed request."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f'Attempt {retry_state.attempt_number} DataForSEO suggested search with search_term="{search_term}" '
+                f"failed with error: {retry_state.outcome.exception()}. "
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}, not logging before_sleep.")
 
     @staticmethod
     def _extract_items_from_data(data: dict) -> Iterator[dict]:
@@ -126,7 +149,7 @@ class Enricher(AsyncClient):
             limit: The upper limit of suggestions to get.
         """
 
-        # Data must be a list of dictionaries setting a number of search tasks; here we only have one task.
+        # Data must be a list of dictionaries, setting a number of search tasks; here we only have one task.
         data = [
             {
                 "keyword": search_term,
@@ -137,23 +160,25 @@ class Enricher(AsyncClient):
                 "include_seed_keyword": True,
             }
         ]
-        logger.debug(
-            f'DataForSEO search for suggested keywords with search_term="{search_term}".'
+        url = f"{self._base_endpoint}{self._suggestions_endpoint}"
+        logger.debug(f'DataForSEO url="{url}" with data="{data}".')
+
+        # Perform the request and retry if necessary. There is some context aware logging
+        #  - `before`: before the request is made (or before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_before(
+            search_term=search_term, retry_state=retry_state
         )
-        try:
-            url = f"{self._base_endpoint}{self._suggestions_endpoint}"
-            logger.debug(f'DataForSEO url="{url}" with data="{data}".')
-            sugg_data = await self.post(url=url, headers=self._headers, data=data)
-        except Exception as e:
-            logger.error(f"DataForSEO suggested search failed with error: {e}.")
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            search_term=search_term, retry_state=retry_state
+        )
+        async for attempt in retry:
+            with attempt:
+                sugg_data = await self.post(url=url, headers=self._headers, data=data)
 
         # Extract the keywords from the response
-        try:
-            keywords = self._extract_suggested_keywords(data=sugg_data)
-        except Exception as e:
-            logger.error(
-                f"Failed to extract suggested keywords from DataForSEO response with error: {e}."
-            )
+        keywords = self._extract_suggested_keywords(data=sugg_data)
 
         logger.debug(f"Found {len(keywords)} suggestions from DataForSEO search.")
         return keywords
@@ -271,22 +296,36 @@ class Enricher(AsyncClient):
             language: The language to use for the search.
             n_terms: The number of additional terms
         """
-        # Get the additional keywords
         logger.info(
             f'Applying enrichment for search_term="{search_term}" and n_terms="{n_terms}".'
         )
-        suggested = await self._get_suggested_keywords(
-            search_term=search_term,
-            location=location,
-            language=language,
-            limit=n_terms,
-        )
-        related = await self._get_related_keywords(
-            search_term=search_term,
-            location=location,
-            language=language,
-            limit=n_terms,
-        )
+        # Get the additional suggested keywords
+        try:
+            suggested = await self._get_suggested_keywords(
+                search_term=search_term,
+                location=location,
+                language=language,
+                limit=n_terms,
+            )
+        except Exception as e:
+            logger.error(
+                f"Error fetching suggested keywords for search_term='{search_term}': {e}"
+            )
+            suggested = []
+
+        # Get the additional related keywords
+        try:
+            related = await self._get_related_keywords(
+                search_term=search_term,
+                location=location,
+                language=language,
+                limit=n_terms,
+            )
+        except Exception as e:
+            logger.error(
+                f"Error fetching related keywords for search_term='{search_term}': {e}"
+            )
+            related = []
 
         # Remove original keyword and aggregate them by volume
         keywords = [kw for kw in suggested + related if kw.text != search_term]

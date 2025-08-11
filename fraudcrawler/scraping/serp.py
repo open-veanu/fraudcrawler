@@ -1,4 +1,3 @@
-import asyncio
 from enum import Enum
 import logging
 from pydantic import BaseModel
@@ -6,8 +5,11 @@ from typing import List
 from urllib.parse import urlparse
 import re
 
-from fraudcrawler.settings import MAX_RETRIES, RETRY_DELAY, SERP_DEFAULT_COUNTRY_CODES
+from tenacity import RetryCallState
+
+from fraudcrawler.settings import SERP_DEFAULT_COUNTRY_CODES
 from fraudcrawler.base.base import Host, Language, Location, AsyncClient
+from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
 
@@ -42,20 +44,14 @@ class SerpApi(AsyncClient):
     def __init__(
         self,
         api_key: str,
-        max_retries: int = MAX_RETRIES,
-        retry_delay: int = RETRY_DELAY,
     ):
         """Initializes the SerpApiClient with the given API key.
 
         Args:
             api_key: The API key for SerpApi.
-            max_retries: Maximum number of retries for API calls.
-            retry_delay: Delay between retries in seconds.
         """
         super().__init__()
         self._api_key = api_key
-        self._max_retries = max_retries
-        self._retry_delay = retry_delay
 
     def _get_domain(self, url: str) -> str:
         """Extracts the second-level domain together with the top-level domain (e.g. `google.com`).
@@ -116,6 +112,31 @@ class SerpApi(AsyncClient):
 
         return urls
 
+    @staticmethod
+    def _log_before(search_string: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before the request is made."""
+        if retry_state:
+            logger.debug(
+                f'Performing SerpAPI search with q="{search_string}" '
+                f"(attempt {retry_state.attempt_number})."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}, not logging before.")
+
+    @staticmethod
+    def _log_before_sleep(
+        search_string: str, retry_state: RetryCallState | None
+    ) -> None:
+        """Context aware logging before sleeping after a failed request."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f'Attempt {retry_state.attempt_number} of SerpAPI search with q="{search_string}" '
+                f"failed with error: {retry_state.outcome.exception()}. "
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
+
     async def _search(
         self,
         engine: str,
@@ -172,25 +193,21 @@ class SerpApi(AsyncClient):
             "num": num_results,
             "api_key": self._api_key,
         }
+        logger.debug(f"SerpAPI search with params: {params}")
 
-        # Perform the request
-        attempts = 0
-        err = None
-        while attempts < self._max_retries:
-            try:
-                logger.debug(
-                    f'Performing SerpAPI search with q="{search_string}" (Attempt {attempts + 1}).'
-                )
+        # Perform the request and retry if necessary. There is some context aware logging:
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_before(
+            search_string=search_string, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            search_string=search_string, retry_state=retry_state
+        )
+        async for attempt in retry:
+            with attempt:
                 response = await self.get(url=self._endpoint, params=params)
-                break
-            except Exception as e:
-                logger.error(f"SerpAPI search failed with error: {e}.")
-                err = e
-            attempts += 1
-            if attempts < self._max_retries:
-                await asyncio.sleep(self._retry_delay)
-        if err is not None:
-            raise err
 
         # Extract the URLs from the response
         urls = self._extract_search_results(response=response, engine=engine)
