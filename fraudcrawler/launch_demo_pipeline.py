@@ -8,12 +8,11 @@ DATE_FMT = "%Y-%m-%d %H:%M:%S"
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
 
-def main():
+def search(search_term: str):
     # Setup the client
     client = FraudCrawlerClient()
 
     # Setup the search
-    search_term = "Medion Kühlbox MD 37454"
     language = Language(name="German")
     location = Location(name="Switzerland")
     deepness = Deepness(num_results=10)
@@ -98,4 +97,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    search(search_term = "Medion Kühlbox MD 37454")
