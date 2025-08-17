@@ -9,6 +9,7 @@ from tenacity import (
 
 from fraudcrawler.settings import (
     RETRY_STOP_AFTER_ATTEMPT,
+    RETRY_STOP_AFTER_ATTEMPT_SYNC,
     RETRY_INITIAL_DELAY,
     RETRY_MAX_DELAY,
     RETRY_EXP_BASE,
@@ -42,7 +43,7 @@ def get_sync_retry() -> Retrying:
     """returns the retry configuration for synchronous operations."""
     return Retrying(
         retry=retry_if_exception(_is_retryable_exception),
-        stop=stop_after_attempt(RETRY_STOP_AFTER_ATTEMPT),
+        stop=stop_after_attempt(RETRY_STOP_AFTER_ATTEMPT_SYNC),
         wait=wait_exponential_jitter(
             initial=RETRY_INITIAL_DELAY,
             max=RETRY_MAX_DELAY,

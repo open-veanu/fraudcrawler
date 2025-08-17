@@ -509,23 +509,23 @@ class SerpApi(AsyncClient):
             urls = []
             for link in soup.find_all("a", href=True):
                 # Ensure we have a Tag object with href attribute
-                if not hasattr(link, 'get'):
+                if not hasattr(link, "get"):
                     continue
-                    
+
                 href = link.get("href")
-                
+
                 # Skip empty links and javascript links
                 if href and not href.startswith("javascript:"):
                     # Ensure href is a string
                     if not isinstance(href, str):
                         continue
-                        
+
                     # Make relative URLs absolute
                     if href.startswith("/"):
                         href = f"https://www.toppreise.ch{href}"
                     elif not href.startswith("http"):
                         href = f"https://www.toppreise.ch/{href}"
-                    
+
                     # Look for external product links (preisvergleich pages)
                     if "ext_" in href:
                         # Try to resolve the redirect URL using the retry logic
@@ -577,7 +577,7 @@ class SerpApi(AsyncClient):
                 response = session.head(
                     url,
                     allow_redirects=True,
-                    timeout=10,
+                    timeout=6,
                     headers={
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                     },
