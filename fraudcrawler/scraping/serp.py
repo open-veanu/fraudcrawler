@@ -479,49 +479,47 @@ class SerpApi(AsyncClient):
         # Build the search URL for Toppreise
         base_url = "https://www.toppreise.ch/produktsuche"
         encoded_search = urllib.parse.quote(search_string)
-        params = {
-            'q': encoded_search,
-            'cid': ''
-        }
-        query_string = '&'.join([f"{k}={v}" for k, v in params.items() if v])
+        params = {"q": encoded_search, "cid": ""}
+        query_string = "&".join([f"{k}={v}" for k, v in params.items() if v])
         search_url = f"{base_url}?{query_string}"
 
         # Set headers to mimic a real browser
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
         }
 
         try:
             # Use aiohttp directly to handle HTML response
             import aiohttp
+
             async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.get(search_url) as response:
                     response.raise_for_status()
                     content = await response.read()
-            
+
             # Parse the HTML
-            soup = BeautifulSoup(content, 'html.parser')
-            
+            soup = BeautifulSoup(content, "html.parser")
+
             # Find all <a> tags and extract URLs
             urls = []
-            for link in soup.find_all('a', href=True):
-                href = link.get('href')
-                
+            for link in soup.find_all("a", href=True):
+                href = link.get("href")
+
                 # Skip empty links and javascript links
-                if href and not href.startswith('javascript:'):
+                if href and not href.startswith("javascript:"):
                     # Make relative URLs absolute
-                    if href.startswith('/'):
+                    if href.startswith("/"):
                         href = f"https://www.toppreise.ch{href}"
-                    elif not href.startswith('http'):
+                    elif not href.startswith("http"):
                         href = f"https://www.toppreise.ch/{href}"
-                    
+
                     # Look for external product links (preisvergleich pages)
-                    if 'ext_' in href:
+                    if "ext_" in href:
                         # Try to resolve the redirect URL using the retry logic
                         resolved_url = self._resolve_redirect_safely(href)
                         if resolved_url:
@@ -529,10 +527,10 @@ class SerpApi(AsyncClient):
                         else:
                             # Fallback to original URL if resolution fails
                             urls.append(href)
-            
+
             # Limit to requested number of results
             urls = urls[:num_results]
-            
+
         except Exception as e:
             logger.error(f"Error during Toppreise search: {e}")
             urls = []
@@ -562,23 +560,26 @@ class SerpApi(AsyncClient):
         try:
             # Use the same retry logic as the rest of the application
             retry = get_sync_retry()
-            
+
             def _make_request():
-                response = requests.head(
-                    url, 
-                    allow_redirects=True, 
-                    max_redirects=max_redirects,
+                # Create a session with redirect limits
+                session = requests.Session()
+                session.max_redirects = max_redirects
+
+                response = session.head(
+                    url,
+                    allow_redirects=True,
                     timeout=10,
                     headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    },
                 )
                 return response.url
-            
-            # Execute with retry logic
-            resolved_url = retry.call(_make_request)
+
+            # Execute with retry logic - use __call__ method
+            resolved_url = retry(_make_request)
             return resolved_url
-            
+
         except Exception as e:
             logger.debug(f"Failed to resolve redirect for {url}: {e}")
             return None
