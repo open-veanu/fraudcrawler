@@ -269,6 +269,25 @@ async def test_serpapi_apply_excluded_urls(serpapi):
 
 
 @pytest.mark.asyncio
+async def test_serpapi_apply_toppreise(serpapi):
+    search_term = "iPhone"
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+    num_results = 5
+    results = await serpapi.apply(
+        search_term=search_term,
+        search_engines=[SearchEngine.TOPPREISE],
+        language=language,
+        location=location,
+        num_results=num_results,
+    )
+    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
+    # Check that results are from Toppreise
+    assert all(res.marketplace_name == "Toppreise" for res in results)
+
+
+@pytest.mark.asyncio
 async def test_enricher_get_suggested_keywords(enricher):
     search_term = "sildenafil"
     location = Location(name="Switzerland", code="ch")

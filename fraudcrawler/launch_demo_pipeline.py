@@ -55,16 +55,16 @@ def search(search_term: str):
     # deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
 
     # # Optional: Add MARKETPLACES and EXCLUDED_URLS
-    # from fraudcrawler import Host
+    from fraudcrawler import Host
 
-    # marketplaces = [
-    #     Host(name="International", domains="zavamed.com,apomeds.com"),
-    #     Host(name="National", domains="netdoktor.ch, nobelpharma.ch")
-    # ]
-    # excluded_urls = [
-    #     Host(name="Digitec", domains="digitec.ch"),
-    #     Host(name="Brack", domains="brack.ch"),
-    # ]
+    marketplaces = [
+        Host(name="International", domains="zavamed.com,apomeds.com"),
+        # Host(name="National", domains="netdoktor.ch, nobelpharma.ch")
+    ]
+    excluded_urls = [
+        Host(name="Digitec", domains="digitec.ch"),
+        # Host(name="Brack", domains="brack.ch"),
+    ]
 
     # Execute the pipeline
     client.execute(
@@ -73,8 +73,8 @@ def search(search_term: str):
         location=location,
         deepness=deepness,
         prompts=prompts,
-        # marketplaces=marketplaces,
-        # excluded_urls=excluded_urls,
+        marketplaces=marketplaces,
+        excluded_urls=excluded_urls,
     )
 
     # Show results
@@ -97,4 +97,4 @@ def search(search_term: str):
 
 
 if __name__ == "__main__":
-    search(search_term = "Medion Kühlbox MD 37454")
+    search(search_term = 'Liebherr "TP1410"')
