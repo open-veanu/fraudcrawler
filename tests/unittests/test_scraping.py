@@ -1,7 +1,7 @@
 import pytest
 
 from fraudcrawler.base.base import Setup, Host, Location, Language
-from fraudcrawler.scraping.serp import SerpResult
+from fraudcrawler.scraping.serp import SearchResult
 from fraudcrawler import SerpApi, SearchEngine, Enricher, URLCollector, ZyteApi
 from fraudcrawler.scraping.enrich import Keyword
 
@@ -78,7 +78,7 @@ async def test_serpapi_google_search(serpapi):
         num_results=num_results,
     )
     assert 0 < len(results) <= num_results
-    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
 
 
@@ -95,7 +95,7 @@ async def test_serpapi_google_shopping_search(serpapi):
         num_results=num_results,
     )
     assert 0 < len(results) <= num_results
-    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
 
 
@@ -103,13 +103,13 @@ def test_serpapi_apply_filters(serpapi):
     location = Location(name="Switzerland")
 
     # No filters applied
-    result = SerpResult(
+    result = SearchResult(
         url="https://www.example.ch",
         domain="example.ch",
         marketplace_name="Example",
     )
     result = serpapi._apply_filters(result=result, location=location)
-    assert isinstance(result, SerpResult)
+    assert isinstance(result, SearchResult)
     assert result.url == "https://www.example.ch"
     assert result.domain == "example.ch"
     assert result.marketplace_name == "Example"
@@ -117,13 +117,13 @@ def test_serpapi_apply_filters(serpapi):
     assert result.filtered_at_stage is None
 
     # Country code filter applied
-    result = SerpResult(
+    result = SearchResult(
         url="https://www.example.org",
         domain="example.org",
         marketplace_name="Example",
     )
     result = serpapi._apply_filters(result=result, location=location)
-    assert isinstance(result, SerpResult)
+    assert isinstance(result, SearchResult)
     assert result.url == "https://www.example.org"
     assert result.domain == "example.org"
     assert result.marketplace_name == "Example"
@@ -132,7 +132,7 @@ def test_serpapi_apply_filters(serpapi):
     assert result.filtered_at_stage == "SerpAPI (country code filtering)"
 
     # Marketplace filter not applied (would be applied for country code but is overridden)
-    result = SerpResult(
+    result = SearchResult(
         url="https://www.example.org",
         domain="example.org",
         marketplace_name="Example",
@@ -141,7 +141,7 @@ def test_serpapi_apply_filters(serpapi):
     result = serpapi._apply_filters(
         result=result, location=location, marketplaces=marketplaces
     )
-    assert isinstance(result, SerpResult)
+    assert isinstance(result, SearchResult)
     assert result.url == "https://www.example.org"
     assert result.domain == "example.org"
     assert result.marketplace_name == "Example"
@@ -149,7 +149,7 @@ def test_serpapi_apply_filters(serpapi):
     assert result.filtered_at_stage is None
 
     # Excluded URLs filter applied
-    result = SerpResult(
+    result = SearchResult(
         url="https://de.example.ch",
         domain="de.example.ch",
         marketplace_name="Example",
@@ -158,7 +158,7 @@ def test_serpapi_apply_filters(serpapi):
     result = serpapi._apply_filters(
         result=result, location=location, excluded_urls=excluded_urls
     )
-    assert isinstance(result, SerpResult)
+    assert isinstance(result, SearchResult)
     assert result.url == "https://de.example.ch"
     assert result.domain == "de.example.ch"
     assert result.marketplace_name == "Example"
@@ -167,7 +167,7 @@ def test_serpapi_apply_filters(serpapi):
     assert result.filtered_at_stage == "SerpAPI (excluded URLs filtering)"
 
     # No filters applied
-    result = SerpResult(
+    result = SearchResult(
         url="https://www.example.ch",
         domain="example.ch",
         marketplace_name="Example",
@@ -180,7 +180,7 @@ def test_serpapi_apply_filters(serpapi):
         marketplaces=marketplaces,
         excluded_urls=excluded_urls,
     )
-    assert isinstance(result, SerpResult)
+    assert isinstance(result, SearchResult)
     assert result.url == "https://www.example.ch"
     assert result.domain == "example.ch"
     assert result.marketplace_name == "Example"
@@ -197,7 +197,7 @@ def test_serpapi_create_serp_result(serpapi):
         url=url,
         location=location,
     )
-    assert isinstance(result, SerpResult)
+    assert isinstance(result, SearchResult)
     assert result.url == url
     assert result.domain == "example.ch"
     assert result.marketplace_name == "Google"
@@ -212,7 +212,7 @@ def test_serpapi_create_serp_result(serpapi):
         location=location,
         marketplaces=marketplaces,
     )
-    assert isinstance(result, SerpResult)
+    assert isinstance(result, SearchResult)
     assert result.url == url
     assert result.domain == "example.ch"
     assert result.marketplace_name == "Example"
@@ -224,7 +224,7 @@ def test_serpapi_create_serp_result(serpapi):
         location=location,
         marketplaces=marketplaces,
     )
-    assert isinstance(serp_result, SerpResult)
+    assert isinstance(serp_result, SearchResult)
     assert serp_result.url == url
     assert serp_result.domain == "example.ch"
     assert serp_result.marketplace_name == "Google"
@@ -245,7 +245,7 @@ async def test_serpapi_apply_marketplaces(serpapi):
         num_results=num_results,
         marketplaces=marketplaces,
     )
-    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
 
 
@@ -264,7 +264,7 @@ async def test_serpapi_apply_excluded_urls(serpapi):
         num_results=num_results,
         excluded_urls=excluded_urls,
     )
-    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
 
 
@@ -281,7 +281,7 @@ async def test_serpapi_apply_toppreise(serpapi):
         location=location,
         num_results=num_results,
     )
-    assert all(isinstance(res, SerpResult) for res in results)
+    assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
     # Check that results are from Toppreise
     assert all(res.marketplace_name == "Toppreise" for res in results)

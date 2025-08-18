@@ -1,4 +1,4 @@
-from fraudcrawler.scraping.serp import SerpApi, SearchEngine
+from fraudcrawler.scraping.search import SerpApi
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteApi
@@ -13,6 +13,7 @@ from fraudcrawler.base.base import (
     Location,
     Prompt,
     ProductItem,
+    SearchEngine,
 )
 
 __all__ = [

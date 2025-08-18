@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import json
 import logging
 from pydantic import (
@@ -209,3 +210,22 @@ class AsyncClient:
                 response.raise_for_status()
                 json_ = await response.json()
         return json_
+
+
+class SearchResult(BaseModel):
+    """Model for a single search result."""
+
+    url: str
+    domain: str
+    marketplace_name: str
+    filtered: bool = False
+    filtered_at_stage: str | None = None
+
+
+class SearchEngine(ABC, AsyncClient):
+    """Abstract base class for search engines."""
+
+    @abstractmethod
+    async def apply(self, **kwargs) -> List[SearchResult]:
+        """Apply the search with the given parameters and return results."""
+        pass
