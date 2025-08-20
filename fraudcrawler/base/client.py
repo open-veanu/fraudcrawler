@@ -121,7 +121,8 @@ class FraudCrawlerClient(Orchestrator):
         nrm_se: List[SearchEngineName] = list(SearchEngineName)
         if search_engines:
             nrm_se = [
-                SearchEngineName(se) if isinstance(se, str) else se for se in search_engines
+                SearchEngineName(se) if isinstance(se, str) else se
+                for se in search_engines
             ]
 
         # Run the pipeline by calling the orchestrator's run method

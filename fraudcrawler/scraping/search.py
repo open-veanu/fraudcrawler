@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import logging
 from pydantic import BaseModel
-import re
 from typing import List
 from urllib.parse import quote_plus
 
@@ -28,6 +27,7 @@ class SearchResult(BaseModel):
 
 class SearchEngineName(Enum):
     """Enum for search engine names."""
+
     GOOGLE = "Google"
     GOOGLE_SHOPPING = "Google Shopping"
     TOPPREISE = "Toppreise"
@@ -35,6 +35,7 @@ class SearchEngineName(Enum):
 
 class SearchEngine(ABC, AsyncClient, DomainUtils):
     """Abstract base class for search engines."""
+
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
     _searchengine_name: SearchEngineName | None = None
 
@@ -60,7 +61,9 @@ class SearchEngine(ABC, AsyncClient, DomainUtils):
         pass
 
     @classmethod
-    def _log_before(cls, search_string: str, retry_state: RetryCallState | None) -> None:
+    def _log_before(
+        cls, search_string: str, retry_state: RetryCallState | None
+    ) -> None:
         """Context aware logging before the request is made."""
         if retry_state:
             logger.debug(
@@ -111,7 +114,6 @@ class SearchEngine(ABC, AsyncClient, DomainUtils):
             hosts: The list of hosts to check against.
         """
         return any(self._domain_in_host(domain=domain, host=hst) for hst in hosts)
-    
 
     @staticmethod
     def _relevant_country_code(url: str, country_code: str) -> bool:
@@ -274,7 +276,7 @@ class SerpAPI(SearchEngine):
             api_key: The API key to use for the search.
         """
         engine = self._engine
-        
+
         # Log the search parameters
         logger.debug(
             f'Performing SerpAPI search with engine="{engine}", '
@@ -325,7 +327,7 @@ class SerpAPI(SearchEngine):
 
 class SerpAPIGoogle(SerpAPI):
     """Search engine for Google in SerpAPI."""
-    
+
     _searchengine_name = SearchEngineName.GOOGLE
 
     def __init__(self, api_key: str):
@@ -339,8 +341,8 @@ class SerpAPIGoogle(SerpAPI):
     @property
     def _engine(self) -> str:
         """The search engine name used in the SerpAPI request."""
-        return 'google'
-    
+        return "google"
+
     @staticmethod
     def _extract_search_results_urls(response: dict | str | bytes) -> List[str]:
         """Extracts search results urls from the response.
@@ -354,7 +356,7 @@ class SerpAPIGoogle(SerpAPI):
         if results is not None:
             return [url for res in results if (url := res.get("link"))]
         return []
-    
+
     async def apply(
         self,
         search_term: str,
@@ -407,7 +409,7 @@ class SerpAPIGoogle(SerpAPI):
 
 class SerpAPIGoogleShopping(SerpAPI):
     """Search engine for Google Shopping in SerpAPI."""
-    
+
     _searchengine_name = SearchEngineName.GOOGLE_SHOPPING
 
     def __init__(self, api_key: str):
@@ -421,7 +423,7 @@ class SerpAPIGoogleShopping(SerpAPI):
     @property
     def _engine(self) -> str:
         """The search engine name used in the SerpAPI request."""
-        return 'google_shopping'
+        return "google_shopping"
 
     @staticmethod
     def _extract_search_results_urls(response: dict | str | bytes) -> List[str]:
@@ -461,7 +463,7 @@ class SerpAPIGoogleShopping(SerpAPI):
             search_term=search_term,
             marketplaces=marketplaces,
         )
-        
+
         # Perform the search
         urls = await self._search(
             search_string=search_string,
@@ -494,7 +496,7 @@ class SerpAPIGoogleShopping(SerpAPI):
 
 class Toppreise(SearchEngine):
     """Search engine for toppreise.ch."""
-    
+
     _searchengine_name = SearchEngineName.TOPPREISE
     _endpoint = "https://www.toppreise.ch/produktsuche"
     _headers = {
@@ -505,15 +507,14 @@ class Toppreise(SearchEngine):
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
     }
-    
+
     def __init__(self):
         """Initializes the Toppreise search engine."""
         super().__init__()
 
     @staticmethod
     def _get_external_product_urls(content: dict | str | bytes) -> List[str]:
-        """Extracts external product URLs from the Toppreise search results page.
-        """
+        """Extracts external product URLs from the Toppreise search results page."""
         if not isinstance(content, bytes):
             return []
         # Parse the HTML
@@ -522,12 +523,14 @@ class Toppreise(SearchEngine):
 
         # Filter links to only include external product links
         hrefs = [
-            href for link in links if (
-                hasattr(link, "get")                    # Ensure we have a Tag object with href attribute
-                and (href := link.get("href"))          # Ensure href is not None
+            href
+            for link in links
+            if (
+                hasattr(link, "get")  # Ensure we have a Tag object with href attribute
+                and (href := link.get("href"))  # Ensure href is not None
                 and not href.startswith("javascript:")  # Skip javascript links
-                and isinstance(href, str)               # Ensure href is a string
-                and "ext_" in href                      # Skip links that are not external product link
+                and isinstance(href, str)  # Ensure href is a string
+                and "ext_" in href  # Skip links that are not external product link
             )
         ]
 
@@ -547,10 +550,9 @@ class Toppreise(SearchEngine):
         )
         return urls
 
-
     async def _search(self, search_string: str, num_results: int) -> List[str]:
         """Performs a search on Toppreise and returns the URLs of the results.
-        
+
         Args:
             search_string: The search string to use for the query.
             num_results: Max number of results to return.
@@ -577,7 +579,7 @@ class Toppreise(SearchEngine):
                     headers=self._headers,
                     answer_format="bytes",
                 )
-        
+
         # Get external product urls from the content
         urls = self._get_external_product_urls(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
@@ -611,7 +613,9 @@ class Toppreise(SearchEngine):
         results = [
             self._create_search_result(
                 url=url,
-                location=Location(name="Switzerland", code="CH"),  # Toppreise is for Switzerland
+                location=Location(
+                    name="Switzerland", code="CH"
+                ),  # Toppreise is for Switzerland
                 marketplaces=marketplaces,
                 excluded_urls=excluded_urls,
             )
@@ -622,7 +626,7 @@ class Toppreise(SearchEngine):
             f'Produced {len(results)} results from Toppreise search with q="{search_term}".'
         )
         return results
-        
+
 
 class Search(DomainUtils):
     """Class to perform searches using different search engines."""
@@ -670,15 +674,15 @@ class Search(DomainUtils):
         # Make SerpAPI google search
         if SearchEngineName.GOOGLE in search_engine_names:
             res = await self._google.apply(
-                    search_term=search_term,
-                    language=language,
-                    location=location,
-                    num_results=num_results,
-                    marketplaces=marketplaces,
-                    excluded_urls=excluded_urls,
-                )
+                search_term=search_term,
+                language=language,
+                location=location,
+                num_results=num_results,
+                marketplaces=marketplaces,
+                excluded_urls=excluded_urls,
+            )
             results.extend(res)
-        
+
         # Make SerpAPI google shopping search
         if SearchEngineName.GOOGLE_SHOPPING in search_engine_names:
             res = await self._google_shopping.apply(

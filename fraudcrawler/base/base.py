@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 import json
 import logging
 from pydantic import (
@@ -187,7 +186,9 @@ class AsyncClient:
     """Base class for sub-classes using async HTTP requests."""
 
     @staticmethod
-    async def _extract_answer(response: aiohttp.ClientResponse, answer_format: str) -> dict | str | bytes:
+    async def _extract_answer(
+        response: aiohttp.ClientResponse, answer_format: str
+    ) -> dict | str | bytes:
         """Extracts the answer from the response based on the specified format."""
         if answer_format == "json":
             return await response.json()
@@ -210,8 +211,7 @@ class AsyncClient:
             async with session.get(url=url, params=params) as response:
                 response.raise_for_status()
                 answer = await self._extract_answer(
-                    response=response,
-                    answer_format=answer_format
+                    response=response, answer_format=answer_format
                 )
         return answer
 
@@ -228,19 +228,18 @@ class AsyncClient:
             async with session.post(url=url, json=data, auth=auth) as response:
                 response.raise_for_status()
                 answer = await self._extract_answer(
-                    response=response,
-                    answer_format=answer_format
+                    response=response, answer_format=answer_format
                 )
         return answer
 
 
 class DomainUtils:
     """Utility class for domain extraction and normalization.
-    
+
     Handles domain parsing from URLs, removes common prefixes (www, http/https),
     and provides consistent domain formatting for search and scraping operations.
     """
-    
+
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
 
     def _get_domain(self, url: str) -> str:

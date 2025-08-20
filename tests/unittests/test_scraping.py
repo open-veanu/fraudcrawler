@@ -1,7 +1,13 @@
 import pytest
 
 from fraudcrawler.base.base import Setup, Host, Location, Language
-from fraudcrawler.scraping.search import Search, SearchResult, SerpAPIGoogle, SerpAPIGoogleShopping, Toppreise
+from fraudcrawler.scraping.search import (
+    Search,
+    SearchResult,
+    SerpAPIGoogle,
+    SerpAPIGoogleShopping,
+    Toppreise,
+)
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 
@@ -10,24 +16,29 @@ _SETUP = Setup(
     dataforseo_user="test_user",
     dataforseo_pwd="test_pwd",
     zyteapi_key="test_zyte_key",
-    openaiapi_key="test_openai_key"
+    openaiapi_key="test_openai_key",
 )
+
 
 @pytest.fixture
 def serpapi_google():
     return SerpAPIGoogle(api_key=_SETUP.serpapi_key)
 
+
 @pytest.fixture
 def serpapi_google_shopping():
     return SerpAPIGoogleShopping(api_key=_SETUP.serpapi_key)
+
 
 @pytest.fixture
 def toppreise():
     return Toppreise()
 
+
 @pytest.fixture
 def search():
     return Search(serpapi_key=_SETUP.serpapi_key)
+
 
 @pytest.fixture
 def enricher():
@@ -258,7 +269,7 @@ async def test_serpapi_google_apply_marketplaces(serpapi_google):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
-    assert all('ricardo.ch' in res.url for res in results)
+    assert all("ricardo.ch" in res.url for res in results)
 
 
 @pytest.mark.asyncio
@@ -299,13 +310,13 @@ async def test_search_apply(search):
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    search_engine_names = ['google', 'google_shopping', 'toppreise']
+    search_engine_names = ["google", "google_shopping", "toppreise"]
     results = await search.apply(
         search_term=search_term,
         language=language,
         location=location,
         num_results=num_results,
-        search_engine_names=search_engine_names
+        search_engine_names=search_engine_names,
     )
     assert 0 < len(results) <= len(search_engine_names) * num_results
     assert all(isinstance(res, SearchResult) for res in results)

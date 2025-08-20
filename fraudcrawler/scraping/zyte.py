@@ -106,7 +106,8 @@ class ZyteAPI(AsyncClient, DomainUtils):
 
     @staticmethod
     def keep_product(
-        details: dict | str | bytes, threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD
+        details: dict | str | bytes,
+        threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD,
     ) -> bool:
         """Determines whether to keep the product based on the probability threshold.
 
@@ -225,7 +226,9 @@ class ZyteAPI(AsyncClient, DomainUtils):
         """
         if not isinstance(details, dict):
             return 0.0
-        return float(details.get("product", {}).get("metadata", {}).get("probability", 0.0))
+        return float(
+            details.get("product", {}).get("metadata", {}).get("probability", 0.0)
+        )
 
     @staticmethod
     def extract_html(details: dict | str | bytes) -> str | None:

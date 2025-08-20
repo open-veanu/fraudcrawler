@@ -23,6 +23,7 @@ def _is_retryable_exception(err: BaseException) -> bool:
         return False
     return True
 
+
 def _get_kwargs(stop_after: int) -> dict:
     """Returns the kwargs for the retry configuration."""
     return {
@@ -37,9 +38,11 @@ def _get_kwargs(stop_after: int) -> dict:
         "reraise": True,
     }
 
+
 def get_async_retry() -> AsyncRetrying:
     """returns the retry configuration for async operations."""
     return AsyncRetrying(**_get_kwargs(stop_after=RETRY_STOP_AFTER_ATTEMPT_ASYNC))
+
 
 def get_sync_retry() -> Retrying:
     """returns the retry configuration for synchronous operations."""

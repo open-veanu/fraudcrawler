@@ -114,9 +114,11 @@ class Orchestrator(ABC):
                 search_term_type = item.pop("search_term_type")
                 # The search_engines are already SearchEngineName enum values
                 search_engines = item.pop("search_engines")
-                
-                results = await self._search.apply(**item, search_engine_names=search_engines)
-                
+
+                results = await self._search.apply(
+                    **item, search_engine_names=search_engines
+                )
+
                 logger.debug(
                     f"Search for {item['search_term']} returned {len(results)} results"
                 )
@@ -205,11 +207,13 @@ class Orchestrator(ABC):
                     product.product_name = self._zyteapi.extract_product_name(
                         details=details
                     )
-                    
+
                     # If the resolved URL is different from the original URL, we also need to update the domain as
                     # otherwise the unresolved domain will be shown, for example for unresolved domain toppreis.ch but resolved digitec.ch
                     if url_resolved and url_resolved != product.url:
-                        logger.debug(f"URL resolved for {product.url} is {url_resolved}")
+                        logger.debug(
+                            f"URL resolved for {product.url} is {url_resolved}"
+                        )
                         product.domain = self._search._get_domain(url_resolved)
 
                     product.product_price = self._zyteapi.extract_product_price(
@@ -414,9 +418,11 @@ class Orchestrator(ABC):
         """Adds all the (enriched) search_term (as serp items) to the queue."""
         # Ensure we have at least one search engine
         if not search_engines:
-            logger.warning("No search engines specified, using all available search engines")
+            logger.warning(
+                "No search engines specified, using all available search engines"
+            )
             search_engines = list(SearchEngineName)
-            
+
         common_kwargs = {
             "queue": queue,
             "language": language,
@@ -483,7 +489,9 @@ class Orchestrator(ABC):
         """
         # Ensure we have at least one search engine
         if not search_engines:
-            logger.warning("No search engines specified, using all available search engines")
+            logger.warning(
+                "No search engines specified, using all available search engines"
+            )
             search_engines = list(SearchEngineName)
 
         # ---------------------------
