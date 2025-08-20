@@ -21,11 +21,9 @@ from fraudcrawler.base.base import (
     Prompt,
     ProductItem,
 )
-from fraudcrawler.scraping.search import (
+from fraudcrawler import (
     Search,
     SearchEngineName,
-)
-from fraudcrawler import (
     Enricher,
     URLCollector,
     ZyteAPI,

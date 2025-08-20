@@ -1,4 +1,4 @@
-from fraudcrawler.scraping.search import Search, SearchEngine
+from fraudcrawler.scraping.search import Search, SearchEngineName
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteAPI
@@ -17,7 +17,7 @@ from fraudcrawler.base.base import (
 
 __all__ = [
     "Search",
-    "SearchEngine",
+    "SearchEngineName",
     "Enricher",
     "URLCollector",
     "ZyteAPI",
