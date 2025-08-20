@@ -59,7 +59,7 @@ class Processor:
                     )
                 )
             else:
-                logger.error(
+                logger.warning(
                     f'Field "{field}" is missing in ProductItem with url="{product.url}"'
                 )
         return "\n\n".join(details)

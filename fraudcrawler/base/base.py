@@ -185,47 +185,48 @@ class AsyncClient:
     """Base class for sub-classes using async HTTP requests."""
 
     @staticmethod
+    async def _extract_answer(response: aiohttp.ClientResponse, answer_format: str) -> dict | str | bytes:
+        """Extracts the answer from the response based on the specified format."""
+        if answer_format == "json":
+            return await response.json()
+        elif answer_format == "text":
+            return await response.text()
+        elif answer_format == "bytes":
+            return await response.read()
+        else:
+            raise ValueError(f"Unsupported answer format: {answer_format}")
+
     async def get(
+        self,
         url: str,
         headers: dict | None = None,
         params: dict | None = None,
-    ) -> dict:
+        answer_format: str = "json",
+    ) -> dict | str | bytes:
         """Async GET request of a given URL returning the data."""
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(url=url, params=params) as response:
                 response.raise_for_status()
-                json_ = await response.json()
-        return json_
+                answer = await self._extract_answer(
+                    response=response,
+                    answer_format=answer_format
+                )
+        return answer
 
-    @staticmethod
     async def post(
+        self,
         url: str,
         headers: dict | None = None,
         data: List[dict] | dict | None = None,
         auth: aiohttp.BasicAuth | None = None,
-    ) -> dict:
+        answer_format: str = "json",
+    ) -> dict | str | bytes:
         """Async POST request of a given URL returning the data."""
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.post(url=url, json=data, auth=auth) as response:
                 response.raise_for_status()
-                json_ = await response.json()
-        return json_
-
-
-class SearchResult(BaseModel):
-    """Model for a single search result."""
-
-    url: str
-    domain: str
-    marketplace_name: str
-    filtered: bool = False
-    filtered_at_stage: str | None = None
-
-
-class SearchEngine(ABC, AsyncClient):
-    """Abstract base class for search engines."""
-
-    @abstractmethod
-    async def apply(self, **kwargs) -> List[SearchResult]:
-        """Apply the search with the given parameters and return results."""
-        pass
+                answer = await self._extract_answer(
+                    response=response,
+                    answer_format=answer_format
+                )
+        return answer

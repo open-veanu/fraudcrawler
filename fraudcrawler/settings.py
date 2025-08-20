@@ -7,7 +7,7 @@ ROOT_DIR = Path(__file__).parents[1]
 # Service retry settings
 # With the following setup (neglecting the jitter) we have 6 attempts with delays:
 #   0s, 1s, 4s, 16s, 64s, 64s (because of the max delay)
-RETRY_STOP_AFTER_ATTEMPT = 6
+RETRY_STOP_AFTER_ATTEMPT_ASYNC = 6
 RETRY_STOP_AFTER_ATTEMPT_SYNC = 2  # For sync operations, we need to retry less often as otherwise we block the main thread.
 RETRY_INITIAL_DELAY = 1
 RETRY_MAX_DELAY = 64
@@ -18,7 +18,7 @@ RETRY_SKIP_IF_CODE = [400, 401, 403]  # Skip retrying on these HTTP status codes
 # Serp settings
 GOOGLE_LOCATIONS_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-locations.json"
 GOOGLE_LANGUAGES_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-languages.json"
-SERP_DEFAULT_COUNTRY_CODES: List[str] = [
+SEARCH_DEFAULT_COUNTRY_CODES: List[str] = [
     # ".com",
 ]
 
