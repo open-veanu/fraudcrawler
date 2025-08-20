@@ -1,7 +1,7 @@
 import pytest
 
 from fraudcrawler.base.base import Setup, Host, Location, Language
-from fraudcrawler.scraping.search import SearchResult, SerpAPIGoogle, SerpAPIGoogleShopping, Toppreise
+from fraudcrawler.scraping.search import Search, SearchResult, SerpAPIGoogle, SerpAPIGoogleShopping, Toppreise
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 
@@ -18,6 +18,10 @@ def serpapi_google_shopping():
 @pytest.fixture
 def toppreise():
     return Toppreise()
+
+@pytest.fixture
+def search():
+    return Search(serpapi_key=_SETUP.serpapi_key)
 
 @pytest.fixture
 def enricher():
@@ -281,6 +285,25 @@ async def test_toppreise_apply(toppreise):
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
     assert all(res.marketplace_name == "Toppreise" for res in results)
+
+
+@pytest.mark.asyncio
+async def test_search_apply(search):
+    search_term = "Kaffee"
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+    num_results = 5
+    search_engine_names = ['google', 'google_shopping', 'toppreise']
+    results = await search.apply(
+        search_term=search_term,
+        language=language,
+        location=location,
+        num_results=num_results,
+        search_engine_names=search_engine_names
+    )
+    assert 0 < len(results) <= len(search_engine_names) * num_results
+    assert all(isinstance(res, SearchResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
 
 
 @pytest.mark.asyncio
