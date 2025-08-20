@@ -8,6 +8,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic_settings import BaseSettings
+from urllib.parse import urlparse
 import re
 from typing import List, Dict
 
@@ -131,7 +132,8 @@ class ProductItem(BaseModel):
     search_term: str
     search_term_type: str
     url: str
-    marketplace_name: str
+    url_resolved: str
+    searchengine_name: str
     domain: str
 
     # Zyte parameters
@@ -230,3 +232,38 @@ class AsyncClient:
                     answer_format=answer_format
                 )
         return answer
+
+
+class DomainUtils:
+    """Utility class for domain extraction and normalization.
+    
+    Handles domain parsing from URLs, removes common prefixes (www, http/https),
+    and provides consistent domain formatting for search and scraping operations.
+    """
+    
+    _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
+
+    def _get_domain(self, url: str) -> str:
+        """Extracts the second-level domain together with the top-level domain (e.g. `google.com`).
+
+        Args:
+            url: The URL to be processed.
+        """
+        # Add scheme; urlparse requires it
+        if not url.startswith(("http://", "https://")):
+            url = "http://" + url
+
+        # Get the hostname
+        hostname = urlparse(url).hostname
+        if hostname is None and (match := re.search(self._hostname_pattern, url)):
+            hostname = match.group(1)
+        if hostname is None:
+            logger.warning(
+                f'Failed to extract domain from url="{url}"; full url is returned'
+            )
+            return url.lower()
+
+        # Remove www. prefix
+        if hostname and hostname.startswith("www."):
+            hostname = hostname[4:]
+        return hostname.lower()

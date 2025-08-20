@@ -5,7 +5,13 @@ from fraudcrawler.scraping.search import Search, SearchResult, SerpAPIGoogle, Se
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 
-_SETUP = Setup()
+_SETUP = Setup(
+    serpapi_key="test_key",
+    dataforseo_user="test_user",
+    dataforseo_pwd="test_pwd",
+    zyteapi_key="test_zyte_key",
+    openaiapi_key="test_openai_key"
+)
 
 @pytest.fixture
 def serpapi_google():

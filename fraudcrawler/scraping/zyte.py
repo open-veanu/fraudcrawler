@@ -6,13 +6,13 @@ import aiohttp
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
-from fraudcrawler.base.base import AsyncClient
+from fraudcrawler.base.base import AsyncClient, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
 
 
-class ZyteAPI(AsyncClient):
+class ZyteAPI(AsyncClient, DomainUtils):
     """A client to interact with the Zyte API for fetching product details."""
 
     _endpoint = "https://api.zyte.com/v1/extract"
@@ -58,7 +58,7 @@ class ZyteAPI(AsyncClient):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
-    async def get_details(self, url: str) -> dict:
+    async def get_details(self, url: str) -> dict | str | bytes:
         """Fetches product details for a single URL.
 
         Args:
@@ -106,7 +106,7 @@ class ZyteAPI(AsyncClient):
 
     @staticmethod
     def keep_product(
-        details: dict, threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD
+        details: dict | str | bytes, threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD
     ) -> bool:
         """Determines whether to keep the product based on the probability threshold.
 
@@ -114,6 +114,8 @@ class ZyteAPI(AsyncClient):
             details: A product details data dictionary.
             threshold: The probability threshold used to filter the products.
         """
+        if not isinstance(details, dict):
+            return False
         try:
             prob = float(details["product"]["metadata"]["probability"])
         except KeyError:
@@ -124,7 +126,7 @@ class ZyteAPI(AsyncClient):
         return prob > threshold
 
     @staticmethod
-    def extract_product_name(details: dict) -> str | None:
+    def extract_product_name(details: dict | str | bytes) -> str | None:
         """Extracts the product name from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -134,10 +136,27 @@ class ZyteAPI(AsyncClient):
                 }
             }
         """
+        if not isinstance(details, dict):
+            return None
         return details.get("product", {}).get("name")
 
     @staticmethod
-    def extract_product_price(details: dict) -> str | None:
+    def extract_url_resolved(details: dict | str | bytes) -> str | None:
+        """Extracts the resolved URL from the product data - this is automatically resolved by Zyte.
+
+        The input argument is a dictionary of the following structure:
+            {
+                "product": {
+                    "url": str,
+                }
+            }
+        """
+        if not isinstance(details, dict):
+            return None
+        return details.get("product", {}).get("url")
+
+    @staticmethod
+    def extract_product_price(details: dict | str | bytes) -> str | None:
         """Extracts the product price from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -147,10 +166,12 @@ class ZyteAPI(AsyncClient):
                 }
             }
         """
+        if not isinstance(details, dict):
+            return None
         return details.get("product", {}).get("price")
 
     @staticmethod
-    def extract_product_description(details: dict) -> str | None:
+    def extract_product_description(details: dict | str | bytes) -> str | None:
         """Extracts the product description from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -160,10 +181,12 @@ class ZyteAPI(AsyncClient):
                 }
             }
         """
+        if not isinstance(details, dict):
+            return None
         return details.get("product", {}).get("description")
 
     @staticmethod
-    def extract_image_urls(details: dict) -> List[str]:
+    def extract_image_urls(details: dict | str | bytes) -> List[str]:
         """Extracts the images from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -174,6 +197,8 @@ class ZyteAPI(AsyncClient):
                 }
             }
         """
+        if not isinstance(details, dict):
+            return []
         images = []
         product = details.get("product")
         if product:
@@ -186,7 +211,7 @@ class ZyteAPI(AsyncClient):
         return images
 
     @staticmethod
-    def extract_probability(details: dict) -> float:
+    def extract_probability(details: dict | str | bytes) -> float:
         """Extracts the probability from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -198,10 +223,12 @@ class ZyteAPI(AsyncClient):
                 }
             }
         """
-        return float(details.get("product", {}).get("metadata", {}).get("probability"))
+        if not isinstance(details, dict):
+            return 0.0
+        return float(details.get("product", {}).get("metadata", {}).get("probability", 0.0))
 
     @staticmethod
-    def extract_html(details: dict) -> str | None:
+    def extract_html(details: dict | str | bytes) -> str | None:
         """Extracts the HTML from the Zyte API response.
 
         The input argument is a dictionary of the following structure:
@@ -209,6 +236,8 @@ class ZyteAPI(AsyncClient):
                 "httpResponseBody": base64
             }
         """
+        if not isinstance(details, dict):
+            return None
 
         # Get the Base64-encoded content
         encoded = details.get("httpResponseBody")
@@ -217,6 +246,7 @@ class ZyteAPI(AsyncClient):
         if isinstance(encoded, str):
             decoded_bytes = b64decode(encoded)
 
-        # Convert bytes to string (assuming UTF-8 encoding)
-        decoded_string = decoded_bytes.decode("utf-8")
-        return decoded_string
+            # Convert bytes to string (assuming UTF-8 encoding)
+            decoded_string = decoded_bytes.decode("utf-8")
+            return decoded_string
+        return None

@@ -94,7 +94,7 @@ class Enricher(AsyncClient):
         volume = item["keyword_info"]["search_volume"]
         return Keyword(text=text, volume=volume)
 
-    def _extract_suggested_keywords(self, data: dict) -> List[Keyword]:
+    def _extract_suggested_keywords(self, data: dict | str | bytes) -> List[Keyword]:
         """Extracts the keywords from the DataForSEO response for suggested keywords.
 
         Args:
@@ -124,6 +124,8 @@ class Enricher(AsyncClient):
         Args:
             data: The response data from DataForSEO.
         """
+        if not isinstance(data, dict):
+            return []
         keywords = []
         for item in self._extract_items_from_data(data=data):
             try:
@@ -194,7 +196,7 @@ class Enricher(AsyncClient):
         volume = item["keyword_data"]["keyword_info"]["search_volume"]
         return Keyword(text=text, volume=volume)
 
-    def _extract_related_keywords(self, data: dict) -> List[Keyword]:
+    def _extract_related_keywords(self, data: dict | str | bytes) -> List[Keyword]:
         """Extracts the keywords from the DataForSEO response for related keywords.
 
         Args:
@@ -226,6 +228,8 @@ class Enricher(AsyncClient):
         Args:
             data: The response data from DataForSEO.
         """
+        if not isinstance(data, dict):
+            return []
         keywords = []
         for item in self._extract_items_from_data(data=data):
             try:

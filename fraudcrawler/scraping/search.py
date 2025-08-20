@@ -3,16 +3,15 @@ from enum import Enum
 import logging
 from pydantic import BaseModel
 import re
-import requests
 from typing import List
-from urllib.parse import urlparse, quote_plus
+from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import SEARCH_DEFAULT_COUNTRY_CODES
-from fraudcrawler.base.base import Host, Language, Location, AsyncClient
-from fraudcrawler.base.retry import get_async_retry, get_sync_retry
+from fraudcrawler.base.base import Host, Language, Location, AsyncClient, DomainUtils
+from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
 
@@ -22,28 +21,41 @@ class SearchResult(BaseModel):
 
     url: str
     domain: str
-    marketplace_name: str
+    searchengine_name: str
     filtered: bool = False
     filtered_at_stage: str | None = None
 
 
 class SearchEngineName(Enum):
     """Enum for search engine names."""
-    GOOGLE = "google"
-    GOOGLE_SHOPPING = "google_shopping"
-    TOPPREISE = "toppreise"
+    GOOGLE = "Google"
+    GOOGLE_SHOPPING = "Google Shopping"
+    TOPPREISE = "Toppreise"
 
 
-class SearchEngine(ABC, AsyncClient):
+class SearchEngine(ABC, AsyncClient, DomainUtils):
     """Abstract base class for search engines."""
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
+    _searchengine_name: SearchEngineName | None = None
 
-    def __init__(self, default_marketplace_name: str):
+    def __init__(self):
         """Initializes the search engine."""
-        self._default_marketplace_name = default_marketplace_name
+        if self.__class__._searchengine_name is None:
+            raise NotImplementedError(
+                f"Class {self.__class__.__name__} must define _searchengine_name class variable"
+            )
+        self._searchengine_name: str = self.__class__._searchengine_name.value
 
     @abstractmethod
-    async def apply(self, **kwargs) -> List[SearchResult]:
+    async def apply(
+        self,
+        search_term: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+    ) -> List[SearchResult]:
         """Apply the search with the given parameters and return results."""
         pass
 
@@ -71,31 +83,6 @@ class SearchEngine(ABC, AsyncClient):
             )
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
-
-    def _get_domain(self, url: str) -> str:
-        """Extracts the second-level domain together with the top-level domain (e.g. `google.com`).
-
-        Args:
-            url: The URL to be processed.
-        """
-        # Add scheme; urlparse requires it
-        if not url.startswith(("http://", "https://")):
-            url = "http://" + url
-
-        # Get the hostname
-        hostname = urlparse(url).hostname
-        if hostname is None and (match := re.search(self._hostname_pattern, url)):
-            hostname = match.group(1)
-        if hostname is None:
-            logger.warning(
-                f'Failed to extract domain from url="{url}"; full url is returned'
-            )
-            return url.lower()
-
-        # Remove www. prefix
-        if hostname and hostname.startswith("www."):
-            hostname = hostname[4:]
-        return hostname.lower()
 
     @staticmethod
     def _domain_in_host(domain: str, host: Host) -> bool:
@@ -203,23 +190,11 @@ class SearchEngine(ABC, AsyncClient):
         # Get marketplace name
         domain = self._get_domain(url=url)
 
-        # Set marketplace name (default if not found)
-        marketplace_name = self._default_marketplace_name
-        if marketplaces:
-            try:
-                marketplace_name = next(
-                    mp.name
-                    for mp in marketplaces
-                    if self._domain_in_host(domain=domain, host=mp)
-                )
-            except StopIteration:
-                logger.warning(f'Failed to find marketplace for domain="{domain}".')
-
         # Create the SearchResult object
         result = SearchResult(
             url=url,
             domain=domain,
-            marketplace_name=marketplace_name,
+            searchengine_name=self._searchengine_name,  # type: ignore[arg-type]
         )
 
         # Apply filters
@@ -243,8 +218,7 @@ class SerpAPI(SearchEngine):
         Args:
             api_key: The API key for SerpAPI.
         """
-        default_marketplace_name = self._engine.replace("_", " ").title()
-        super().__init__(default_marketplace_name=default_marketplace_name)
+        super().__init__()
         self._api_key = api_key
 
     @property
@@ -255,7 +229,7 @@ class SerpAPI(SearchEngine):
 
     @staticmethod
     @abstractmethod
-    def _extract_search_results_urls(response: dict) -> List[str]:
+    def _extract_search_results_urls(response: dict | str | bytes) -> List[str]:
         """Extracts search results urls from the response.
 
         Args:
@@ -351,6 +325,8 @@ class SerpAPI(SearchEngine):
 
 class SerpAPIGoogle(SerpAPI):
     """Search engine for Google in SerpAPI."""
+    
+    _searchengine_name = SearchEngineName.GOOGLE
 
     def __init__(self, api_key: str):
         """Initializes the SerpAPIGoogle client with the given API key.
@@ -366,12 +342,14 @@ class SerpAPIGoogle(SerpAPI):
         return 'google'
     
     @staticmethod
-    def _extract_search_results_urls(response: dict) -> List[str]:
+    def _extract_search_results_urls(response: dict | str | bytes) -> List[str]:
         """Extracts search results urls from the response.
 
         Args:
             response: The response from the SerpApi search.
         """
+        if not isinstance(response, dict):
+            return []
         results = response.get("organic_results")
         if results is not None:
             return [url for res in results if (url := res.get("link"))]
@@ -429,6 +407,8 @@ class SerpAPIGoogle(SerpAPI):
 
 class SerpAPIGoogleShopping(SerpAPI):
     """Search engine for Google Shopping in SerpAPI."""
+    
+    _searchengine_name = SearchEngineName.GOOGLE_SHOPPING
 
     def __init__(self, api_key: str):
         """Initializes the SerpAPIGoogleShopping client with the given API key.
@@ -444,12 +424,14 @@ class SerpAPIGoogleShopping(SerpAPI):
         return 'google_shopping'
 
     @staticmethod
-    def _extract_search_results_urls(response: dict) -> List[str]:
+    def _extract_search_results_urls(response: dict | str | bytes) -> List[str]:
         """Extracts search results urls from the response.
 
         Args:
             response: The response from the SerpApi search.
         """
+        if not isinstance(response, dict):
+            return []
         results = response.get("shopping_results")
         if results is not None:
             return [url for res in results if (url := res.get("product_link"))]
@@ -512,11 +494,9 @@ class SerpAPIGoogleShopping(SerpAPI):
 
 class Toppreise(SearchEngine):
     """Search engine for toppreise.ch."""
-
-    _default_marketplace_name = "Toppreise"
+    
+    _searchengine_name = SearchEngineName.TOPPREISE
     _endpoint = "https://www.toppreise.ch/produktsuche"
-    _timeout = 6  # seconds
-    _max_redirects = 3
     _headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -528,12 +508,14 @@ class Toppreise(SearchEngine):
     
     def __init__(self):
         """Initializes the Toppreise search engine."""
-        super().__init__(default_marketplace_name=self._default_marketplace_name)
+        super().__init__()
 
     @staticmethod
-    def _get_external_product_urls(content: bytes) -> List[str]:
+    def _get_external_product_urls(content: dict | str | bytes) -> List[str]:
         """Extracts external product URLs from the Toppreise search results page.
         """
+        if not isinstance(content, bytes):
+            return []
         # Parse the HTML
         soup = BeautifulSoup(content, "html.parser")
         links = soup.find_all("a", href=True)
@@ -565,32 +547,6 @@ class Toppreise(SearchEngine):
         )
         return urls
 
-    def _resolve_redirects_safely(self, urls: List[str]) -> List[str]:
-        """Resolves redirects for the given URLs and returns the final URLs."""
-        # Find all the resolved URLs
-        product_urls = []
-        with requests.Session() as session:
-            session.max_redirects = self._max_redirects
-            for url in urls:
-                try:
-                    response = session.head(
-                        url,
-                        allow_redirects=True,
-                        timeout=self._timeout,
-                        headers=self._headers,
-                    )
-                    product_urls.append(response.url)
-
-                except Exception as e:
-                    logger.debug(f"Failed to resolve redirect for {url}: {e}")
-                    product_urls.append(url)
-        
-        # Remove duplicates and return
-        product_urls = list(set(product_urls))
-        logger.debug(
-            f"Resolved {len(product_urls)} product URLs from Toppreise search results."
-        )
-        return product_urls
 
     async def _search(self, search_string: str, num_results: int) -> List[str]:
         """Performs a search on Toppreise and returns the URLs of the results.
@@ -626,13 +582,13 @@ class Toppreise(SearchEngine):
         urls = self._get_external_product_urls(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
 
-        # Resolve redirects for the URLs
-        urls = self._resolve_redirects_safely(urls=urls)
         return urls
 
     async def apply(
         self,
         search_term: str,
+        language: Language,
+        location: Location,
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
@@ -668,7 +624,7 @@ class Toppreise(SearchEngine):
         return results
         
 
-class Search:
+class Search(DomainUtils):
     """Class to perform searches using different search engines."""
 
     def __init__(self, serpapi_key):
@@ -739,6 +695,8 @@ class Search:
         if SearchEngineName.TOPPREISE in search_engine_names:
             res = await self._toppreise.apply(
                 search_term=search_term,
+                language=language,
+                location=location,
                 num_results=num_results,
                 marketplaces=marketplaces,
                 excluded_urls=excluded_urls,
