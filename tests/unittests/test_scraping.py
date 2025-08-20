@@ -11,14 +11,7 @@ from fraudcrawler.scraping.search import (
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 
-_SETUP = Setup(
-    serpapi_key="test_key",
-    dataforseo_user="test_user",
-    dataforseo_pwd="test_pwd",
-    zyteapi_key="test_zyte_key",
-    openaiapi_key="test_openai_key",
-)
-
+_SETUP = Setup()
 
 @pytest.fixture
 def serpapi_google():
@@ -105,6 +98,7 @@ async def test_serpapi_google_apply(serpapi_google):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
+    assert all(res.search_engine_name == "Google" for res in results)
 
 
 @pytest.mark.asyncio
@@ -123,133 +117,15 @@ async def test_serpapi_google_shopping_apply(serpapi_google_shopping):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
-
-
-def test_search_engine_apply_filters(serpapi_google):
-    location = Location(name="Switzerland")
-
-    # No filters applied
-    result = SearchResult(
-        url="https://www.example.ch",
-        domain="example.ch",
-        marketplace_name="Example",
-    )
-    result = serpapi_google._apply_filters(result=result, location=location)
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://www.example.ch"
-    assert result.domain == "example.ch"
-    assert result.marketplace_name == "Example"
-    assert result.filtered is False
-    assert result.filtered_at_stage is None
-
-    # Country code filter applied
-    result = SearchResult(
-        url="https://www.example.org",
-        domain="example.org",
-        marketplace_name="Example",
-    )
-    result = serpapi_google._apply_filters(result=result, location=location)
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://www.example.org"
-    assert result.domain == "example.org"
-    assert result.marketplace_name == "Example"
-    assert result.filtered is True
-    assert isinstance(result.filtered_at_stage, str)
-    assert result.filtered_at_stage == "Search (country code filtering)"
-
-    # Marketplace filter not applied (would be applied for country code but is overridden)
-    result = SearchResult(
-        url="https://www.example.org",
-        domain="example.org",
-        marketplace_name="Example",
-    )
-    marketplaces = [Host(name="Example", domains="example.org")]
-    result = serpapi_google._apply_filters(
-        result=result, location=location, marketplaces=marketplaces
-    )
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://www.example.org"
-    assert result.domain == "example.org"
-    assert result.marketplace_name == "Example"
-    assert result.filtered is False
-    assert result.filtered_at_stage is None
-
-    # Excluded URLs filter applied
-    result = SearchResult(
-        url="https://de.example.ch",
-        domain="de.example.ch",
-        marketplace_name="Example",
-    )
-    excluded_urls = [Host(name="Example", domains="example.ch")]
-    result = serpapi_google._apply_filters(
-        result=result, location=location, excluded_urls=excluded_urls
-    )
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://de.example.ch"
-    assert result.domain == "de.example.ch"
-    assert result.marketplace_name == "Example"
-    assert result.filtered is True
-    assert isinstance(result.filtered_at_stage, str)
-    assert result.filtered_at_stage == "Search (excluded URLs filtering)"
-
-    # No filters applied
-    result = SearchResult(
-        url="https://www.example.ch",
-        domain="example.ch",
-        marketplace_name="Example",
-    )
-    marketplaces = [Host(name="Example", domains="example.org")]
-    excluded_urls = [Host(name="Example", domains="example.de")]
-    result = serpapi_google._apply_filters(
-        result=result,
-        location=location,
-        marketplaces=marketplaces,
-        excluded_urls=excluded_urls,
-    )
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://www.example.ch"
-    assert result.domain == "example.ch"
-    assert result.marketplace_name == "Example"
-    assert result.filtered is False
-    assert result.filtered_at_stage is None
+    assert all(res.search_engine_name == "Google Shopping" for res in results)
 
 
 def test_search_engine_create_search_result(serpapi_google):
     url = "https://www.example.ch"
-    location = Location(name="Switzerland")
-    result = serpapi_google._create_search_result(
-        url=url,
-        location=location,
-    )
+    result = serpapi_google._create_search_result(url=url)
     assert isinstance(result, SearchResult)
     assert result.url == url
     assert result.domain == "example.ch"
-    assert result.marketplace_name == "Google"
-
-    marketplaces = [
-        Host(name="Galaxus", domains="galaxus.ch"),
-        Host(name="Example", domains="example.ch"),
-    ]
-    result = serpapi_google._create_search_result(
-        url=url,
-        location=location,
-        marketplaces=marketplaces,
-    )
-    assert isinstance(result, SearchResult)
-    assert result.url == url
-    assert result.domain == "example.ch"
-    assert result.marketplace_name == "Example"
-
-    marketplaces = [Host(name="Galaxus", domains="galaxus.ch")]
-    serp_result = serpapi_google._create_search_result(
-        url=url,
-        location=location,
-        marketplaces=marketplaces,
-    )
-    assert isinstance(serp_result, SearchResult)
-    assert serp_result.url == url
-    assert serp_result.domain == "example.ch"
-    assert serp_result.marketplace_name == "Google"
 
 
 @pytest.mark.asyncio
@@ -273,24 +149,6 @@ async def test_serpapi_google_apply_marketplaces(serpapi_google):
 
 
 @pytest.mark.asyncio
-async def test_serpapi_google_apply_excluded_urls(serpapi_google):
-    search_term = "sildenafil"
-    language = Language(name="German")
-    location = Location(name="Switzerland")
-    excluded_urls = [Host(name="Altibbi", domains="altibbi.com")]
-    num_results = 5
-    results = await serpapi_google.apply(
-        search_term=search_term,
-        language=language,
-        location=location,
-        num_results=num_results,
-        excluded_urls=excluded_urls,
-    )
-    assert all(isinstance(res, SearchResult) for res in results)
-    assert all(res.url.startswith("http") for res in results)
-
-
-@pytest.mark.asyncio
 async def test_toppreise_apply(toppreise):
     search_term = "Liebherr CT 2531"
     num_results = 5
@@ -301,7 +159,96 @@ async def test_toppreise_apply(toppreise):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
-    assert all(res.marketplace_name == "Toppreise" for res in results)
+    assert all(res.search_engine_name == "Toppreise" for res in results)
+
+
+def test_search_apply_filters(search):
+    location = Location(name="Switzerland")
+
+    # No filters applied
+    result = SearchResult(
+        url="https://www.example.ch",
+        domain="example.ch",
+        search_engine_name="Engine",
+    )
+    result = search._apply_filters(result=result, location=location)
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://www.example.ch"
+    assert result.domain == "example.ch"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
+
+    # Country code filter applied
+    result = SearchResult(
+        url="https://www.example.org",
+        domain="example.org",
+        search_engine_name="Engine",
+    )
+    result = search._apply_filters(result=result, location=location)
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://www.example.org"
+    assert result.domain == "example.org"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is True
+    assert isinstance(result.filtered_at_stage, str)
+    assert result.filtered_at_stage == "Search (country code filtering)"
+
+    # Marketplace filter not applied (would be applied for country code but is overridden)
+    result = SearchResult(
+        url="https://www.example.org",
+        domain="example.org",
+        search_engine_name="Engine",
+    )
+    marketplaces = [Host(name="Example", domains="example.org")]
+    result = search._apply_filters(
+        result=result, location=location, marketplaces=marketplaces
+    )
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://www.example.org"
+    assert result.domain == "example.org"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
+
+    # Excluded URLs filter applied
+    result = SearchResult(
+        url="https://de.example.ch",
+        domain="de.example.ch",
+        search_engine_name="Engine",
+    )
+    excluded_urls = [Host(name="Example", domains="example.ch")]
+    result = search._apply_filters(
+        result=result, location=location, excluded_urls=excluded_urls
+    )
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://de.example.ch"
+    assert result.domain == "de.example.ch"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is True
+    assert isinstance(result.filtered_at_stage, str)
+    assert result.filtered_at_stage == "Search (excluded URLs filtering)"
+
+    # No filters applied
+    result = SearchResult(
+        url="https://www.example.ch",
+        domain="example.ch",
+        search_engine_name="Engine",
+    )
+    marketplaces = [Host(name="Example", domains="example.org")]
+    excluded_urls = [Host(name="Example", domains="example.de")]
+    result = search._apply_filters(
+        result=result,
+        location=location,
+        marketplaces=marketplaces,
+        excluded_urls=excluded_urls,
+    )
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://www.example.ch"
+    assert result.domain == "example.ch"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
 
 
 @pytest.mark.asyncio
@@ -310,7 +257,7 @@ async def test_search_apply(search):
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    search_engine_names = ["google", "google_shopping", "toppreise"]
+    search_engine_names = ["Google", "Google Shopping", "Toppreise"]
     results = await search.apply(
         search_term=search_term,
         language=language,

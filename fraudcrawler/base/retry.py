@@ -17,7 +17,7 @@ from fraudcrawler.settings import (
 
 
 def _is_retryable_exception(err: BaseException) -> bool:
-    if isinstance(err, HTTPException) and err.status_code in RETRY_SKIP_IF_CODE:
+    if isinstance(err, HTTPException) and err.status in RETRY_SKIP_IF_CODE:
         return False
     return True
 

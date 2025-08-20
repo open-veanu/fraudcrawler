@@ -37,15 +37,12 @@ class SearchEngine(ABC, AsyncClient, DomainUtils):
     """Abstract base class for search engines."""
 
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
-    _searchengine_name: SearchEngineName | None = None
-
-    def __init__(self):
-        """Initializes the search engine."""
-        if self.__class__._searchengine_name is None:
-            raise NotImplementedError(
-                f"Class {self.__class__.__name__} must define _searchengine_name class variable"
-            )
-        self._searchengine_name: str = self.__class__._searchengine_name.value
+    
+    @property
+    @abstractmethod
+    def _search_engine_name(self) -> str:
+        """The name of the search engine."""
+        pass
 
     @abstractmethod
     async def apply(
@@ -96,7 +93,7 @@ class SearchEngine(ABC, AsyncClient, DomainUtils):
         result = SearchResult(
             url=url,
             domain=domain,
-            search_engine_name=self._search_engine_name,  # type: ignore[arg-type]
+            search_engine_name=self._search_engine_name, 
         )
         return result
 
@@ -220,8 +217,6 @@ class SerpAPI(SearchEngine):
 class SerpAPIGoogle(SerpAPI):
     """Search engine for Google in SerpAPI."""
 
-    _searchengine_name = SearchEngineName.GOOGLE
-
     def __init__(self, api_key: str):
         """Initializes the SerpAPIGoogle client with the given API key.
 
@@ -229,6 +224,11 @@ class SerpAPIGoogle(SerpAPI):
             api_key: The API key for SerpAPI.
         """
         super().__init__(api_key=api_key)
+    
+    @property
+    def _search_engine_name(self) -> str:
+        """The name of the search engine."""
+        return SearchEngineName.GOOGLE.value
 
     @property
     def _engine(self) -> str:
@@ -291,8 +291,6 @@ class SerpAPIGoogle(SerpAPI):
 class SerpAPIGoogleShopping(SerpAPI):
     """Search engine for Google Shopping in SerpAPI."""
 
-    _searchengine_name = SearchEngineName.GOOGLE_SHOPPING
-
     def __init__(self, api_key: str):
         """Initializes the SerpAPIGoogleShopping client with the given API key.
 
@@ -300,6 +298,11 @@ class SerpAPIGoogleShopping(SerpAPI):
             api_key: The API key for SerpAPI.
         """
         super().__init__(api_key=api_key)
+    
+    @property
+    def _search_engine_name(self) -> str:
+        """The name of the search engine."""
+        return SearchEngineName.GOOGLE_SHOPPING.value
 
     @property
     def _engine(self) -> str:
@@ -367,7 +370,6 @@ class SerpAPIGoogleShopping(SerpAPI):
 class Toppreise(SearchEngine):
     """Search engine for toppreise.ch."""
 
-    _searchengine_name = SearchEngineName.TOPPREISE
     _endpoint = "https://www.toppreise.ch/produktsuche"
     _headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -378,9 +380,10 @@ class Toppreise(SearchEngine):
         "Upgrade-Insecure-Requests": "1",
     }
 
-    def __init__(self):
-        """Initializes the Toppreise search engine."""
-        super().__init__()
+    @property
+    def _search_engine_name(self) -> str:
+        """The name of the search engine."""
+        return SearchEngineName.TOPPREISE.value
 
     @staticmethod
     def _get_external_product_urls(content: dict | str | bytes) -> List[str]:
