@@ -32,7 +32,8 @@ def toppreise():
 @pytest.fixture
 def search():
     setup = Setup()
-    return Search(serpapi_key=setup.serpapi_key)
+    # return Search(serpapi_key=setup.serpapi_key)
+    return Search(serpapi_key="1234")
 
 
 @pytest.fixture
