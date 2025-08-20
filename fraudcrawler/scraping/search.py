@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import logging
 from pydantic import BaseModel
-from typing import List
+from typing import cast, Dict, List
 from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
@@ -111,7 +111,7 @@ class SerpAPI(SearchEngine):
 
     @staticmethod
     @abstractmethod
-    def _extract_search_results_urls(response: dict | str | bytes) -> List[str]:
+    def _extract_search_results_urls(response: dict) -> List[str]:
         """Extracts search results urls from the response.
 
         Args:
@@ -194,7 +194,10 @@ class SerpAPI(SearchEngine):
         )
         async for attempt in retry:
             with attempt:
-                response = await self.get(url=self._endpoint, params=params)
+                response = cast(
+                    Dict,
+                    await self.get(url=self._endpoint, params=params)
+                )
 
         # Extract the URLs from the response
         urls = self._extract_search_results_urls(response=response)
@@ -227,7 +230,7 @@ class SerpAPIGoogle(SerpAPI):
         return "google"
 
     @staticmethod
-    def _extract_search_results_urls(response: dict | str | bytes) -> List[str]:
+    def _extract_search_results_urls(response: dict) -> List[str]:
         """Extracts search results urls from the response.
 
         Args:
@@ -301,7 +304,7 @@ class SerpAPIGoogleShopping(SerpAPI):
         return "google_shopping"
 
     @staticmethod
-    def _extract_search_results_urls(response: dict | str | bytes) -> List[str]:
+    def _extract_search_results_urls(response: dict) -> List[str]:
         """Extracts search results urls from the response.
 
         Args:
@@ -377,10 +380,9 @@ class Toppreise(SearchEngine):
         return SearchEngineName.TOPPREISE.value
 
     @staticmethod
-    def _get_external_product_urls(content: dict | str | bytes) -> List[str]:
+    def _get_external_product_urls(content: bytes) -> List[str]:
         """Extracts external product URLs from the Toppreise search results page."""
-        if not isinstance(content, bytes):
-            return []
+
         # Parse the HTML
         soup = BeautifulSoup(content, "html.parser")
         links = soup.find_all("a", href=True)
@@ -438,10 +440,13 @@ class Toppreise(SearchEngine):
         )
         async for attempt in retry:
             with attempt:
-                content = await self.get(
-                    url=url,
-                    headers=self._headers,
-                    answer_format="bytes",
+                content = cast(
+                    bytes,
+                    await self.get(
+                        url=url,
+                        headers=self._headers,
+                        answer_format="bytes",
+                    )
                 )
 
         # Get external product urls from the content

@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, cast, Dict
 from base64 import b64decode
 
 import aiohttp
@@ -58,7 +58,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
-    async def get_details(self, url: str) -> dict | str | bytes:
+    async def get_details(self, url: str) -> dict:
         """Fetches product details for a single URL.
 
         Args:
@@ -97,16 +97,19 @@ class ZyteAPI(AsyncClient, DomainUtils):
         )
         async for attempt in retry:
             with attempt:
-                product = await self.post(
-                    url=self._endpoint,
-                    data={"url": url, **self._config},
-                    auth=self._aiohttp_basic_auth,
+                product = cast(
+                    Dict,
+                    await self.post(
+                        url=self._endpoint,
+                        data={"url": url, **self._config},
+                        auth=self._aiohttp_basic_auth,
+                    )
                 )
         return product
 
     @staticmethod
     def keep_product(
-        details: dict | str | bytes,
+        details: dict,
         threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD,
     ) -> bool:
         """Determines whether to keep the product based on the probability threshold.
@@ -127,7 +130,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         return prob > threshold
 
     @staticmethod
-    def extract_product_name(details: dict | str | bytes) -> str | None:
+    def extract_product_name(details: dict) -> str | None:
         """Extracts the product name from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -142,7 +145,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         return details.get("product", {}).get("name")
 
     @staticmethod
-    def extract_url_resolved(details: dict | str | bytes) -> str | None:
+    def extract_url_resolved(details: dict) -> str | None:
         """Extracts the resolved URL from the product data - this is automatically resolved by Zyte.
 
         The input argument is a dictionary of the following structure:
@@ -157,7 +160,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         return details.get("product", {}).get("url")
 
     @staticmethod
-    def extract_product_price(details: dict | str | bytes) -> str | None:
+    def extract_product_price(details: dict) -> str | None:
         """Extracts the product price from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -172,7 +175,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         return details.get("product", {}).get("price")
 
     @staticmethod
-    def extract_product_description(details: dict | str | bytes) -> str | None:
+    def extract_product_description(details: dict) -> str | None:
         """Extracts the product description from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -187,7 +190,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         return details.get("product", {}).get("description")
 
     @staticmethod
-    def extract_image_urls(details: dict | str | bytes) -> List[str]:
+    def extract_image_urls(details: dict) -> List[str]:
         """Extracts the images from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -212,7 +215,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         return images
 
     @staticmethod
-    def extract_probability(details: dict | str | bytes) -> float:
+    def extract_probability(details: dict) -> float:
         """Extracts the probability from the product data.
 
         The input argument is a dictionary of the following structure:
@@ -231,7 +234,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         )
 
     @staticmethod
-    def extract_html(details: dict | str | bytes) -> str | None:
+    def extract_html(details: dict) -> str | None:
         """Extracts the HTML from the Zyte API response.
 
         The input argument is a dictionary of the following structure:

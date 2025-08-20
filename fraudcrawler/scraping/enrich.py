@@ -2,7 +2,7 @@ from base64 import b64encode
 from collections import defaultdict
 import logging
 from pydantic import BaseModel
-from typing import Dict, List, Iterator
+from typing import cast, Dict, Iterator, List
 
 from tenacity import RetryCallState
 
@@ -94,7 +94,7 @@ class Enricher(AsyncClient):
         volume = item["keyword_info"]["search_volume"]
         return Keyword(text=text, volume=volume)
 
-    def _extract_suggested_keywords(self, data: dict | str | bytes) -> List[Keyword]:
+    def _extract_suggested_keywords(self, data: dict) -> List[Keyword]:
         """Extracts the keywords from the DataForSEO response for suggested keywords.
 
         Args:
@@ -177,7 +177,10 @@ class Enricher(AsyncClient):
         )
         async for attempt in retry:
             with attempt:
-                sugg_data = await self.post(url=url, headers=self._headers, data=data)
+                sugg_data = cast(
+                    Dict,
+                    await self.post(url=url, headers=self._headers, data=data)
+                )
 
         # Extract the keywords from the response
         keywords = self._extract_suggested_keywords(data=sugg_data)
@@ -196,7 +199,7 @@ class Enricher(AsyncClient):
         volume = item["keyword_data"]["keyword_info"]["search_volume"]
         return Keyword(text=text, volume=volume)
 
-    def _extract_related_keywords(self, data: dict | str | bytes) -> List[Keyword]:
+    def _extract_related_keywords(self, data: dict) -> List[Keyword]:
         """Extracts the keywords from the DataForSEO response for related keywords.
 
         Args:
@@ -270,7 +273,7 @@ class Enricher(AsyncClient):
         try:
             url = f"{self._base_endpoint}{self._keywords_endpoint}"
             logger.debug(f'DataForSEO url="{url}" with data="{data}".')
-            rel_data = await self.post(url=url, headers=self._headers, data=data)
+            rel_data = cast(Dict, await self.post(url=url, headers=self._headers, data=data))
         except Exception as e:
             logger.error(f"DataForSEO related keyword search failed with error: {e}.")
 
