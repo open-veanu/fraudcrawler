@@ -45,7 +45,7 @@ class SearchEngine(ABC, AsyncClient, DomainUtils):
         pass
 
     @abstractmethod
-    async def apply(self, *args, **kwargs) -> List[SearchResult]:
+    async def search(self, *args, **kwargs) -> List[SearchResult]:
         """Apply the search with the given parameters and return results."""
         pass
 
@@ -101,7 +101,6 @@ class SerpAPI(SearchEngine):
         Args:
             api_key: The API key for SerpAPI.
         """
-        super().__init__()
         self._api_key = api_key
 
     @property
@@ -241,7 +240,7 @@ class SerpAPIGoogle(SerpAPI):
             return [url for res in results if (url := res.get("link"))]
         return []
 
-    async def apply(
+    async def search(
         self,
         search_term: str,
         language: Language,
@@ -315,7 +314,7 @@ class SerpAPIGoogleShopping(SerpAPI):
             return [url for res in results if (url := res.get("product_link"))]
         return []
 
-    async def apply(
+    async def search(
         self,
         search_term: str,
         language: Language,
@@ -451,7 +450,7 @@ class Toppreise(SearchEngine):
 
         return urls
 
-    async def apply(
+    async def search(
         self,
         search_term: str,
         num_results: int,
@@ -582,7 +581,7 @@ class Search(DomainUtils):
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
-        search_engine_names: List[SearchEngineName | str] | None = None,
+        search_engines: List[SearchEngineName | str] | None = None,
     ) -> List[SearchResult]:
         """Performs a search and returns SearchResults.
 
@@ -593,20 +592,20 @@ class Search(DomainUtils):
             num_results: Max number of results per search engine.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
-            search_engine_names: The list of search engine names to use for the search.
+            search_engines: The list of search engines to use for the search.
         """
-        if search_engine_names is None:
-            search_engine_names = list(SearchEngineName)
+        if search_engines is None:
+            search_engines = list(SearchEngineName)
         else:
-            search_engine_names = [
+            search_engines = [
                 SearchEngineName(sen) if isinstance(sen, str) else sen
-                for sen in search_engine_names
+                for sen in search_engines
             ]
         results: List[SearchResult] = []
 
         # Make SerpAPI google search
-        if SearchEngineName.GOOGLE in search_engine_names:
-            res = await self._google.apply(
+        if SearchEngineName.GOOGLE in search_engines:
+            res = await self._google.search(
                 search_term=search_term,
                 language=language,
                 location=location,
@@ -616,8 +615,8 @@ class Search(DomainUtils):
             results.extend(res)
 
         # Make SerpAPI google shopping search
-        if SearchEngineName.GOOGLE_SHOPPING in search_engine_names:
-            res = await self._google_shopping.apply(
+        if SearchEngineName.GOOGLE_SHOPPING in search_engines:
+            res = await self._google_shopping.search(
                 search_term=search_term,
                 language=language,
                 location=location,
@@ -627,8 +626,8 @@ class Search(DomainUtils):
             results.extend(res)
 
         # Make Toppreise search
-        if SearchEngineName.TOPPREISE in search_engine_names:
-            res = await self._toppreise.apply(
+        if SearchEngineName.TOPPREISE in search_engines:
+            res = await self._toppreise.search(
                 search_term=search_term,
                 num_results=num_results,
             )

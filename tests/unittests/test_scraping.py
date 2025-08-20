@@ -260,15 +260,15 @@ async def test_search_apply(search):
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    search_engine_names = ["Google", "Google Shopping", "Toppreise"]
+    search_engines = ["Google", "Google Shopping", "Toppreise"]
     results = await search.apply(
         search_term=search_term,
         language=language,
         location=location,
         num_results=num_results,
-        search_engine_names=search_engine_names,
+        search_engines=search_engines,
     )
-    assert 0 < len(results) <= len(search_engine_names) * num_results
+    assert 0 < len(results) <= len(search_engines) * num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
 

@@ -116,7 +116,7 @@ class Orchestrator(ABC):
                 search_engines = item.pop("search_engines")
 
                 results = await self._search.apply(
-                    **item, search_engine_names=search_engines
+                    **item, search_engines=search_engines
                 )
 
                 logger.debug(
