@@ -37,7 +37,7 @@ class SearchEngine(ABC, AsyncClient, DomainUtils):
     """Abstract base class for search engines."""
 
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
-    
+
     @property
     @abstractmethod
     def _search_engine_name(self) -> str:
@@ -45,15 +45,7 @@ class SearchEngine(ABC, AsyncClient, DomainUtils):
         pass
 
     @abstractmethod
-    async def apply(
-        self,
-        search_term: str,
-        language: Language,
-        location: Location,
-        num_results: int,
-        marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
-    ) -> List[SearchResult]:
+    async def apply(self, *args, **kwargs) -> List[SearchResult]:
         """Apply the search with the given parameters and return results."""
         pass
 
@@ -93,7 +85,7 @@ class SearchEngine(ABC, AsyncClient, DomainUtils):
         result = SearchResult(
             url=url,
             domain=domain,
-            search_engine_name=self._search_engine_name, 
+            search_engine_name=self._search_engine_name,
         )
         return result
 
@@ -224,7 +216,7 @@ class SerpAPIGoogle(SerpAPI):
             api_key: The API key for SerpAPI.
         """
         super().__init__(api_key=api_key)
-    
+
     @property
     def _search_engine_name(self) -> str:
         """The name of the search engine."""
@@ -298,7 +290,7 @@ class SerpAPIGoogleShopping(SerpAPI):
             api_key: The API key for SerpAPI.
         """
         super().__init__(api_key=api_key)
-    
+
     @property
     def _search_engine_name(self) -> str:
         """The name of the search engine."""
@@ -641,7 +633,7 @@ class Search(DomainUtils):
                 num_results=num_results,
             )
             results.extend(res)
-        
+
         # Apply filters
         results = [
             self._apply_filters(

@@ -11,16 +11,17 @@ from fraudcrawler.scraping.search import (
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 
-_SETUP = Setup()
 
 @pytest.fixture
 def serpapi_google():
-    return SerpAPIGoogle(api_key=_SETUP.serpapi_key)
+    setup = Setup()
+    return SerpAPIGoogle(api_key=setup.serpapi_key)
 
 
 @pytest.fixture
 def serpapi_google_shopping():
-    return SerpAPIGoogleShopping(api_key=_SETUP.serpapi_key)
+    setup = Setup()
+    return SerpAPIGoogleShopping(api_key=setup.serpapi_key)
 
 
 @pytest.fixture
@@ -30,16 +31,17 @@ def toppreise():
 
 @pytest.fixture
 def search():
-    return Search(serpapi_key=_SETUP.serpapi_key)
+    setup = Setup()
+    return Search(serpapi_key=setup.serpapi_key)
 
 
 @pytest.fixture
 def enricher():
-    enricher = Enricher(
-        user=_SETUP.dataforseo_user,
-        pwd=_SETUP.dataforseo_pwd,
+    setup = Setup()
+    return Enricher(
+        user=setup.dataforseo_user,
+        pwd=setup.dataforseo_pwd,
     )
-    return enricher
 
 
 @pytest.fixture
@@ -79,7 +81,8 @@ def other_urls():
 
 @pytest.fixture
 def zyteapi():
-    zyteapi = ZyteAPI(api_key=_SETUP.zyteapi_key)
+    setup = Setup()
+    zyteapi = ZyteAPI(api_key=setup.zyteapi_key)
     return zyteapi
 
 
