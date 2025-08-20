@@ -124,8 +124,6 @@ class Enricher(AsyncClient):
         Args:
             data: The response data from DataForSEO.
         """
-        if not isinstance(data, dict):
-            return []
         keywords = []
         for item in self._extract_items_from_data(data=data):
             try:
@@ -231,8 +229,6 @@ class Enricher(AsyncClient):
         Args:
             data: The response data from DataForSEO.
         """
-        if not isinstance(data, dict):
-            return []
         keywords = []
         for item in self._extract_items_from_data(data=data):
             try:

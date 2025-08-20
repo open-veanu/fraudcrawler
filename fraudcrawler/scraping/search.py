@@ -236,8 +236,6 @@ class SerpAPIGoogle(SerpAPI):
         Args:
             response: The response from the SerpApi search.
         """
-        if not isinstance(response, dict):
-            return []
         results = response.get("organic_results")
         if results is not None:
             return [url for res in results if (url := res.get("link"))]
@@ -310,8 +308,6 @@ class SerpAPIGoogleShopping(SerpAPI):
         Args:
             response: The response from the SerpApi search.
         """
-        if not isinstance(response, dict):
-            return []
         results = response.get("shopping_results")
         if results is not None:
             return [url for res in results if (url := res.get("product_link"))]

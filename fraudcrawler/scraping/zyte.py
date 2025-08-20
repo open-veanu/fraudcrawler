@@ -118,8 +118,6 @@ class ZyteAPI(AsyncClient, DomainUtils):
             details: A product details data dictionary.
             threshold: The probability threshold used to filter the products.
         """
-        if not isinstance(details, dict):
-            return False
         try:
             prob = float(details["product"]["metadata"]["probability"])
         except KeyError:
@@ -140,8 +138,6 @@ class ZyteAPI(AsyncClient, DomainUtils):
                 }
             }
         """
-        if not isinstance(details, dict):
-            return None
         return details.get("product", {}).get("name")
 
     @staticmethod
@@ -155,8 +151,6 @@ class ZyteAPI(AsyncClient, DomainUtils):
                 }
             }
         """
-        if not isinstance(details, dict):
-            return None
         return details.get("product", {}).get("url")
 
     @staticmethod
@@ -170,8 +164,6 @@ class ZyteAPI(AsyncClient, DomainUtils):
                 }
             }
         """
-        if not isinstance(details, dict):
-            return None
         return details.get("product", {}).get("price")
 
     @staticmethod
@@ -185,8 +177,6 @@ class ZyteAPI(AsyncClient, DomainUtils):
                 }
             }
         """
-        if not isinstance(details, dict):
-            return None
         return details.get("product", {}).get("description")
 
     @staticmethod
@@ -201,8 +191,6 @@ class ZyteAPI(AsyncClient, DomainUtils):
                 }
             }
         """
-        if not isinstance(details, dict):
-            return []
         images = []
         product = details.get("product")
         if product:
@@ -227,8 +215,6 @@ class ZyteAPI(AsyncClient, DomainUtils):
                 }
             }
         """
-        if not isinstance(details, dict):
-            return 0.0
         return float(
             details.get("product", {}).get("metadata", {}).get("probability", 0.0)
         )
@@ -242,9 +228,6 @@ class ZyteAPI(AsyncClient, DomainUtils):
                 "httpResponseBody": base64
             }
         """
-        if not isinstance(details, dict):
-            return None
-
         # Get the Base64-encoded content
         encoded = details.get("httpResponseBody")
 
