@@ -118,19 +118,18 @@ class FraudCrawlerClient(Orchestrator):
         self._results.append(Results(search_term=search_term, filename=filename))
 
         # Normalize inputs - convert strings to SearchEngineName enum values
+        nrm_search_engines: List[SearchEngineName] = list(SearchEngineName)
         if search_engines:
-            search_engines = [
+            nrm_search_engines = [
                 SearchEngineName(se) if isinstance(se, str) else se
                 for se in search_engines
             ]
-        else:
-            search_engines = list(SearchEngineName)
 
         # Run the pipeline by calling the orchestrator's run method
         asyncio.run(
             super().run(
                 search_term=search_term,
-                search_engines=search_engines,
+                search_engines=nrm_search_engines,
                 language=language,
                 location=location,
                 deepness=deepness,
