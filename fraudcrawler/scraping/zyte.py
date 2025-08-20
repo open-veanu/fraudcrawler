@@ -12,7 +12,7 @@ from fraudcrawler.base.retry import get_async_retry
 logger = logging.getLogger(__name__)
 
 
-class ZyteApi(AsyncClient):
+class ZyteAPI(AsyncClient):
     """A client to interact with the Zyte API for fetching product details."""
 
     _endpoint = "https://api.zyte.com/v1/extract"

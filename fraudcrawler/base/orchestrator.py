@@ -22,11 +22,11 @@ from fraudcrawler.base.base import (
     ProductItem,
 )
 from fraudcrawler import (
-    SerpApi,
+    Search,
     SearchEngine,
     Enricher,
     URLCollector,
-    ZyteApi,
+    ZyteAPI,
     Processor,
 )
 
@@ -78,7 +78,7 @@ class Orchestrator(ABC):
         self._serpapi = SerpApi(api_key=serpapi_key)
         self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
         self._url_collector = URLCollector()
-        self._zyteapi = ZyteApi(api_key=zyteapi_key)
+        self._zyteapi = ZyteAPI(api_key=zyteapi_key)
         self._processor = Processor(
             api_key=openaiapi_key,
             model=openai_model,

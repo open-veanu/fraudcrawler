@@ -19,7 +19,7 @@ from fraudcrawler.base.base import (
     ProductItem,
 )
 from fraudcrawler.base.orchestrator import Orchestrator
-from fraudcrawler.scraping.serp import SearchEngine
+from fraudcrawler.scraping.search import SearchEngine
 
 logger = logging.getLogger(__name__)
 

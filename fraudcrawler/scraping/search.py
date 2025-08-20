@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
+from enum import Enum
 import logging
 from pydantic import BaseModel
 import re
 import requests
 from typing import List
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse, quote_plus
 
 from bs4 import BeautifulSoup
 from tenacity import RetryCallState
@@ -26,8 +27,16 @@ class SearchResult(BaseModel):
     filtered_at_stage: str | None = None
 
 
+class SearchEngineName(Enum):
+    """Enum for search engine names."""
+    GOOGLE = "google"
+    GOOGLE_SHOPPING = "google_shopping"
+    TOPPREISE = "toppreise"
+
+
 class SearchEngine(ABC, AsyncClient):
     """Abstract base class for search engines."""
+    _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
 
     def __init__(self, default_marketplace_name: str):
         """Initializes the search engine."""
@@ -62,6 +71,31 @@ class SearchEngine(ABC, AsyncClient):
             )
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
+
+    def _get_domain(self, url: str) -> str:
+        """Extracts the second-level domain together with the top-level domain (e.g. `google.com`).
+
+        Args:
+            url: The URL to be processed.
+        """
+        # Add scheme; urlparse requires it
+        if not url.startswith(("http://", "https://")):
+            url = "http://" + url
+
+        # Get the hostname
+        hostname = urlparse(url).hostname
+        if hostname is None and (match := re.search(self._hostname_pattern, url)):
+            hostname = match.group(1)
+        if hostname is None:
+            logger.warning(
+                f'Failed to extract domain from url="{url}"; full url is returned'
+            )
+            return url.lower()
+
+        # Remove www. prefix
+        if hostname and hostname.startswith("www."):
+            hostname = hostname[4:]
+        return hostname.lower()
 
     @staticmethod
     def _domain_in_host(domain: str, host: Host) -> bool:
@@ -202,7 +236,6 @@ class SerpAPI(SearchEngine):
     """Base class for SerpAPI search engines."""
 
     _endpoint = "https://serpapi.com/search"
-    _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
 
     def __init__(self, api_key: str):
         """Initializes the SerpAPI client with the given API key.
@@ -230,30 +263,14 @@ class SerpAPI(SearchEngine):
         """
         pass
 
-    def _get_domain(self, url: str) -> str:
-        """Extracts the second-level domain together with the top-level domain (e.g. `google.com`).
-
-        Args:
-            url: The URL to be processed.
-        """
-        # Add scheme; urlparse requires it
-        if not url.startswith(("http://", "https://")):
-            url = "http://" + url
-
-        # Get the hostname
-        hostname = urlparse(url).hostname
-        if hostname is None and (match := re.search(self._hostname_pattern, url)):
-            hostname = match.group(1)
-        if hostname is None:
-            logger.warning(
-                f'Failed to extract domain from url="{url}"; full url is returned'
-            )
-            return url.lower()
-
-        # Remove www. prefix
-        if hostname and hostname.startswith("www."):
-            hostname = hostname[4:]
-        return hostname.lower()
+    @staticmethod
+    def _get_search_string(search_term: str, marketplaces: List[Host] | None) -> str:
+        """Constructs the search string with site: parameters for marketplaces."""
+        search_string = search_term
+        if marketplaces:
+            sites = [dom for host in marketplaces for dom in host.domains]
+            search_string += " site:" + " OR site:".join(s for s in sites)
+        return search_string
 
     async def _search(
         self,
@@ -265,7 +282,7 @@ class SerpAPI(SearchEngine):
         """Performs a search using SerpAPI and returns the URLs of the results.
 
         Args:
-            search_string: The search string (with potentially added site: parameters).
+            search_string: The search string to use (with potentially added site: parameters).
             language: The language to use for the query ('hl' parameter).
             location: The location to use for the query ('gl' parameter).
             num_results: Max number of results to return.
@@ -362,23 +379,29 @@ class SerpAPIGoogle(SerpAPI):
     
     async def apply(
         self,
-        search_string: str,
+        search_term: str,
         language: Language,
         location: Location,
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
     ) -> List[SearchResult]:
-        """Performs a google search using SerpApi and returns SerpResults.
+        """Performs a google search using SerpApi and returns SearchResults.
 
         Args:
-            search_string: The search string (with potentially added site: parameters).
+            search_term: The search term to use for the query.
             language: The language to use for the query ('hl' parameter).
             location: The location to use for the query ('gl' parameter).
             num_results: Max number of results to return.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
         """
+        # Construct the search string
+        search_string = self._get_search_string(
+            search_term=search_term,
+            marketplaces=marketplaces,
+        )
+
         # Perform the search
         urls = await self._search(
             search_string=search_string,
@@ -434,7 +457,7 @@ class SerpAPIGoogleShopping(SerpAPI):
 
     async def apply(
         self,
-        search_string: str,
+        search_term: str,
         language: Language,
         location: Location,
         num_results: int,
@@ -444,13 +467,19 @@ class SerpAPIGoogleShopping(SerpAPI):
         """Performs a google shopping search using SerpApi and returns SearchResults.
 
         Args:
-            search_string: The search string (with potentially added site: parameters).
+            search_term: The search term to use for the query.
             language: The language to use for the query ('hl' parameter).
             location: The location to use for the query ('gl' parameter).
             num_results: Max number of results to return.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
         """
+        # Construct the search string
+        search_string = self._get_search_string(
+            search_term=search_term,
+            marketplaces=marketplaces,
+        )
+        
         # Perform the search
         urls = await self._search(
             search_string=search_string,
@@ -501,31 +530,31 @@ class Toppreise(SearchEngine):
         """Initializes the Toppreise search engine."""
         super().__init__(default_marketplace_name=self._default_marketplace_name)
 
-    def _resolve_redirect_safely(self, url: str) -> str | None:
-        """Returns the resolved URL or None if resolution fails."""
-        try:
-            def _make_request():
-                # Create a session with redirect limits
-                session = requests.Session()
-                session.max_redirects = self._max_redirects
-                response = session.head(
-                    url,
-                    allow_redirects=True,
-                    timeout=self._timeout,
-                    headers=self._headers,
-                )
-                return response.url
+    @staticmethod
+    def _external_product_urls(links: List[str]) -> List[str]:
+        """Filters the links to only include those that are external product links and normalizes urls."""
+        hrefs = [
+            href for link in links if (
+                hasattr(link, "get")                    # Ensure we have a Tag object with href attribute
+                and (href := link.get("href"))          # Ensure href is not None
+                and not href.startswith("javascript:")  # Skip javascript links
+                and isinstance(href, str)               # Ensure href is a string
+                and "ext_" in href                      # Skip links that are not external product link
+            )
+        ]
 
-            # Execute with retry logic
-            retry = get_sync_retry()
-            resolved_url = retry(_make_request)
-            return resolved_url
+        # Make relative URLs absolute
+        urls = []
+        for href in hrefs:
+            if href.startswith("/"):
+                href = f"https://www.toppreise.ch{href}"
+            elif not href.startswith("http"):
+                href = f"https://www.toppreise.ch/{href}"
+            urls.append(href)
 
-        except Exception as e:
-            logger.debug(f"Failed to resolve redirect for {url}: {e}")
-            return None
-
-
+        # Return deduplicated urls
+        return list(set(urls))
+        
     def _get_external_product_urls(self, content: bytes) -> List[str]:
         """Extracts external product URLs from the Toppreise search results page.
 
@@ -534,38 +563,39 @@ class Toppreise(SearchEngine):
         """
         # Parse the HTML
         soup = BeautifulSoup(content, "html.parser")
-
-        # Find all <a> tags and extract URLs
-        urls = []
-        for link in soup.find_all("a", href=True):
-            # Skip linkes that are not relevant
-            if (
-                not hasattr(link, "get")            # Ensure we have a Tag object with href attribute
-                or not (href := link.get("href"))   # Ensure href is not None
-                or href.startswith("javascript:")   # Skip javascript links
-                or not isinstance(href, str)        # Ensure href is a string
-                or "ext_" not in href               # Skip links that are not external product links
-            ):
-                logger.debug(
-                    f'Skipping link="{link}" because it is not a valid external product link.'
-                )
-                continue
-
-            # Make relative URLs absolute
-            if href.startswith("/"):
-                href = f"https://www.toppreise.ch{href}"
-            elif not href.startswith("http"):
-                href = f"https://www.toppreise.ch/{href}"
-
-            # Try to resolve the redirect URL
-            resolved_url = self._resolve_redirect_safely(href)
-            if resolved_url:
-                urls.append(resolved_url)
-            else:
-                # Fallback to original URL if resolution fails
-                urls.append(href)
-        
+        links = soup.find_all("a", href=True)
+        urls = self._external_product_urls(links=links)
+        logger.debug(
+            f"Found {len(urls)} external product URLs from Toppreise search results."
+        )
         return urls
+
+    def _resolve_redirects_safely(self, urls: List[str]) -> List[str]:
+        """Resolves redirects for the given URLs and returns the final URLs."""
+        # Find all the resolved URLs
+        product_urls = []
+        with requests.Session() as session:
+            session.max_redirects = self._max_redirects
+            for url in urls:
+                try:
+                    response = session.head(
+                        url,
+                        allow_redirects=True,
+                        timeout=self._timeout,
+                        headers=self._headers,
+                    )
+                    product_urls.append(response.url)
+
+                except Exception as e:
+                    logger.debug(f"Failed to resolve redirect for {url}: {e}")
+                    product_urls.append(url)
+        
+        # Remove duplicates and return
+        product_urls = list(set(product_urls))
+        logger.debug(
+            f"Resolved {len(product_urls)} product URLs from Toppreise search results."
+        )
+        return product_urls
 
     async def _search(self, search_string: str, num_results: int) -> List[str]:
         """Performs a search on Toppreise and returns the URLs of the results.
@@ -575,7 +605,7 @@ class Toppreise(SearchEngine):
             num_results: Max number of results to return.
         """
         # Build the search URL for Toppreise
-        encoded_search = quote(search_string)
+        encoded_search = quote_plus(search_string)
         url = f"{self._endpoint}?q={encoded_search}"
         logger.debug(f"Toppreise search URL: {url}")
 
@@ -601,14 +631,13 @@ class Toppreise(SearchEngine):
         urls = self._get_external_product_urls(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
 
-        logger.debug(
-            f'Found total of {len(urls)} URLs from Toppreise search for q="{search_string}".'
-        )
+        # Resolve redirects for the URLs
+        urls = self._resolve_redirects_safely(urls=urls)
         return urls
 
     async def apply(
         self,
-        search_string: str,
+        search_term: str,
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
@@ -616,14 +645,14 @@ class Toppreise(SearchEngine):
         """Performs a Toppreise search and returns SearchResults.
 
         Args:
-            search_string: The search string.
+            search_term: The search term to use for the query.
             num_results: Max number of results to return.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
         """
         # Perform the search
         urls = await self._search(
-            search_string=search_string,
+            search_string=search_term,
             num_results=num_results,
         )
 
@@ -639,10 +668,53 @@ class Toppreise(SearchEngine):
         ]
 
         logger.debug(
-            f'Produced {len(results)} results from Toppreise search with q="{search_string}".'
+            f'Produced {len(results)} results from Toppreise search with q="{search_term}".'
         )
         return results
         
+
+class Search:
+    """Class to perform searches using different search engines."""
+
+    def __init__(self, serpapi_key):
+        """Initializes the Search class with the given SerpAPI key.
+
+        Args:
+            serpapi_key: The API key for SERP API.
+        """
+        self._google = SerpAPIGoogle(api_key=serpapi_key)
+        self._google_shopping = SerpAPIGoogleShopping(api_key=serpapi_key)
+        self._toppreise = Toppreise()
+
+    async def apply(
+        self,
+        search_string: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+        search_engine_names: List[SearchEngineName | str] | None = None,
+    ) -> List[SearchResult]:
+        """Performs a search and returns SearchResults.
+
+        Args:
+            search_string: The search string (with potentially added site: parameters).
+            language: The language to use for the query ('hl' parameter).
+            location: The location to use for the query ('gl' parameter).
+            num_results: Max number of results to return.
+            marketplaces: The marketplaces to include in the search.
+            excluded_urls: The URLs to exclude from the search.
+        """
+        if search_engine_names is None:
+            search_engine_names = list(SearchEngineName)
+        else:
+            search_engine_names = [
+                SearchEngineName(sen) if isinstance(sen, str) else sen
+                for sen in search_engine_names
+            ]
+        pass
+
 
 #   ------------------------------------------------------------------
 #   TODO: Remove the following commented out code once the SerpApi class is fully implemented.
