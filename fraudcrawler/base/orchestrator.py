@@ -414,13 +414,6 @@ class Orchestrator(ABC):
         excluded_urls: List[Host] | None,
     ) -> None:
         """Adds all the (enriched) search_term (as serp items) to the queue."""
-        # Ensure we have at least one search engine
-        if not search_engines:
-            logger.warning(
-                "No search engines specified, using all available search engines"
-            )
-            search_engines = list(SearchEngineName)
-
         common_kwargs = {
             "queue": queue,
             "language": language,
@@ -485,6 +478,10 @@ class Orchestrator(ABC):
             excluded_urls: The URLs to exclude from the search.
             previously_collected_urls: The urls that have been collected previously and are ignored.
         """
+
+        # ---------------------------
+        #        INITIAL SETUP
+        # ---------------------------
         # Ensure we have at least one search engine
         if not search_engines:
             logger.warning(
@@ -492,9 +489,7 @@ class Orchestrator(ABC):
             )
             search_engines = list(SearchEngineName)
 
-        # ---------------------------
-        #        INITIAL SETUP
-        # ---------------------------
+        # Handle previously collected URLs
         if previously_collected_urls:
             self._url_collector.collected_previously = set(previously_collected_urls)
 
