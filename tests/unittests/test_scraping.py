@@ -87,12 +87,12 @@ def zyteapi():
 
 
 @pytest.mark.asyncio
-async def test_serpapi_google_apply(serpapi_google):
+async def test_serpapi_google_search(serpapi_google):
     search_term = "Kaffee"
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    results = await serpapi_google.apply(
+    results = await serpapi_google.search(
         search_term=search_term,
         language=language,
         location=location,
@@ -105,12 +105,12 @@ async def test_serpapi_google_apply(serpapi_google):
 
 
 @pytest.mark.asyncio
-async def test_serpapi_google_shopping_apply(serpapi_google_shopping):
+async def test_serpapi_google_shopping_search(serpapi_google_shopping):
     search_term = "Kaffee"
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    results = await serpapi_google_shopping.apply(
+    results = await serpapi_google_shopping.search(
         search_term=search_term,
         language=language,
         location=location,
@@ -132,13 +132,13 @@ def test_search_engine_create_search_result(serpapi_google):
 
 
 @pytest.mark.asyncio
-async def test_serpapi_google_apply_marketplaces(serpapi_google):
+async def test_serpapi_google_search_marketplaces(serpapi_google):
     search_term = "Kaffee"
     language = Language(name="German")
     location = Location(name="Switzerland")
     marketplaces = [Host(name="Ricardo", domains="ricardo.ch")]
     num_results = 5
-    results = await serpapi_google.apply(
+    results = await serpapi_google.search(
         search_term=search_term,
         language=language,
         location=location,
@@ -152,10 +152,10 @@ async def test_serpapi_google_apply_marketplaces(serpapi_google):
 
 
 @pytest.mark.asyncio
-async def test_toppreise_apply(toppreise):
+async def test_toppreise_search(toppreise):
     search_term = "Liebherr CT 2531"
     num_results = 5
-    results = await toppreise.apply(
+    results = await toppreise.search(
         search_term=search_term,
         num_results=num_results,
     )
