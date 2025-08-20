@@ -1,7 +1,6 @@
 from aiohttp.web_exceptions import HTTPException
 from tenacity import (
     AsyncRetrying,
-    Retrying,
     retry_if_exception,
     stop_after_attempt,
     wait_exponential_jitter,
@@ -9,7 +8,6 @@ from tenacity import (
 
 from fraudcrawler.settings import (
     RETRY_STOP_AFTER_ATTEMPT,
-    RETRY_STOP_AFTER_ATTEMPT_SYNC,
     RETRY_INITIAL_DELAY,
     RETRY_MAX_DELAY,
     RETRY_EXP_BASE,

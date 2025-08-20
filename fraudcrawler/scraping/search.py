@@ -20,7 +20,7 @@ class SearchResult(BaseModel):
 
     url: str
     domain: str
-    searchengine_name: str
+    search_engine_name: str
     filtered: bool = False
     filtered_at_stage: str | None = None
 
@@ -87,124 +87,16 @@ class SearchEngine(ABC, AsyncClient, DomainUtils):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
-    @staticmethod
-    def _domain_in_host(domain: str, host: Host) -> bool:
-        """Checks if the domain is present in the host.
-
-        Note:
-            By checking `if domain == hst_dom or domain.endswith(f".{hst_dom}")`
-            it also checks for subdomains. For example, if the domain is
-            `link.springer.com` and the host domain is `springer.com`,
-            it will be detected as being present in the hosts.
-
-        Args:
-            domain: The domain to check.
-            host: The host to check against.
-        """
-        return any(
-            domain == hst_dom or domain.endswith(f".{hst_dom}")
-            for hst_dom in host.domains
-        )
-
-    def _domain_in_hosts(self, domain: str, hosts: List[Host]) -> bool:
-        """Checks if the domain is present in the list of hosts.
-
-        Args:
-            domain: The domain to check.
-            hosts: The list of hosts to check against.
-        """
-        return any(self._domain_in_host(domain=domain, host=hst) for hst in hosts)
-
-    @staticmethod
-    def _relevant_country_code(url: str, country_code: str) -> bool:
-        """Determines whether the url shows relevant country codes.
-
-        Args:
-            url: The URL to investigate.
-            country_code: The country code used to filter the products.
-        """
-        url = url.lower()
-        country_code_relevance = f".{country_code}" in url
-        default_relevance = any(cc in url for cc in SEARCH_DEFAULT_COUNTRY_CODES)
-        return country_code_relevance or default_relevance
-
-    def _is_excluded_url(self, domain: str, excluded_urls: List[Host]) -> bool:
-        """Checks if the domain is in the excluded URLs.
-
-        Args:
-            domain: The domain to check.
-            excluded_urls: The list of excluded URLs.
-        """
-        return self._domain_in_hosts(domain=domain, hosts=excluded_urls)
-
-    def _apply_filters(
-        self,
-        result: SearchResult,
-        location: Location,
-        marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
-    ) -> SearchResult:
-        """Checks for filters and updates the SearchResult accordingly.
-
-        Args:
-            result: The SearchResult object to check.
-            location: The location to use for the query.
-            marketplaces: The list of marketplaces to compare the URL against.
-            excluded_urls: The list of excluded URLs.
-        """
-        domain = result.domain
-        # Check if the URL is in the marketplaces (if yes, keep the result un-touched)
-        if marketplaces:
-            if self._domain_in_hosts(domain=domain, hosts=marketplaces):
-                return result
-
-        # Check if the URL has a relevant country_code
-        if not self._relevant_country_code(url=result.url, country_code=location.code):
-            result.filtered = True
-            result.filtered_at_stage = "Search (country code filtering)"
-            return result
-
-        # Check if the URL is in the excluded URLs
-        if excluded_urls and self._is_excluded_url(result.domain, excluded_urls):
-            result.filtered = True
-            result.filtered_at_stage = "Search (excluded URLs filtering)"
-            return result
-
-        return result
-
-    def _create_search_result(
-        self,
-        url: str,
-        location: Location,
-        marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
-    ) -> SearchResult:
-        """From a given url it creates the class:`SearchResult` instance.
-
-        If marketplaces is None or the domain can not be extracted, the default marketplace name is used.
-
-        Args:
-            url: The URL to be processed.
-            location:  The location to use for the query.
-            marketplaces: The list of marketplaces to compare the URL against.
-            excluded_urls: The list of excluded URLs.
-        """
+    def _create_search_result(self, url: str) -> SearchResult:
+        """From a given url it creates the class:`SearchResult` instance."""
         # Get marketplace name
         domain = self._get_domain(url=url)
 
-        # Create the SearchResult object
+        # Create and return the SearchResult object
         result = SearchResult(
             url=url,
             domain=domain,
-            searchengine_name=self._searchengine_name,  # type: ignore[arg-type]
-        )
-
-        # Apply filters
-        result = self._apply_filters(
-            result=result,
-            location=location,
-            marketplaces=marketplaces,
-            excluded_urls=excluded_urls,
+            search_engine_name=self._search_engine_name,  # type: ignore[arg-type]
         )
         return result
 
@@ -364,7 +256,6 @@ class SerpAPIGoogle(SerpAPI):
         location: Location,
         num_results: int,
         marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
     ) -> List[SearchResult]:
         """Performs a google search using SerpApi and returns SearchResults.
 
@@ -374,7 +265,6 @@ class SerpAPIGoogle(SerpAPI):
             location: The location to use for the query ('gl' parameter).
             num_results: Max number of results to return.
             marketplaces: The marketplaces to include in the search.
-            excluded_urls: The URLs to exclude from the search.
         """
         # Construct the search string
         search_string = self._get_search_string(
@@ -390,17 +280,8 @@ class SerpAPIGoogle(SerpAPI):
             num_results=num_results,
         )
 
-        # Create SearchResult objects from the URLs
-        results = [
-            self._create_search_result(
-                url=url,
-                location=location,
-                marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
-            )
-            for url in urls
-        ]
-
+        # Create and return SearchResult objects from the URLs
+        results = [self._create_search_result(url=url) for url in urls]
         logger.debug(
             f'Produced {len(results)} results from SerpAPI with engine="{self._engine}" and q="{search_string}".'
         )
@@ -446,7 +327,6 @@ class SerpAPIGoogleShopping(SerpAPI):
         location: Location,
         num_results: int,
         marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
     ) -> List[SearchResult]:
         """Performs a google shopping search using SerpApi and returns SearchResults.
 
@@ -456,7 +336,6 @@ class SerpAPIGoogleShopping(SerpAPI):
             location: The location to use for the query ('gl' parameter).
             num_results: Max number of results to return.
             marketplaces: The marketplaces to include in the search.
-            excluded_urls: The URLs to exclude from the search.
         """
         # Construct the search string
         search_string = self._get_search_string(
@@ -477,17 +356,8 @@ class SerpAPIGoogleShopping(SerpAPI):
         # and Google Shopping searches (see https://github.com/serpapi/public-roadmap/issues/1858)
         urls = urls[:num_results]
 
-        # Create SearchResult objects from the URLs
-        results = [
-            self._create_search_result(
-                url=url,
-                location=location,
-                marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
-            )
-            for url in urls
-        ]
-
+        # Create and return SearchResult objects from the URLs
+        results = [self._create_search_result(url=url) for url in urls]
         logger.debug(
             f'Produced {len(results)} results from SerpAPI with engine="{self._engine}" and q="{search_string}".'
         )
@@ -589,19 +459,13 @@ class Toppreise(SearchEngine):
     async def apply(
         self,
         search_term: str,
-        language: Language,
-        location: Location,
         num_results: int,
-        marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
     ) -> List[SearchResult]:
         """Performs a Toppreise search and returns SearchResults.
 
         Args:
             search_term: The search term to use for the query.
             num_results: Max number of results to return.
-            marketplaces: The marketplaces to include in the search.
-            excluded_urls: The URLs to exclude from the search.
         """
         # Perform the search
         urls = await self._search(
@@ -609,19 +473,8 @@ class Toppreise(SearchEngine):
             num_results=num_results,
         )
 
-        # Create SearchResult objects from the URLs
-        results = [
-            self._create_search_result(
-                url=url,
-                location=Location(
-                    name="Switzerland", code="CH"
-                ),  # Toppreise is for Switzerland
-                marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
-            )
-            for url in urls
-        ]
-
+        # Create and return SearchResult objects from the URLs
+        results = [self._create_search_result(url=url) for url in urls]
         logger.debug(
             f'Produced {len(results)} results from Toppreise search with q="{search_term}".'
         )
@@ -640,6 +493,91 @@ class Search(DomainUtils):
         self._google = SerpAPIGoogle(api_key=serpapi_key)
         self._google_shopping = SerpAPIGoogleShopping(api_key=serpapi_key)
         self._toppreise = Toppreise()
+
+    @staticmethod
+    def _domain_in_host(domain: str, host: Host) -> bool:
+        """Checks if the domain is present in the host.
+
+        Note:
+            By checking `if domain == hst_dom or domain.endswith(f".{hst_dom}")`
+            it also checks for subdomains. For example, if the domain is
+            `link.springer.com` and the host domain is `springer.com`,
+            it will be detected as being present in the hosts.
+
+        Args:
+            domain: The domain to check.
+            host: The host to check against.
+        """
+        return any(
+            domain == hst_dom or domain.endswith(f".{hst_dom}")
+            for hst_dom in host.domains
+        )
+
+    def _domain_in_hosts(self, domain: str, hosts: List[Host]) -> bool:
+        """Checks if the domain is present in the list of hosts.
+
+        Args:
+            domain: The domain to check.
+            hosts: The list of hosts to check against.
+        """
+        return any(self._domain_in_host(domain=domain, host=hst) for hst in hosts)
+
+    @staticmethod
+    def _relevant_country_code(url: str, country_code: str) -> bool:
+        """Determines whether the url shows relevant country codes.
+
+        Args:
+            url: The URL to investigate.
+            country_code: The country code used to filter the products.
+        """
+        url = url.lower()
+        country_code_relevance = f".{country_code}" in url
+        default_relevance = any(cc in url for cc in SEARCH_DEFAULT_COUNTRY_CODES)
+        return country_code_relevance or default_relevance
+
+    def _is_excluded_url(self, domain: str, excluded_urls: List[Host]) -> bool:
+        """Checks if the domain is in the excluded URLs.
+
+        Args:
+            domain: The domain to check.
+            excluded_urls: The list of excluded URLs.
+        """
+        return self._domain_in_hosts(domain=domain, hosts=excluded_urls)
+
+    def _apply_filters(
+        self,
+        result: SearchResult,
+        location: Location,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+    ) -> SearchResult:
+        """Checks for filters and updates the SearchResult accordingly.
+
+        Args:
+            result: The SearchResult object to check.
+            location: The location to use for the query.
+            marketplaces: The list of marketplaces to compare the URL against.
+            excluded_urls: The list of excluded URLs.
+        """
+        domain = result.domain
+        # Check if the URL is in the marketplaces (if yes, keep the result un-touched)
+        if marketplaces:
+            if self._domain_in_hosts(domain=domain, hosts=marketplaces):
+                return result
+
+        # Check if the URL has a relevant country_code
+        if not self._relevant_country_code(url=result.url, country_code=location.code):
+            result.filtered = True
+            result.filtered_at_stage = "Search (country code filtering)"
+            return result
+
+        # Check if the URL is in the excluded URLs
+        if excluded_urls and self._is_excluded_url(result.domain, excluded_urls):
+            result.filtered = True
+            result.filtered_at_stage = "Search (excluded URLs filtering)"
+            return result
+
+        return result
 
     async def apply(
         self,
@@ -679,7 +617,6 @@ class Search(DomainUtils):
                 location=location,
                 num_results=num_results,
                 marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
             )
             results.extend(res)
 
@@ -691,7 +628,6 @@ class Search(DomainUtils):
                 location=location,
                 num_results=num_results,
                 marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
             )
             results.extend(res)
 
@@ -699,13 +635,20 @@ class Search(DomainUtils):
         if SearchEngineName.TOPPREISE in search_engine_names:
             res = await self._toppreise.apply(
                 search_term=search_term,
-                language=language,
-                location=location,
                 num_results=num_results,
+            )
+            results.extend(res)
+        
+        # Apply filters
+        results = [
+            self._apply_filters(
+                result=res,
+                location=location,
                 marketplaces=marketplaces,
                 excluded_urls=excluded_urls,
             )
-            results.extend(res)
+            for res in results
+        ]
 
         logger.debug(f"Search produced a total of {len(results)} results.")
         return results
