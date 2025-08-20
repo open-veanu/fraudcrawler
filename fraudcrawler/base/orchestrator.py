@@ -128,7 +128,7 @@ class Orchestrator(ABC):
                         search_term_type=search_term_type,
                         url=res.url,
                         url_resolved=res.url,  # Set initial value, will be updated by Zyte
-                        searchengine_name=res.search_engine_name,
+                        search_engine_name=res.search_engine_name,
                         domain=res.domain,
                         filtered=res.filtered,
                         filtered_at_stage=res.filtered_at_stage,

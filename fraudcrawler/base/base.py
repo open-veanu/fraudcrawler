@@ -132,7 +132,7 @@ class ProductItem(BaseModel):
     search_term_type: str
     url: str
     url_resolved: str
-    searchengine_name: str
+    search_engine_name: str
     domain: str
 
     # Zyte parameters
