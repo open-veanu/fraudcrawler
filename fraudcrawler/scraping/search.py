@@ -194,10 +194,7 @@ class SerpAPI(SearchEngine):
         )
         async for attempt in retry:
             with attempt:
-                response = cast(
-                    Dict,
-                    await self.get(url=self._endpoint, params=params)
-                )
+                response = cast(Dict, await self.get(url=self._endpoint, params=params))
 
         # Extract the URLs from the response
         urls = self._extract_search_results_urls(response=response)
@@ -442,7 +439,7 @@ class Toppreise(SearchEngine):
                         url=url,
                         headers=self._headers,
                         answer_format="bytes",
-                    )
+                    ),
                 )
 
         # Get external product urls from the content

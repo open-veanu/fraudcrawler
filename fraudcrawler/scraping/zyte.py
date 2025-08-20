@@ -103,7 +103,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
                         url=self._endpoint,
                         data={"url": url, **self._config},
                         auth=self._aiohttp_basic_auth,
-                    )
+                    ),
                 )
         return product
 

@@ -176,8 +176,7 @@ class Enricher(AsyncClient):
         async for attempt in retry:
             with attempt:
                 sugg_data = cast(
-                    Dict,
-                    await self.post(url=url, headers=self._headers, data=data)
+                    Dict, await self.post(url=url, headers=self._headers, data=data)
                 )
 
         # Extract the keywords from the response
@@ -269,7 +268,9 @@ class Enricher(AsyncClient):
         try:
             url = f"{self._base_endpoint}{self._keywords_endpoint}"
             logger.debug(f'DataForSEO url="{url}" with data="{data}".')
-            rel_data = cast(Dict, await self.post(url=url, headers=self._headers, data=data))
+            rel_data = cast(
+                Dict, await self.post(url=url, headers=self._headers, data=data)
+            )
         except Exception as e:
             logger.error(f"DataForSEO related keyword search failed with error: {e}.")
 
