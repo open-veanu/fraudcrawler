@@ -19,7 +19,7 @@ from fraudcrawler.base.base import (
     ProductItem,
 )
 from fraudcrawler.base.orchestrator import Orchestrator
-from fraudcrawler.scraping.serp import SearchEngine
+from fraudcrawler.scraping.search import SearchEngineName
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ class FraudCrawlerClient(Orchestrator):
         prompts: List[Prompt],
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
-        search_engines: List[SearchEngine | str] | None = None,
+        search_engines: List[SearchEngineName | str] | None = None,
     ) -> None:
         """Runs the pipeline steps: serp, enrich, zyte, process, and collect the results.
 
@@ -105,6 +105,7 @@ class FraudCrawlerClient(Orchestrator):
             prompts: The list of prompts to use for classification.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
+            search_engines: The list of search engines to use for the search.
         """
         # Handle results files
         timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
@@ -116,18 +117,19 @@ class FraudCrawlerClient(Orchestrator):
         )
         self._results.append(Results(search_term=search_term, filename=filename))
 
-        # Normalize inputs
-        nrm_se: List[SearchEngine] = list(SearchEngine)
+        # Normalize inputs - convert strings to SearchEngineName enum values
+        nrm_search_engines: List[SearchEngineName] = list(SearchEngineName)
         if search_engines:
-            nrm_se = [
-                SearchEngine(se) if isinstance(se, str) else se for se in search_engines
+            nrm_search_engines = [
+                SearchEngineName(se) if isinstance(se, str) else se
+                for se in search_engines
             ]
 
         # Run the pipeline by calling the orchestrator's run method
         asyncio.run(
             super().run(
                 search_term=search_term,
-                search_engines=nrm_se,
+                search_engines=nrm_search_engines,
                 language=language,
                 location=location,
                 deepness=deepness,

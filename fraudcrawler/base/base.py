@@ -7,6 +7,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic_settings import BaseSettings
+from urllib.parse import urlparse
 import re
 from typing import List, Dict
 
@@ -130,7 +131,8 @@ class ProductItem(BaseModel):
     search_term: str
     search_term_type: str
     url: str
-    marketplace_name: str
+    url_resolved: str
+    search_engine_name: str
     domain: str
 
     # Zyte parameters
@@ -184,28 +186,83 @@ class AsyncClient:
     """Base class for sub-classes using async HTTP requests."""
 
     @staticmethod
+    async def _extract_answer(
+        response: aiohttp.ClientResponse, answer_format: str
+    ) -> dict | str | bytes:
+        """Extracts the answer from the response based on the specified format."""
+        if answer_format == "json":
+            return await response.json()
+        elif answer_format == "text":
+            return await response.text()
+        elif answer_format == "bytes":
+            return await response.read()
+        else:
+            raise ValueError(f"Unsupported answer format: {answer_format}")
+
     async def get(
+        self,
         url: str,
         headers: dict | None = None,
         params: dict | None = None,
-    ) -> dict:
+        answer_format: str = "json",
+    ) -> dict | str | bytes:
         """Async GET request of a given URL returning the data."""
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(url=url, params=params) as response:
                 response.raise_for_status()
-                json_ = await response.json()
-        return json_
+                answer = await self._extract_answer(
+                    response=response, answer_format=answer_format
+                )
+        return answer
 
-    @staticmethod
     async def post(
+        self,
         url: str,
         headers: dict | None = None,
         data: List[dict] | dict | None = None,
         auth: aiohttp.BasicAuth | None = None,
-    ) -> dict:
+        answer_format: str = "json",
+    ) -> dict | str | bytes:
         """Async POST request of a given URL returning the data."""
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.post(url=url, json=data, auth=auth) as response:
                 response.raise_for_status()
-                json_ = await response.json()
-        return json_
+                answer = await self._extract_answer(
+                    response=response, answer_format=answer_format
+                )
+        return answer
+
+
+class DomainUtils:
+    """Utility class for domain extraction and normalization.
+
+    Handles domain parsing from URLs, removes common prefixes (www, http/https),
+    and provides consistent domain formatting for search and scraping operations.
+    """
+
+    _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
+
+    def _get_domain(self, url: str) -> str:
+        """Extracts the second-level domain together with the top-level domain (e.g. `google.com`).
+
+        Args:
+            url: The URL to be processed.
+        """
+        # Add scheme; urlparse requires it
+        if not url.startswith(("http://", "https://")):
+            url = "http://" + url
+
+        # Get the hostname
+        hostname = urlparse(url).hostname
+        if hostname is None and (match := re.search(self._hostname_pattern, url)):
+            hostname = match.group(1)
+        if hostname is None:
+            logger.warning(
+                f'Failed to extract domain from url="{url}"; full url is returned'
+            )
+            return url.lower()
+
+        # Remove www. prefix
+        if hostname and hostname.startswith("www."):
+            hostname = hostname[4:]
+        return hostname.lower()

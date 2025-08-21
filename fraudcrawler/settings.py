@@ -17,7 +17,7 @@ RETRY_SKIP_IF_CODE = [400, 401, 403]  # Skip retrying on these HTTP status codes
 # Serp settings
 GOOGLE_LOCATIONS_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-locations.json"
 GOOGLE_LANGUAGES_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-languages.json"
-SERP_DEFAULT_COUNTRY_CODES: List[str] = [
+SEARCH_DEFAULT_COUNTRY_CODES: List[str] = [
     # ".com",
 ]
 

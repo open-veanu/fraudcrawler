@@ -1,18 +1,18 @@
 import logging
-from typing import List
+from typing import List, cast, Dict
 from base64 import b64decode
 
 import aiohttp
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
-from fraudcrawler.base.base import AsyncClient
+from fraudcrawler.base.base import AsyncClient, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
 
 
-class ZyteApi(AsyncClient):
+class ZyteAPI(AsyncClient, DomainUtils):
     """A client to interact with the Zyte API for fetching product details."""
 
     _endpoint = "https://api.zyte.com/v1/extract"
@@ -97,16 +97,20 @@ class ZyteApi(AsyncClient):
         )
         async for attempt in retry:
             with attempt:
-                product = await self.post(
-                    url=self._endpoint,
-                    data={"url": url, **self._config},
-                    auth=self._aiohttp_basic_auth,
+                product = cast(
+                    Dict,
+                    await self.post(
+                        url=self._endpoint,
+                        data={"url": url, **self._config},
+                        auth=self._aiohttp_basic_auth,
+                    ),
                 )
         return product
 
     @staticmethod
     def keep_product(
-        details: dict, threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD
+        details: dict,
+        threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD,
     ) -> bool:
         """Determines whether to keep the product based on the probability threshold.
 
@@ -135,6 +139,19 @@ class ZyteApi(AsyncClient):
             }
         """
         return details.get("product", {}).get("name")
+
+    @staticmethod
+    def extract_url_resolved(details: dict) -> str | None:
+        """Extracts the resolved URL from the product data - this is automatically resolved by Zyte.
+
+        The input argument is a dictionary of the following structure:
+            {
+                "product": {
+                    "url": str,
+                }
+            }
+        """
+        return details.get("product", {}).get("url")
 
     @staticmethod
     def extract_product_price(details: dict) -> str | None:
@@ -198,7 +215,9 @@ class ZyteApi(AsyncClient):
                 }
             }
         """
-        return float(details.get("product", {}).get("metadata", {}).get("probability"))
+        return float(
+            details.get("product", {}).get("metadata", {}).get("probability", 0.0)
+        )
 
     @staticmethod
     def extract_html(details: dict) -> str | None:
@@ -209,7 +228,6 @@ class ZyteApi(AsyncClient):
                 "httpResponseBody": base64
             }
         """
-
         # Get the Base64-encoded content
         encoded = details.get("httpResponseBody")
 
@@ -217,6 +235,7 @@ class ZyteApi(AsyncClient):
         if isinstance(encoded, str):
             decoded_bytes = b64decode(encoded)
 
-        # Convert bytes to string (assuming UTF-8 encoding)
-        decoded_string = decoded_bytes.decode("utf-8")
-        return decoded_string
+            # Convert bytes to string (assuming UTF-8 encoding)
+            decoded_string = decoded_bytes.decode("utf-8")
+            return decoded_string
+        return None

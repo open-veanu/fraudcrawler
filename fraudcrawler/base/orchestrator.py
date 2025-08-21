@@ -22,11 +22,11 @@ from fraudcrawler.base.base import (
     ProductItem,
 )
 from fraudcrawler import (
-    SerpApi,
-    SearchEngine,
+    Search,
+    SearchEngineName,
     Enricher,
     URLCollector,
-    ZyteApi,
+    ZyteAPI,
     Processor,
 )
 
@@ -75,10 +75,10 @@ class Orchestrator(ABC):
             n_proc_wkrs: Number of async workers for the processor (optional).
         """
         # Setup the clients
-        self._serpapi = SerpApi(api_key=serpapi_key)
+        self._search = Search(serpapi_key=serpapi_key)
         self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
         self._url_collector = URLCollector()
-        self._zyteapi = ZyteApi(api_key=zyteapi_key)
+        self._zyteapi = ZyteAPI(api_key=zyteapi_key)
         self._processor = Processor(
             api_key=openaiapi_key,
             model=openai_model,
@@ -96,7 +96,7 @@ class Orchestrator(ABC):
         queue_in: asyncio.Queue[dict | None],
         queue_out: asyncio.Queue[ProductItem | None],
     ) -> None:
-        """Collects the SerpApi search setups from the queue_in, executes the search, filters the results (country_code) and puts them into queue_out.
+        """Collects the search setups from the queue_in, executes the search, filters the results and puts them into queue_out.
 
         Args:
             queue_in: The input queue containing the search parameters.
@@ -110,23 +110,30 @@ class Orchestrator(ABC):
 
             try:
                 search_term_type = item.pop("search_term_type")
-                results = await self._serpapi.apply(**item)
+                # The search_engines are already SearchEngineName enum values
+                search_engines = item.pop("search_engines")
+
+                results = await self._search.apply(
+                    **item, search_engines=search_engines
+                )
+
                 logger.debug(
-                    f"SERP API search for {item['search_term']} returned {len(results)} results"
+                    f"Search for {item['search_term']} returned {len(results)} results"
                 )
                 for res in results:
                     product = ProductItem(
                         search_term=item["search_term"],
                         search_term_type=search_term_type,
                         url=res.url,
-                        marketplace_name=res.marketplace_name,
+                        url_resolved=res.url,  # Set initial value, will be updated by Zyte
+                        search_engine_name=res.search_engine_name,
                         domain=res.domain,
                         filtered=res.filtered,
                         filtered_at_stage=res.filtered_at_stage,
                     )
                     await queue_out.put(product)
             except Exception as e:
-                logger.error(f"Error executing SERP API search: {e}")
+                logger.error(f"Error executing search: {e}")
             queue_in.task_done()
 
     async def _collect_url(
@@ -192,9 +199,21 @@ class Orchestrator(ABC):
                 try:
                     # Fetch the product details from Zyte API
                     details = await self._zyteapi.get_details(url=product.url)
+                    url_resolved = self._zyteapi.extract_url_resolved(details=details)
+                    if url_resolved:
+                        product.url_resolved = url_resolved
                     product.product_name = self._zyteapi.extract_product_name(
                         details=details
                     )
+
+                    # If the resolved URL is different from the original URL, we also need to update the domain as
+                    # otherwise the unresolved domain will be shown, for example for unresolved domain toppreis.ch but resolved digitec.ch
+                    if url_resolved and url_resolved != product.url:
+                        logger.debug(
+                            f"URL resolved for {product.url} is {url_resolved}"
+                        )
+                        product.domain = self._search._get_domain(url_resolved)
+
                     product.product_price = self._zyteapi.extract_product_price(
                         details=details
                     )
@@ -362,7 +381,7 @@ class Orchestrator(ABC):
         queue: asyncio.Queue[dict | None],
         search_term: str,
         search_term_type: str,
-        search_engines: List[SearchEngine],
+        search_engines: List[SearchEngineName],
         language: Language,
         location: Location,
         num_results: int,
@@ -387,7 +406,7 @@ class Orchestrator(ABC):
         self,
         queue: asyncio.Queue[dict | None],
         search_term: str,
-        search_engines: List[SearchEngine],
+        search_engines: List[SearchEngineName],
         language: Language,
         location: Location,
         deepness: Deepness,
@@ -437,7 +456,7 @@ class Orchestrator(ABC):
     async def run(
         self,
         search_term: str,
-        search_engines: List[SearchEngine],
+        search_engines: List[SearchEngineName],
         language: Language,
         location: Location,
         deepness: Deepness,
@@ -450,7 +469,7 @@ class Orchestrator(ABC):
 
         Args:
             search_term: The search term for the query.
-            search_engines: The list of search engines to use for the SerpAPI query.
+            search_engines: The list of search engines to use for the search query.
             language: The language to use for the query.
             location: The location to use for the query.
             deepness: The search depth and enrichment details.
@@ -463,6 +482,14 @@ class Orchestrator(ABC):
         # ---------------------------
         #        INITIAL SETUP
         # ---------------------------
+        # Ensure we have at least one search engine
+        if not search_engines:
+            logger.warning(
+                "No search engines specified, using all available search engines"
+            )
+            search_engines = list(SearchEngineName)
+
+        # Handle previously collected URLs
         if previously_collected_urls:
             self._url_collector.collected_previously = set(previously_collected_urls)
 
