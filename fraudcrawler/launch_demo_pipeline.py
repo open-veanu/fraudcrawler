@@ -13,7 +13,7 @@ def main():
     client = FraudCrawlerClient()
 
     # Setup the search
-    search_term = "Borax"
+    search_term = "Bosch Kühlschrank"
     language = Language(name="German")
     location = Location(name="Switzerland")
     deepness = Deepness(num_results=150)
@@ -68,9 +68,9 @@ def main():
 
     # Data Science Settings
     ds_settings = DSsettings(
-                            dataset_creation=False,
-                            use_cached_ds_data =True,
-                            cached_filename="59ab8652_Borax_de_ch_20250502140755.csv"
+                            dataset_creation=True,
+                            use_cached_ds_data =False,
+                            cached_filename="none.csv"#"59ab8652_Borax_de_ch_20250502140755.csv"
                             )
 
     # Execute the pipeline

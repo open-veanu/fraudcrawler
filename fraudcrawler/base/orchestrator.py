@@ -34,6 +34,7 @@ class ProductItem(BaseModel):
     product_images: List[str] | None = None
     probability: float | None = None
     encoded_url16: str | None = None
+    httpResponseBody: str | None = None
 
     # Processor parameters are set dynamic so we must allow extra fields
     classifications: Dict[str, int] = Field(default_factory=dict)
@@ -222,6 +223,7 @@ class Orchestrator(ABC):
                     product.product_images = self._zyteapi.extract_image_urls(details=details)
                     product.probability = self._zyteapi.extract_probability(details=details)
                     product.encoded_url16 = self._zyteapi.extract_encoded_url16(details=details)
+                    product.httpResponseBody = self._zyteapi.extract_httpResponseBody(details=details)
                     
                     # Filter the product based on the probability threshold
                     if product.ds_settings.dataset_creation or self._zyteapi.keep_product(details=details):
@@ -481,8 +483,6 @@ class Orchestrator(ABC):
             excluded_urls: The URLs to exclude from the search.
             previously_collected_urls: The urls that have been collected previously and are ignored.
         """
-        print('DSSETTINGS')
-        print(ds_settings)
         if ds_settings.use_cached_ds_data:
 
             async def load_cached_items(proc_queue):
@@ -518,7 +518,6 @@ class Orchestrator(ABC):
                 return proc_queue
 
         
-            print(f"\nTHIS IS THE DS VALIDATION PART\n")
             # Setup only the processor and result queues
             proc_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
             res_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
@@ -531,7 +530,6 @@ class Orchestrator(ABC):
             #for item in cached_products:
             #    await proc_queue.put(item)
 
-            print('SETUP PROCESSING WORKERS')
             # Setup processing workers
             proc_wkrs = [
                 asyncio.create_task(self._proc_execute(queue_in=proc_queue, queue_out=res_queue, prompts=prompts))

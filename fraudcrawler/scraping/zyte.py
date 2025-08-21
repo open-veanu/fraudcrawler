@@ -236,3 +236,14 @@ class ZyteApi(AsyncClient):
             }
         """
         return details.get("encoded_url16", {})        
+    
+    @staticmethod
+    def extract_httpResponseBody(details: dict) -> str:
+        """Extracts the httpResponseBody from the product data.
+
+        The input argument is a dictionary of the following structure:
+            {
+                "httpResponseBody": str
+            }
+        """
+        return details.get("httpResponseBody", {})        
