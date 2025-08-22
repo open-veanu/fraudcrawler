@@ -435,7 +435,7 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
 
 @pytest.mark.asyncio
 async def test_zyteapi_details(zyteapi):
-    url = "https://www.altibbi.com/answer/159"
+    url = "https://www.interdiscount.ch/it/product/liebherr-tp1410-136-l-bianco-0005000183"
     product = await zyteapi.details(url=url)
     assert product
 
@@ -443,6 +443,10 @@ async def test_zyteapi_details(zyteapi):
     url = url.replace("://www.", "://")
     assert prod_url == url
     assert "product" in product
+    assert "name" in product["product"]
+    assert product["product"]["name"] is not None
+    assert "description" in product["product"]
+    assert product["product"]["description"] is not None
     assert "metadata" in product["product"]
 
 

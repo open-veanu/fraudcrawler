@@ -40,10 +40,7 @@ class ZyteAPI(DomainUtils):
             api_key: The API key for Zyte API.
         """
         self._http_client = http_client
-        self._headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        self._api_key = api_key
 
     def _log_before(self, url: str, retry_state: RetryCallState | None) -> None:
         """Context aware logging before the request is made."""
@@ -105,8 +102,8 @@ class ZyteAPI(DomainUtils):
             with attempt:
                 response = await self._http_client.post(
                     url=self._endpoint,
-                    headers=self._headers,
                     data={"url": url, **self._config},
+                    auth=(self._api_key, ""),  # API key as username, empty password
                 )
         details = response.json()
         return details

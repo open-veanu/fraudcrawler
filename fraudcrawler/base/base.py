@@ -9,9 +9,8 @@ from pydantic import (
 from pydantic_settings import BaseSettings
 from urllib.parse import urlparse
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
-import aiohttp
 import httpx
 
 from fraudcrawler.settings import (
@@ -227,7 +226,7 @@ class HttpxAsyncClient(httpx.AsyncClient):
         url: str,
         headers: dict | None = None,
         data: List[dict] | dict | None = None,
-        auth: aiohttp.BasicAuth | None = None,
+        auth: Tuple | None = None,
     ) -> httpx.Response:
         """Async POST request of a given URL."""
         response = await super().post(url=url, headers=headers, json=data, auth=auth)
