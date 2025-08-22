@@ -87,7 +87,7 @@ class Orchestrator(ABC):
             http_client: An httpx.AsyncClient to use for the async requests (optional).
         """
 
-        # Stor the variables for setting up the clients
+        # Store the variables for setting up the clients
         self._serpapi_key = serpapi_key
         self._dataforseo_user = dataforseo_user
         self._dataforseo_pwd = dataforseo_pwd
