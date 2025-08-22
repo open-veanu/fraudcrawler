@@ -102,7 +102,7 @@ class Orchestrator(ABC):
         self._queues: Dict[str, asyncio.Queue] | None = None
         self._workers: Dict[str, List[asyncio.Task] | asyncio.Task] | None = None
 
-        # Setup the aiohttp session
+        # Setup the httpx client
         self._http_client = http_client
         self._owns_http_client = http_client is None
 
