@@ -39,7 +39,7 @@ def toppreise():
 @pytest.fixture
 def search():
     setup = Setup()
-    return Search(serpapi_key=setup.serpapi_key)
+    return Search(http_client=_HTTP_CLIENT, serpapi_key=setup.serpapi_key)
 
 
 @pytest.fixture
@@ -314,12 +314,12 @@ async def test_enricher_get_related_keywords(enricher):
 
 
 @pytest.mark.asyncio
-async def test_enricher_apply(enricher):
+async def test_enricher_enrich(enricher):
     search_term = "sildenafil"
     location = Location(name="Switzerland", code="ch")
     language = Language(name="German", code="de")
     n_terms = 5
-    terms = await enricher.apply(
+    terms = await enricher.enrich(
         search_term=search_term,
         location=location,
         language=language,

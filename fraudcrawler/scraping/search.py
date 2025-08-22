@@ -487,15 +487,16 @@ class Toppreise(SearchEngine):
 class Search(DomainUtils):
     """Class to perform searches using different search engines."""
 
-    def __init__(self, serpapi_key):
+    def __init__(self, http_client: httpx.AsyncClient, serpapi_key: str):
         """Initializes the Search class with the given SerpAPI key.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             serpapi_key: The API key for SERP API.
         """
-        self._google = SerpAPIGoogle(api_key=serpapi_key)
-        self._google_shopping = SerpAPIGoogleShopping(api_key=serpapi_key)
-        self._toppreise = Toppreise()
+        self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
+        self._google_shopping = SerpAPIGoogleShopping(http_client=http_client, api_key=serpapi_key)
+        self._toppreise = Toppreise(http_client=http_client)
 
     @staticmethod
     def _domain_in_host(domain: str, host: Host) -> bool:
