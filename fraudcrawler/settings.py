@@ -1,8 +1,6 @@
 from pathlib import Path
 from typing import List
 
-import httpx
-
 # Generic settings
 ROOT_DIR = Path(__file__).parents[1]
 

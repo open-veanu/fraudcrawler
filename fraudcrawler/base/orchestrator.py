@@ -529,7 +529,6 @@ class Orchestrator(ABC):
             excluded_urls: The URLs to exclude from the search.
             previously_collected_urls: The urls that have been collected previously and are ignored.
         """
-
         # ---------------------------
         #        INITIAL SETUP
         # ---------------------------
