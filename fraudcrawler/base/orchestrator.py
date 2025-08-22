@@ -222,7 +222,7 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Fetch the product details from Zyte API
-                    details = await self._zyteapi.apply(url=product.url)
+                    details = await self._zyteapi.details(url=product.url)
                     url_resolved = self._zyteapi.extract_url_resolved(details=details)
                     if url_resolved:
                         product.url_resolved = url_resolved

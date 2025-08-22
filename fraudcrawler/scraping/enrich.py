@@ -164,7 +164,9 @@ class Enricher:
             }
         ]
         url = f"{self._base_endpoint}{self._suggestions_endpoint}"
-        logger.debug(f'DataForSEO url="{url}" with data="{data}".')
+        logger.debug(
+            f'DataForSEO search suggested keywords with url="{url}" and data="{data}".'
+        )
 
         # Perform the request and retry if necessary. There is some context aware logging
         #  - `before`: before the request is made (or before retrying)
@@ -178,14 +180,15 @@ class Enricher:
         )
         async for attempt in retry:
             with attempt:
-                sugg_data = await self._http_client.post(
+                response = await self._http_client.post(
                     url=url,
                     headers=self._headers,
                     data=data
                 )
 
         # Extract the keywords from the response
-        keywords = self._extract_suggested_keywords(data=sugg_data)
+        data_suggested_keywords = response.json()
+        keywords = self._extract_suggested_keywords(data=data_suggested_keywords)
 
         logger.debug(f"Found {len(keywords)} suggestions from DataForSEO search.")
         return keywords
@@ -267,27 +270,32 @@ class Enricher:
                 "limit": limit,
             }
         ]
+        url = f"{self._base_endpoint}{self._keywords_endpoint}"
         logger.debug(
-            f'DataForSEO search for related keywords with search_term="{search_term}".'
+            f'DataForSEO search related keywords with url="{url}" and data="{data}".'
         )
-        try:
-            url = f"{self._base_endpoint}{self._keywords_endpoint}"
-            logger.debug(f'DataForSEO url="{url}" with data="{data}".')
-            rel_data = await self._http_client.post(
-                url=url,
-                headers=self._headers,
-                data=data,
-            )
-        except Exception as e:
-            logger.error(f"DataForSEO related keyword search failed with error: {e}.")
+
+        # Perform the request and retry if necessary. There is some context aware logging
+        #  - `before`: before the request is made (or before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_before(
+            search_term=search_term, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            search_term=search_term, retry_state=retry_state
+        )
+        async for attempt in retry:
+            with attempt:
+                response = await self._http_client.post(
+                    url=url,
+                    headers=self._headers,
+                    data=data
+                )
 
         # Extract the keywords from the response
-        try:
-            keywords = self._extract_related_keywords(data=rel_data)
-        except Exception as e:
-            logger.error(
-                f"Failed to extract related keywords from DataForSEO response with error: {e}."
-            )
+        data_related_keywords = response.json()
+        keywords = self._extract_related_keywords(data=data_related_keywords)
 
         logger.debug(f"Found {len(keywords)} related keywords from DataForSEO search.")
         return keywords

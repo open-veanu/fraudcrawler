@@ -1,5 +1,5 @@
 import logging
-from typing import List, cast, Dict
+from typing import List
 from base64 import b64decode
 
 import aiohttp
@@ -12,7 +12,7 @@ from fraudcrawler.base.retry import get_async_retry
 logger = logging.getLogger(__name__)
 
 
-class ZyteAPI(AsyncClient, DomainUtils):
+class ZyteAPI(DomainUtils):
     """A client to interact with the Zyte API for fetching product details."""
 
     _endpoint = "https://api.zyte.com/v1/extract"
@@ -58,7 +58,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
-    async def apply(self, url: str) -> dict:
+    async def details(self, url: str) -> dict:
         """Fetches product details for a single URL.
 
         Args:
@@ -97,15 +97,13 @@ class ZyteAPI(AsyncClient, DomainUtils):
         )
         async for attempt in retry:
             with attempt:
-                product = cast(
-                    Dict,
-                    await self.post(
-                        url=self._endpoint,
-                        data={"url": url, **self._config},
-                        auth=self._aiohttp_basic_auth,
-                    ),
+                response = await self.post(
+                    url=self._endpoint,
+                    data={"url": url, **self._config},
+                    auth=self._aiohttp_basic_auth,
                 )
-        return product
+        details = response.json()
+        return details
 
     @staticmethod
     def keep_product(
