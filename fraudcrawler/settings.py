@@ -86,7 +86,7 @@ DEFAULT_HTTPX_TIMEOUT = {
     "connect": 5.0,
 }
 DEFAULT_HTTPX_LIMITS = {
-    "max_connections": 2000,
-    "max_keepalive_connections": 500,
+    "max_connections": 1000,
+    "max_keepalive_connections": 100,
 }
 DEFAULT_HTTPX_REDIRECTS = True

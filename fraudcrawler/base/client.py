@@ -126,7 +126,7 @@ class FraudCrawlerClient(Orchestrator):
         )
         self._results.append(Results(search_term=search_term, filename=filename))
 
-        # Normalize search engines and handle None
+        # Normalize inputs - convert strings to SearchEngineName enum values
         nrm_search_engines = list(SearchEngineName)
         if search_engines:
             nrm_search_engines = [
