@@ -4,6 +4,7 @@ import logging
 from typing import Dict, List, cast
 
 from bs4 import BeautifulSoup
+import httpx
 
 from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,
@@ -60,6 +61,10 @@ class Orchestrator(ABC):
         n_serp_wkrs: int = DEFAULT_N_SERP_WKRS,
         n_zyte_wkrs: int = DEFAULT_N_ZYTE_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
+        # Configure a custom httpx client.
+        # We provide a `DefaultAsyncHttpxClient` class that you can pass to retain the default values we use for `limits`, `timeout` & `follow_redirects`.
+        # See the [httpx documentation](https://www.python-httpx.org/api/#asyncclient) for more details.
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initializes the orchestrator with the given settings.
 
@@ -73,6 +78,7 @@ class Orchestrator(ABC):
             n_serp_wkrs: Number of async workers for serp (optional).
             n_zyte_wkrs: Number of async workers for zyte (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
+            http_client: An httpx.AsyncClient to use for the async requests (optional).
         """
         # Setup the clients
         self._search = Search(serpapi_key=serpapi_key)
@@ -90,6 +96,24 @@ class Orchestrator(ABC):
         self._n_proc_wkrs = n_proc_wkrs
         self._queues: Dict[str, asyncio.Queue] | None = None
         self._workers: Dict[str, List[asyncio.Task] | asyncio.Task] | None = None
+
+        # Setup the aiohttp session
+        self._session = http_client
+        self._owns_session = http_client is None
+    
+    # async def _start_session(self) -> None:
+    #     """Creates and starts an aiohttp.ClientSession if not provided."""
+    #     if self._session is None:
+    #         logger.debug("Creating a new httpx.AsyncClient owned by the orchestrator")
+    #         self._http_client = httpx.AsyncClient()
+    #         self._owns_http_client = True
+
+    # async def _close_session(self) -> None:
+    #     """Closes the aiohttp.ClientSession if it was created by this orchestrator."""
+    #     if self._owns_session and self._session:
+    #         logger.debug("Closing the aiohttp.ClientSession owned by the orchestrator")
+    #         await self._session.close()
+    #         self._session = None
 
     async def _serp_execute(
         self,
@@ -198,7 +222,7 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Fetch the product details from Zyte API
-                    details = await self._zyteapi.get_details(url=product.url)
+                    details = await self._zyteapi.apply(url=product.url)
                     url_resolved = self._zyteapi.extract_url_resolved(details=details)
                     if url_resolved:
                         product.url_resolved = url_resolved
@@ -265,7 +289,7 @@ class Orchestrator(ABC):
                 try:
                     # Run all the configured prompts
                     for prompt in prompts:
-                        classification = await self._processor.classify(
+                        classification = await self._processor.apply(
                             product=product,
                             prompt=prompt,
                         )
@@ -641,4 +665,7 @@ class Orchestrator(ABC):
         finally:
             await res_queue.join()
 
+        # ---------------------------
+        #  CLOSING PIPELINE
+        # ---------------------------
         logger.info("Pipeline concluded; async framework is closed")

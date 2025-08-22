@@ -122,7 +122,7 @@ class Processor:
 
         return classification
 
-    async def classify(
+    async def apply(
         self,
         product: ProductItem,
         prompt: Prompt,

@@ -1,6 +1,12 @@
 import pytest
 
-from fraudcrawler.base.base import Setup, Host, Location, Language
+from fraudcrawler.base.base import (
+    Setup,
+    Host,
+    Location,
+    Language,
+    HttpxAsyncClient,
+)
 from fraudcrawler.scraping.search import (
     Search,
     SearchResult,
@@ -11,22 +17,23 @@ from fraudcrawler.scraping.search import (
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 
+_HTTP_CLIENT = HttpxAsyncClient()
 
 @pytest.fixture
 def serpapi_google():
     setup = Setup()
-    return SerpAPIGoogle(api_key=setup.serpapi_key)
+    return SerpAPIGoogle(http_client=_HTTP_CLIENT, api_key=setup.serpapi_key)
 
 
 @pytest.fixture
 def serpapi_google_shopping():
     setup = Setup()
-    return SerpAPIGoogleShopping(api_key=setup.serpapi_key)
+    return SerpAPIGoogleShopping(http_client=_HTTP_CLIENT, api_key=setup.serpapi_key)
 
 
 @pytest.fixture
 def toppreise():
-    return Toppreise()
+    return Toppreise(http_client=_HTTP_CLIENT)
 
 
 @pytest.fixture

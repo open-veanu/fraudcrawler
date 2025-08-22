@@ -58,7 +58,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
-    async def get_details(self, url: str) -> dict:
+    async def apply(self, url: str) -> dict:
         """Fetches product details for a single URL.
 
         Args:

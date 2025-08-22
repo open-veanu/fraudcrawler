@@ -9,13 +9,19 @@ from pydantic import (
 from pydantic_settings import BaseSettings
 from urllib.parse import urlparse
 import re
-from typing import List, Dict
+from typing import Any, Dict, List
 
 import aiohttp
+import httpx
 
 from fraudcrawler.settings import (
     GOOGLE_LANGUAGES_FILENAME,
     GOOGLE_LOCATIONS_FILENAME,
+)
+from fraudcrawler.settings import (
+    DEFAULT_HTTPX_TIMEOUT,
+    DEFAULT_HTTPX_LIMITS,
+    DEFAULT_HTTPX_REDIRECTS,
 )
 
 logger = logging.getLogger(__name__)
@@ -231,6 +237,39 @@ class AsyncClient:
                     response=response, answer_format=answer_format
                 )
         return answer
+
+
+class HttpxAsyncClient(httpx.AsyncClient):
+    """Httpx async client that can be used to retain the default settings."""
+
+    def __init__(
+            self,
+            timeout: httpx.Timeout | Dict[str, Any] = DEFAULT_HTTPX_TIMEOUT,
+            limits: httpx.Limits | Dict[str, Any] = DEFAULT_HTTPX_LIMITS,
+            follow_redirects: bool = DEFAULT_HTTPX_REDIRECTS,
+            **kwargs: Any,
+        ) -> None:
+        if isinstance(timeout, dict):
+            timeout = httpx.Timeout(**DEFAULT_HTTPX_TIMEOUT)
+        if isinstance(limits, dict):
+            limits = httpx.Limits(**DEFAULT_HTTPX_LIMITS)
+
+        kwargs.setdefault("timeout", timeout)
+        kwargs.setdefault("limits", limits)
+        kwargs.setdefault("follow_redirects", follow_redirects)
+        super().__init__(**kwargs)
+    
+    async def get(
+        self,
+        url: str,
+        headers: dict | None = None,
+        params: dict | None = None,
+    ) -> httpx.Response:
+        """Async GET request of a given URL."""
+        response = await super().get(url=url, headers=headers, params=params)
+        response.raise_for_status()
+        return response
+        
 
 
 class DomainUtils:

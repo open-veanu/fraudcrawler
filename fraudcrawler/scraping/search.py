@@ -2,14 +2,15 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import logging
 from pydantic import BaseModel
-from typing import cast, Dict, List
+from typing import List
 from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
+import httpx
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import SEARCH_DEFAULT_COUNTRY_CODES
-from fraudcrawler.base.base import Host, Language, Location, AsyncClient, DomainUtils
+from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ class SearchEngineName(Enum):
     TOPPREISE = "Toppreise"
 
 
-class SearchEngine(ABC, AsyncClient, DomainUtils):
+class SearchEngine(ABC, DomainUtils):
     """Abstract base class for search engines."""
 
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
@@ -95,12 +96,14 @@ class SerpAPI(SearchEngine):
 
     _endpoint = "https://serpapi.com/search"
 
-    def __init__(self, api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, api_key: str):
         """Initializes the SerpAPI client with the given API key.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
         """
+        self._http_client = http_client
         self._api_key = api_key
 
     @property
@@ -194,7 +197,7 @@ class SerpAPI(SearchEngine):
         )
         async for attempt in retry:
             with attempt:
-                response = cast(Dict, await self.get(url=self._endpoint, params=params))
+                response = cast(Dict, await self._http_client.get(url=self._endpoint, params=params))
 
         # Extract the URLs from the response
         urls = self._extract_search_results_urls(response=response)
@@ -208,13 +211,14 @@ class SerpAPI(SearchEngine):
 class SerpAPIGoogle(SerpAPI):
     """Search engine for Google in SerpAPI."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, api_key: str):
         """Initializes the SerpAPIGoogle client with the given API key.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
         """
-        super().__init__(api_key=api_key)
+        super().__init__(http_client=http_client, api_key=api_key)
 
     @property
     def _search_engine_name(self) -> str:
@@ -280,13 +284,14 @@ class SerpAPIGoogle(SerpAPI):
 class SerpAPIGoogleShopping(SerpAPI):
     """Search engine for Google Shopping in SerpAPI."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, api_key: str):
         """Initializes the SerpAPIGoogleShopping client with the given API key.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
         """
-        super().__init__(api_key=api_key)
+        super().__init__(http_client=http_client, api_key=api_key)
 
     @property
     def _search_engine_name(self) -> str:
@@ -367,6 +372,14 @@ class Toppreise(SearchEngine):
         "Upgrade-Insecure-Requests": "1",
     }
 
+    def __init__(self, http_client: httpx.AsyncClient):
+        """Initializes the Toppreise client.
+
+        Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
+        """
+        self._http_client = http_client
+
     @property
     def _search_engine_name(self) -> str:
         """The name of the search engine."""
@@ -433,16 +446,13 @@ class Toppreise(SearchEngine):
         )
         async for attempt in retry:
             with attempt:
-                content = cast(
-                    bytes,
-                    await self.get(
-                        url=url,
-                        headers=self._headers,
-                        answer_format="bytes",
-                    ),
+                response = await self._http_client.get(
+                    url=url,
+                    headers=self._headers,
                 )
 
         # Get external product urls from the content
+        content = response.content
         urls = self._get_external_product_urls(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
 
