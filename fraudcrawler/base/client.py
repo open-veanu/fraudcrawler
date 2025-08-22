@@ -100,8 +100,8 @@ class FraudCrawlerClient(Orchestrator):
         prompts: List[Prompt],
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
+        search_engines: List[SearchEngineName | str] | None = None,
         previously_collected_urls: List[str] | None = None,
-        search_engines: List[str] | None = None,
     ) -> None:
         """Runs the pipeline steps: serp, enrich, zyte, process, and collect the results.
 
@@ -113,8 +113,8 @@ class FraudCrawlerClient(Orchestrator):
             prompts: The list of prompts to use for classification.
             marketplaces: The marketplaces to include in the search (optional).
             excluded_urls: The URLs to exclude from the search (optional).
-            previously_collected_urls: The urls that have been collected previously and are ignored (optional).
             search_engines: The list of search engines to use for the search (optional).
+            previously_collected_urls: The urls that have been collected previously and are ignored (optional).
         """
         # Handle results files
         timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
