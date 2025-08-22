@@ -198,9 +198,9 @@ class HttpxAsyncClient(httpx.AsyncClient):
             **kwargs: Any,
         ) -> None:
         if isinstance(timeout, dict):
-            timeout = httpx.Timeout(**DEFAULT_HTTPX_TIMEOUT)
+            timeout = httpx.Timeout(**timeout)
         if isinstance(limits, dict):
-            limits = httpx.Limits(**DEFAULT_HTTPX_LIMITS)
+            limits = httpx.Limits(**limits)
 
         kwargs.setdefault("timeout", timeout)
         kwargs.setdefault("limits", limits)
