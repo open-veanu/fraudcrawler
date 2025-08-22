@@ -114,11 +114,11 @@ class SerpAPI(SearchEngine):
 
     @staticmethod
     @abstractmethod
-    def _extract_search_results_urls(response: dict) -> List[str]:
+    def _extract_search_results_urls(data: dict) -> List[str]:
         """Extracts search results urls from the response.
 
         Args:
-            response: The response from the SerpAPI search.
+            data: The json from the SerpAPI search response.
         """
         pass
 
@@ -197,10 +197,11 @@ class SerpAPI(SearchEngine):
         )
         async for attempt in retry:
             with attempt:
-                response = cast(Dict, await self._http_client.get(url=self._endpoint, params=params))
+                response = await self._http_client.get(url=self._endpoint, params=params)
 
         # Extract the URLs from the response
-        urls = self._extract_search_results_urls(response=response)
+        data = response.json()
+        urls = self._extract_search_results_urls(data=data)
 
         logger.debug(
             f'Found total of {len(urls)} URLs from SerpAPI search for q="{search_string}" and engine="{engine}".'
@@ -231,13 +232,13 @@ class SerpAPIGoogle(SerpAPI):
         return "google"
 
     @staticmethod
-    def _extract_search_results_urls(response: dict) -> List[str]:
-        """Extracts search results urls from the response.
+    def _extract_search_results_urls(data: dict) -> List[str]:
+        """Extracts search results urls from the response data.
 
         Args:
-            response: The response from the SerpApi search.
+            data: The json data from the SerpApi search response.
         """
-        results = response.get("organic_results")
+        results = data.get("organic_results")
         if results is not None:
             return [url for res in results if (url := res.get("link"))]
         return []
@@ -304,13 +305,13 @@ class SerpAPIGoogleShopping(SerpAPI):
         return "google_shopping"
 
     @staticmethod
-    def _extract_search_results_urls(response: dict) -> List[str]:
-        """Extracts search results urls from the response.
+    def _extract_search_results_urls(data: dict) -> List[str]:
+        """Extracts search results urls from the response data.
 
         Args:
-            response: The response from the SerpApi search.
+            data: The json data from the SerpApi search response.
         """
-        results = response.get("shopping_results")
+        results = data.get("shopping_results")
         if results is not None:
             return [url for res in results if (url := res.get("product_link"))]
         return []

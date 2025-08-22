@@ -6,7 +6,7 @@ import aiohttp
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
-from fraudcrawler.base.base import AsyncClient, DomainUtils
+from fraudcrawler.base.base import DomainUtils
 from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)

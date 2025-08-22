@@ -7,7 +7,7 @@ from typing import cast, Dict, Iterator, List
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
-from fraudcrawler.base.base import Location, Language, AsyncClient
+from fraudcrawler.base.base import Location, Language
 from fraudcrawler.base.retry import get_async_retry
 
 
