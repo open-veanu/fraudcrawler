@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import logging
 from pydantic import BaseModel
-from typing import List
+from typing import Dict, List
 from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
@@ -170,7 +170,7 @@ class SerpAPI(SearchEngine):
         )
 
         # Setup the parameters
-        params = {
+        params: Dict[str, str | int] = {
             "engine": engine,
             "q": search_string,
             "google_domain": f"google.{location.code}",

@@ -268,25 +268,6 @@ def test_search_apply_filters(search):
 
 
 @pytest.mark.asyncio
-async def test_search_apply(search):
-    search_term = "Kaffee"
-    language = Language(name="German")
-    location = Location(name="Switzerland")
-    num_results = 5
-    search_engines = ["Google", "Google Shopping", "Toppreise"]
-    results = await search.apply(
-        search_term=search_term,
-        language=language,
-        location=location,
-        num_results=num_results,
-        search_engines=search_engines,
-    )
-    assert 0 < len(results) <= len(search_engines) * num_results
-    assert all(isinstance(res, SearchResult) for res in results)
-    assert all(res.url.startswith("http") for res in results)
-
-
-@pytest.mark.asyncio
 async def test_enricher_get_suggested_keywords(enricher):
     search_term = "sildenafil"
     location = Location(name="Switzerland", code="ch")

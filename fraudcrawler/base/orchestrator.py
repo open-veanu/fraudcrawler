@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-from typing import Dict, List, cast
+from typing import cast, Dict, List, Self
 
 from bs4 import BeautifulSoup
 import httpx
@@ -106,7 +106,7 @@ class Orchestrator(ABC):
         self._http_client = http_client
         self._owns_http_client = http_client is None
 
-    async def __aenter__(self) -> None:
+    async def __aenter__(self) -> Self:
         """Creates and starts an httpx.AsyncClient if not provided."""
         if self._http_client is None:
             logger.debug("Creating a new httpx.AsyncClient owned by the orchestrator")
@@ -133,6 +133,7 @@ class Orchestrator(ABC):
             api_key=self._openaiapi_key,
             model=self._openai_model,
         )
+        return self
 
     async def __aexit__(self, *args, **kwargs) -> None:
         """Closes the httpx.AsyncClient if it was created by this orchestrator."""

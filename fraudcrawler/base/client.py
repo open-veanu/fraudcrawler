@@ -91,7 +91,7 @@ class FraudCrawlerClient(Orchestrator):
         df.to_csv(filename, index=False, quoting=csv.QUOTE_ALL)
         logger.info(f"Results saved to {filename}")
 
-    def run(
+    def execute(
         self,
         search_term: str,
         language: Language,
@@ -100,19 +100,19 @@ class FraudCrawlerClient(Orchestrator):
         prompts: List[Prompt],
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
-        search_engines: List[SearchEngineName | str] | None = None,
+        search_engines: List[str] | None = None,
     ) -> None:
         """Runs the pipeline steps: serp, enrich, zyte, process, and collect the results.
 
         Args:
             search_term: The search term for the query.
+            search_engines: The list of search engines to use for the search.
             language: The language to use for the query.
             location: The location to use for the query.
             deepness: The search depth and enrichment details.
             prompts: The list of prompts to use for classification.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
-            search_engines: The list of search engines to use for the search.
         """
         # Handle results files
         timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
@@ -124,8 +124,8 @@ class FraudCrawlerClient(Orchestrator):
         )
         self._results.append(Results(search_term=search_term, filename=filename))
 
-        # Normalize inputs - convert strings to SearchEngineName enum values
-        nrm_search_engines: List[SearchEngineName] = list(SearchEngineName)
+        # Normalize search engines and handle None
+        nrm_search_engines = list(SearchEngineName)
         if search_engines:
             nrm_search_engines = [
                 SearchEngineName(se) if isinstance(se, str) else se
