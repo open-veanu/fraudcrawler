@@ -2,8 +2,9 @@ from base64 import b64encode
 from collections import defaultdict
 import logging
 from pydantic import BaseModel
-from typing import cast, Dict, Iterator, List
+from typing import Dict, Iterator, List
 
+import httpx
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
@@ -21,7 +22,7 @@ class Keyword(BaseModel):
     volume: int
 
 
-class Enricher(AsyncClient):
+class Enricher:
     """A client to interact with the DataForSEO API for enhancing searches (producing alternative search_terms)."""
 
     _auth_encoding = "ascii"
@@ -29,13 +30,15 @@ class Enricher(AsyncClient):
     _suggestions_endpoint = "/v3/dataforseo_labs/google/keyword_suggestions/live"
     _keywords_endpoint = "/v3/dataforseo_labs/google/related_keywords/live"
 
-    def __init__(self, user: str, pwd: str):
+    def __init__(self, http_client: httpx.AsyncClient, user: str, pwd: str):
         """Initializes the DataForSeoApiClient with the given username and password.
 
         Args:
+            http_client: The httpx async client to use for requests.
             user: The username for DataForSEO API.
             pwd: The password for DataForSEO API.
         """
+        self._http_client = http_client
         self._user = user
         self._pwd = pwd
         auth = f"{user}:{pwd}"
@@ -175,8 +178,10 @@ class Enricher(AsyncClient):
         )
         async for attempt in retry:
             with attempt:
-                sugg_data = cast(
-                    Dict, await self.post(url=url, headers=self._headers, data=data)
+                sugg_data = await self._http_client.post(
+                    url=url,
+                    headers=self._headers,
+                    data=data
                 )
 
         # Extract the keywords from the response
@@ -268,8 +273,10 @@ class Enricher(AsyncClient):
         try:
             url = f"{self._base_endpoint}{self._keywords_endpoint}"
             logger.debug(f'DataForSEO url="{url}" with data="{data}".')
-            rel_data = cast(
-                Dict, await self.post(url=url, headers=self._headers, data=data)
+            rel_data = await self._http_client.post(
+                url=url,
+                headers=self._headers,
+                data=data,
             )
         except Exception as e:
             logger.error(f"DataForSEO related keyword search failed with error: {e}.")
@@ -285,7 +292,7 @@ class Enricher(AsyncClient):
         logger.debug(f"Found {len(keywords)} related keywords from DataForSEO search.")
         return keywords
 
-    async def apply(
+    async def enrich(
         self,
         search_term: str,
         language: Language,
