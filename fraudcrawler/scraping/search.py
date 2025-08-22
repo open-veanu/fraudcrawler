@@ -198,6 +198,7 @@ class SerpAPI(SearchEngine):
         async for attempt in retry:
             with attempt:
                 response = await self._http_client.get(url=self._endpoint, params=params)
+                response.raise_for_status()
 
         # Extract the URLs from the response
         data = response.json()
@@ -451,6 +452,7 @@ class Toppreise(SearchEngine):
                     url=url,
                     headers=self._headers,
                 )
+                response.raise_for_status()
 
         # Get external product urls from the content
         content = response.content

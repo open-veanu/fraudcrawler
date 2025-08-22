@@ -186,9 +186,6 @@ class Prompt(BaseModel):
                 )
         return val
 
-class AsyncClient:
-    pass
-
 
 class HttpxAsyncClient(httpx.AsyncClient):
     """Httpx async client that can be used to retain the default settings."""
@@ -210,28 +207,28 @@ class HttpxAsyncClient(httpx.AsyncClient):
         kwargs.setdefault("follow_redirects", follow_redirects)
         super().__init__(**kwargs)
     
-    async def get(
-        self,
-        url: str,
-        headers: dict | None = None,
-        params: dict | None = None,
-    ) -> httpx.Response:
-        """Async GET request of a given URL."""
-        response = await super().get(url=url, headers=headers, params=params)
-        response.raise_for_status()
-        return response
+    # async def get(
+    #     self,
+    #     url: str,
+    #     headers: dict | None = None,
+    #     params: dict | None = None,
+    # ) -> httpx.Response:
+    #     """Async GET request of a given URL."""
+    #     response = await super().get(url=url, headers=headers, params=params)
+    #     response.raise_for_status()
+    #     return response
     
-    async def post(
-        self,
-        url: str,
-        headers: dict | None = None,
-        data: List[dict] | dict | None = None,
-        auth: Tuple | None = None,
-    ) -> httpx.Response:
-        """Async POST request of a given URL."""
-        response = await super().post(url=url, headers=headers, json=data, auth=auth)
-        response.raise_for_status()
-        return response
+    # async def post(
+    #     self,
+    #     url: str,
+    #     headers: dict | None = None,
+    #     data: List[dict] | dict | None = None,
+    #     auth: Tuple | None = None,
+    # ) -> httpx.Response:
+    #     """Async POST request of a given URL."""
+    #     response = await super().post(url=url, headers=headers, json=data, auth=auth)
+    #     response.raise_for_status()
+    #     return response
 
 
 class DomainUtils:

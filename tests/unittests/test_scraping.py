@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 
 from fraudcrawler.base.base import (
     Setup,
@@ -17,38 +18,42 @@ from fraudcrawler.scraping.search import (
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 
-_HTTP_CLIENT = HttpxAsyncClient()
 
-@pytest.fixture
-def serpapi_google():
+@pytest_asyncio.fixture
+async def serpapi_google():
     setup = Setup()
-    return SerpAPIGoogle(http_client=_HTTP_CLIENT, api_key=setup.serpapi_key)
+    async with HttpxAsyncClient() as httpx_client:
+        yield SerpAPIGoogle(http_client=httpx_client, api_key=setup.serpapi_key)
 
 
-@pytest.fixture
-def serpapi_google_shopping():
+@pytest_asyncio.fixture
+async def serpapi_google_shopping():
     setup = Setup()
-    return SerpAPIGoogleShopping(http_client=_HTTP_CLIENT, api_key=setup.serpapi_key)
+    async with HttpxAsyncClient() as httpx_client:
+        yield SerpAPIGoogleShopping(http_client=httpx_client, api_key=setup.serpapi_key)
 
 
-@pytest.fixture
-def toppreise():
-    return Toppreise(http_client=_HTTP_CLIENT)
+@pytest_asyncio.fixture
+async def toppreise():
+    async with HttpxAsyncClient() as httpx_client:
+        yield Toppreise(http_client=httpx_client)
 
 
-@pytest.fixture
-def search():
+@pytest_asyncio.fixture
+async def search():
     setup = Setup()
-    return Search(http_client=_HTTP_CLIENT, serpapi_key=setup.serpapi_key)
+    async with HttpxAsyncClient() as httpx_client:
+        yield Search(http_client=httpx_client, serpapi_key=setup.serpapi_key)
 
 
-@pytest.fixture
-def enricher():
+@pytest_asyncio.fixture
+async def enricher():
     setup = Setup()
-    return Enricher(
-        http_client=_HTTP_CLIENT,
-        user=setup.dataforseo_user,
-        pwd=setup.dataforseo_pwd,
+    async with HttpxAsyncClient() as httpx_client:
+        yield Enricher(
+            http_client=httpx_client,
+            user=setup.dataforseo_user,
+            pwd=setup.dataforseo_pwd,
     )
 
 
@@ -87,11 +92,11 @@ def other_urls():
     ]
 
 
-@pytest.fixture
-def zyteapi():
+@pytest_asyncio.fixture
+async def zyteapi():
     setup = Setup()
-    zyteapi = ZyteAPI(http_client=_HTTP_CLIENT, api_key=setup.zyteapi_key)
-    return zyteapi
+    async with HttpxAsyncClient() as httpx_client:
+        yield ZyteAPI(http_client=httpx_client, api_key=setup.zyteapi_key)
 
 
 @pytest.mark.asyncio
@@ -461,3 +466,22 @@ def test_zyteapi_keep_product(zyteapi):
     }
     assert zyteapi.keep_product(details=details, threshold=0.1) is True
     assert zyteapi.keep_product(details=details, threshold=0.6) is False
+
+
+@pytest.mark.asyncio
+async def test_search_apply(search):
+    search_term = "Kaffee"
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+    num_results = 5
+    search_engines = ["Google", "Google Shopping", "Toppreise"]
+    results = await search.apply(
+        search_term=search_term,
+        language=language,
+        location=location,
+        num_results=num_results,
+        search_engines=search_engines,
+    )
+    assert 0 < len(results) <= len(search_engines) * num_results
+    assert all(isinstance(res, SearchResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)

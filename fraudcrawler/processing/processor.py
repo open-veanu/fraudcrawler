@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from openai import AsyncOpenAI
 from tenacity import RetryCallState
 
@@ -21,6 +22,7 @@ class Processor:
 
     def __init__(
         self,
+        http_client: httpx.AsyncClient,
         api_key: str,
         model: str,
         default_if_missing: int = PROCESSOR_DEFAULT_IF_MISSING,
@@ -29,12 +31,13 @@ class Processor:
         """Initializes the Processor.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
             default_if_missing: The default classification to return if error occurs.
             empty_token_count: The default value to return as tokensif the classification is empty.
         """
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
         self._error_response = ClassificationResult(
             result=default_if_missing,
@@ -101,9 +104,8 @@ class Processor:
             ],
             **kwargs,
         )
-        content = response.choices[0].message.content
-        if not content:
-            raise ValueError("Empty response from OpenAI API")
+        if not response or not (content := response.choices[0].message.content):
+            raise ValueError(f'Error calling OpenAI API or empty response="{response}".')
 
         # Convert the content to an integer
         try:
@@ -122,7 +124,7 @@ class Processor:
 
         return classification
 
-    async def apply(
+    async def classify(
         self,
         product: ProductItem,
         prompt: Prompt,

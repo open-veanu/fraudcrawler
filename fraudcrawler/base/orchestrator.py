@@ -290,7 +290,7 @@ class Orchestrator(ABC):
                 try:
                     # Run all the configured prompts
                     for prompt in prompts:
-                        classification = await self._processor.apply(
+                        classification = await self._processor.classify(
                             product=product,
                             prompt=prompt,
                         )

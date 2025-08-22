@@ -183,8 +183,9 @@ class Enricher:
                 response = await self._http_client.post(
                     url=url,
                     headers=self._headers,
-                    data=data
+                    json=data
                 )
+                response.raise_for_status()
 
         # Extract the keywords from the response
         data_suggested_keywords = response.json()
@@ -290,8 +291,9 @@ class Enricher:
                 response = await self._http_client.post(
                     url=url,
                     headers=self._headers,
-                    data=data
+                    json=data
                 )
+                response.raise_for_status()
 
         # Extract the keywords from the response
         data_related_keywords = response.json()
