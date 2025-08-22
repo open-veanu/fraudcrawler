@@ -67,7 +67,7 @@ def search(search_term: str):
     ]
 
     # Execute the pipeline
-    client.execute(
+    client.run(
         search_term=search_term,
         language=language,
         location=location,

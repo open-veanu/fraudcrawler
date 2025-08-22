@@ -21,6 +21,7 @@ from fraudcrawler.base.base import (
     Location,
     Prompt,
     ProductItem,
+    HttpxAsyncClient,
 )
 from fraudcrawler import (
     Search,
@@ -62,8 +63,8 @@ class Orchestrator(ABC):
         n_zyte_wkrs: int = DEFAULT_N_ZYTE_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
         # Configure a custom httpx client.
-        # We provide a `DefaultAsyncHttpxClient` class that you can pass to retain the default values we use for `limits`, `timeout` & `follow_redirects`.
-        # See the [httpx documentation](https://www.python-httpx.org/api/#asyncclient) for more details.
+        # We provide a `HttpxAsyncClient` class that you can pass
+        # to retain the default values we use for `limits`, `timeout` & `follow_redirects`.
         http_client: httpx.AsyncClient | None = None,
     ):
         """Initializes the orchestrator with the given settings.
@@ -98,22 +99,22 @@ class Orchestrator(ABC):
         self._workers: Dict[str, List[asyncio.Task] | asyncio.Task] | None = None
 
         # Setup the aiohttp session
-        self._session = http_client
-        self._owns_session = http_client is None
-    
-    # async def _start_session(self) -> None:
-    #     """Creates and starts an aiohttp.ClientSession if not provided."""
-    #     if self._session is None:
-    #         logger.debug("Creating a new httpx.AsyncClient owned by the orchestrator")
-    #         self._http_client = httpx.AsyncClient()
-    #         self._owns_http_client = True
+        self._http_client = http_client
+        self._owns_http_client = http_client is None
 
-    # async def _close_session(self) -> None:
-    #     """Closes the aiohttp.ClientSession if it was created by this orchestrator."""
-    #     if self._owns_session and self._session:
-    #         logger.debug("Closing the aiohttp.ClientSession owned by the orchestrator")
-    #         await self._session.close()
-    #         self._session = None
+    async def __aenter__(self) -> None:
+        """Creates and starts an httpx.AsyncClient if not provided."""
+        if self._http_client is None:
+            logger.debug("Creating a new httpx.AsyncClient owned by the orchestrator")
+            self._http_client = HttpxAsyncClient()
+            self._owns_http_client = True
+
+    async def __aexit__(self, *args, **kwargs) -> None:
+        """Closes the httpx.AsyncClient if it was created by this orchestrator."""
+        if self._owns_http_client and self._http_client is not None:
+            logger.debug("Closing the httpx.AsyncClient owned by the orchestrator")
+            await self._http_client.aclose()
+            self._http_client = None
 
     async def _serp_execute(
         self,

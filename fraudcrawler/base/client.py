@@ -84,7 +84,7 @@ class FraudCrawlerClient(Orchestrator):
         df.to_csv(filename, index=False, quoting=csv.QUOTE_ALL)
         logger.info(f"Results saved to {filename}")
 
-    def execute(
+    def run(
         self,
         search_term: str,
         language: Language,
@@ -126,8 +126,12 @@ class FraudCrawlerClient(Orchestrator):
             ]
 
         # Run the pipeline by calling the orchestrator's run method
+        async def _run(*args, **kwargs):
+            async with super().__aenter__():
+                return await super().run(*args, **kwargs)
+
         asyncio.run(
-            super().run(
+            _run(
                 search_term=search_term,
                 search_engines=nrm_search_engines,
                 language=language,
