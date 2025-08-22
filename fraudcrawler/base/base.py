@@ -191,12 +191,12 @@ class HttpxAsyncClient(httpx.AsyncClient):
     """Httpx async client that can be used to retain the default settings."""
 
     def __init__(
-            self,
-            timeout: httpx.Timeout | Dict[str, Any] = DEFAULT_HTTPX_TIMEOUT,
-            limits: httpx.Limits | Dict[str, Any] = DEFAULT_HTTPX_LIMITS,
-            follow_redirects: bool = DEFAULT_HTTPX_REDIRECTS,
-            **kwargs: Any,
-        ) -> None:
+        self,
+        timeout: httpx.Timeout | Dict[str, Any] = DEFAULT_HTTPX_TIMEOUT,
+        limits: httpx.Limits | Dict[str, Any] = DEFAULT_HTTPX_LIMITS,
+        follow_redirects: bool = DEFAULT_HTTPX_REDIRECTS,
+        **kwargs: Any,
+    ) -> None:
         if isinstance(timeout, dict):
             timeout = httpx.Timeout(**timeout)
         if isinstance(limits, dict):

@@ -29,9 +29,9 @@ class SearchResult(BaseModel):
 class SearchEngineName(Enum):
     """Enum for search engine names."""
 
-    GOOGLE = "Google"
-    GOOGLE_SHOPPING = "Google Shopping"
-    TOPPREISE = "Toppreise"
+    GOOGLE = "google"
+    GOOGLE_SHOPPING = "google_shopping"
+    TOPPREISE = "toppreise"
 
 
 class SearchEngine(ABC, DomainUtils):
@@ -197,7 +197,9 @@ class SerpAPI(SearchEngine):
         )
         async for attempt in retry:
             with attempt:
-                response = await self._http_client.get(url=self._endpoint, params=params)
+                response = await self._http_client.get(
+                    url=self._endpoint, params=params
+                )
                 response.raise_for_status()
 
         # Extract the URLs from the response
@@ -497,7 +499,9 @@ class Search(DomainUtils):
             serpapi_key: The API key for SERP API.
         """
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
-        self._google_shopping = SerpAPIGoogleShopping(http_client=http_client, api_key=serpapi_key)
+        self._google_shopping = SerpAPIGoogleShopping(
+            http_client=http_client, api_key=serpapi_key
+        )
         self._toppreise = Toppreise(http_client=http_client)
 
     @staticmethod

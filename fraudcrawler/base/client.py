@@ -54,8 +54,8 @@ class FraudCrawlerClient(Orchestrator):
         self._results: List[Results] = []
 
     async def __aenter__(self) -> Self:
-        await super().__aenter__()   # let base set itself up
-        return self                  # so `async with FraudCrawlerClient()` gives you this instance
+        await super().__aenter__()  # let base set itself up
+        return self  # so `async with FraudCrawlerClient()` gives you this instance
 
     async def __aexit__(self, *args, **kwargs) -> None:
         await super().__aexit__(*args, **kwargs)

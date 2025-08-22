@@ -105,7 +105,9 @@ class Processor:
             **kwargs,
         )
         if not response or not (content := response.choices[0].message.content):
-            raise ValueError(f'Error calling OpenAI API or empty response="{response}".')
+            raise ValueError(
+                f'Error calling OpenAI API or empty response="{response}".'
+            )
 
         # Convert the content to an integer
         try:

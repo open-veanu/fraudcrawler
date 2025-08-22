@@ -42,8 +42,8 @@ async def processor():
         yield Processor(
             http_client=http_client,
             api_key=setup.openaiapi_key,
-            model=PROCESSOR_DEFAULT_MODEL
-    )
+            model=PROCESSOR_DEFAULT_MODEL,
+        )
 
 
 def test_processor_get_product_details(product_item, prompt):
@@ -71,4 +71,6 @@ async def test_processor_classify_product(processor, product_item, prompt):
         classification.result in prompt.allowed_classes
         or classification.result == PROCESSOR_DEFAULT_IF_MISSING
     )
-    assert classification.result == 1  # Because the prompt forces 1 for test-related items
+    assert (
+        classification.result == 1
+    )  # Because the prompt forces 1 for test-related items

@@ -54,7 +54,7 @@ async def enricher():
             http_client=httpx_client,
             user=setup.dataforseo_user,
             pwd=setup.dataforseo_pwd,
-    )
+        )
 
 
 @pytest.fixture
@@ -114,7 +114,7 @@ async def test_serpapi_google_search(serpapi_google):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
-    assert all(res.search_engine_name == "Google" for res in results)
+    assert all(res.search_engine_name == "google" for res in results)
 
 
 @pytest.mark.asyncio
@@ -133,7 +133,7 @@ async def test_serpapi_google_shopping_search(serpapi_google_shopping):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
-    assert all(res.search_engine_name == "Google Shopping" for res in results)
+    assert all(res.search_engine_name == "google_shopping" for res in results)
 
 
 def test_search_engine_create_search_result(serpapi_google):
@@ -175,7 +175,7 @@ async def test_toppreise_search(toppreise):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
-    assert all(res.search_engine_name == "Toppreise" for res in results)
+    assert all(res.search_engine_name == "toppreise" for res in results)
 
 
 def test_search_apply_filters(search):
@@ -455,7 +455,7 @@ async def test_search_apply(search):
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    search_engines = ["Google", "Google Shopping", "Toppreise"]
+    search_engines = ["google", "google_shopping", "toppreise"]
     results = await search.apply(
         search_term=search_term,
         language=language,

@@ -181,9 +181,7 @@ class Enricher:
         async for attempt in retry:
             with attempt:
                 response = await self._http_client.post(
-                    url=url,
-                    headers=self._headers,
-                    json=data
+                    url=url, headers=self._headers, json=data
                 )
                 response.raise_for_status()
 
@@ -289,9 +287,7 @@ class Enricher:
         async for attempt in retry:
             with attempt:
                 response = await self._http_client.post(
-                    url=url,
-                    headers=self._headers,
-                    json=data
+                    url=url, headers=self._headers, json=data
                 )
                 response.raise_for_status()
 
