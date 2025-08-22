@@ -69,6 +69,11 @@ class Orchestrator(ABC):
     ):
         """Initializes the orchestrator with the given settings.
 
+        NOTE:
+        The class:`Orchestrator` must be used as context manager as follows:
+            async with Orchestrator(...) as orchestrator:
+                await orchestrator.run()
+
         Args:
             serpapi_key: The API key for SERP API.
             dataforseo_user: The user for DataForSEO.
@@ -81,15 +86,14 @@ class Orchestrator(ABC):
             n_proc_wkrs: Number of async workers for the processor (optional).
             http_client: An httpx.AsyncClient to use for the async requests (optional).
         """
-        # Setup the clients
-        self._search = Search(serpapi_key=serpapi_key)
-        self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
-        self._url_collector = URLCollector()
-        self._zyteapi = ZyteAPI(api_key=zyteapi_key)
-        self._processor = Processor(
-            api_key=openaiapi_key,
-            model=openai_model,
-        )
+
+        # Stor the variables for setting up the clients
+        self._serpapi_key = serpapi_key
+        self._dataforseo_user = dataforseo_user
+        self._dataforseo_pwd = dataforseo_pwd
+        self._zyteapi_key = zyteapi_key
+        self._openaiapi_key = openaiapi_key
+        self._openai_model = openai_model
 
         # Setup the async framework
         self._n_serp_wkrs = n_serp_wkrs
@@ -108,6 +112,27 @@ class Orchestrator(ABC):
             logger.debug("Creating a new httpx.AsyncClient owned by the orchestrator")
             self._http_client = HttpxAsyncClient()
             self._owns_http_client = True
+        
+        # Setup the clients
+        self._search = Search(
+            http_client=self._http_client,
+            serpapi_key=self._serpapi_key
+        )
+        self._enricher = Enricher(
+            http_client=self._http_client,
+            user=self._dataforseo_user,
+            pwd=self._dataforseo_pwd,
+        )
+        self._url_collector = URLCollector()
+        self._zyteapi = ZyteAPI(
+            http_client=self._http_client,
+            api_key=self._zyteapi_key
+        )
+        self._processor = Processor(
+            http_client=self._http_client,
+            api_key=self._openaiapi_key,
+            model=self._openai_model,
+        )
 
     async def __aexit__(self, *args, **kwargs) -> None:
         """Closes the httpx.AsyncClient if it was created by this orchestrator."""

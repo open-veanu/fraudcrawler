@@ -4,7 +4,7 @@ from datetime import datetime
 import logging
 from pathlib import Path
 from pydantic import BaseModel
-from typing import List
+from typing import List, Self
 
 import pandas as pd
 
@@ -52,6 +52,13 @@ class FraudCrawlerClient(Orchestrator):
         if not self._results_dir.exists():
             self._results_dir.mkdir(parents=True)
         self._results: List[Results] = []
+
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()   # let base set itself up
+        return self                  # so `async with FraudCrawlerClient()` gives you this instance
+
+    async def __aexit__(self, *args, **kwargs) -> None:
+        await super().__aexit__(*args, **kwargs)
 
     async def _collect_results(
         self, queue_in: asyncio.Queue[ProductItem | None]
@@ -127,8 +134,8 @@ class FraudCrawlerClient(Orchestrator):
 
         # Run the pipeline by calling the orchestrator's run method
         async def _run(*args, **kwargs):
-            async with super().__aenter__():
-                return await super().run(*args, **kwargs)
+            async with self:
+                return await super(FraudCrawlerClient, self).run(*args, **kwargs)
 
         asyncio.run(
             _run(
