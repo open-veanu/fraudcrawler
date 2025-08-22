@@ -1,5 +1,4 @@
-from aiohttp.web_exceptions import HTTPException
-from aiohttp.client_exceptions import ClientResponseError
+from httpx import HTTPStatusError
 from tenacity import (
     AsyncRetrying,
     retry_if_exception,
@@ -18,9 +17,7 @@ from fraudcrawler.settings import (
 
 
 def _is_retryable_exception(err: BaseException) -> bool:
-    if (
-        isinstance(err, HTTPException) or isinstance(err, ClientResponseError)
-    ) and err.status in RETRY_SKIP_IF_CODE:
+    if isinstance(err, HTTPStatusError) and err.response.status_code in RETRY_SKIP_IF_CODE:
         return False
     return True
 

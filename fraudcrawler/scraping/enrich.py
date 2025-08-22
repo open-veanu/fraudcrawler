@@ -34,7 +34,7 @@ class Enricher:
         """Initializes the DataForSeoApiClient with the given username and password.
 
         Args:
-            http_client: The httpx async client to use for requests.
+            http_client: An httpx.AsyncClient to use for the async requests.
             user: The username for DataForSEO API.
             pwd: The password for DataForSEO API.
         """

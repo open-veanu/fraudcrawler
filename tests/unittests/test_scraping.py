@@ -46,6 +46,7 @@ def search():
 def enricher():
     setup = Setup()
     return Enricher(
+        http_client=_HTTP_CLIENT,
         user=setup.dataforseo_user,
         pwd=setup.dataforseo_pwd,
     )
@@ -89,7 +90,7 @@ def other_urls():
 @pytest.fixture
 def zyteapi():
     setup = Setup()
-    zyteapi = ZyteAPI(api_key=setup.zyteapi_key)
+    zyteapi = ZyteAPI(http_client=_HTTP_CLIENT, api_key=setup.zyteapi_key)
     return zyteapi
 
 
@@ -433,9 +434,9 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
 
 
 @pytest.mark.asyncio
-async def test_zyteapi_get_details(zyteapi):
+async def test_zyteapi_details(zyteapi):
     url = "https://www.altibbi.com/answer/159"
-    product = await zyteapi.get_details(url=url)
+    product = await zyteapi.details(url=url)
     assert product
 
     prod_url = product.get("url").replace("://www.", "://")

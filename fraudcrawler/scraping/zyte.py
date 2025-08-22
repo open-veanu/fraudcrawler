@@ -2,7 +2,7 @@ import logging
 from typing import List
 from base64 import b64decode
 
-import aiohttp
+import httpx
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
@@ -30,14 +30,20 @@ class ZyteAPI(DomainUtils):
 
     def __init__(
         self,
+        http_client: httpx.AsyncClient,
         api_key: str,
     ):
         """Initializes the ZyteApiClient with the given API key and retry configurations.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for Zyte API.
         """
-        self._aiohttp_basic_auth = aiohttp.BasicAuth(api_key)
+        self._http_client = http_client
+        self._headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
 
     def _log_before(self, url: str, retry_state: RetryCallState | None) -> None:
         """Context aware logging before the request is made."""
@@ -97,10 +103,10 @@ class ZyteAPI(DomainUtils):
         )
         async for attempt in retry:
             with attempt:
-                response = await self.post(
+                response = await self._http_client.post(
                     url=self._endpoint,
+                    headers=self._headers,
                     data={"url": url, **self._config},
-                    auth=self._aiohttp_basic_auth,
                 )
         details = response.json()
         return details
