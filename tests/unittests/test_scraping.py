@@ -1,6 +1,13 @@
 import pytest
+import pytest_asyncio
 
-from fraudcrawler.base.base import Setup, Host, Location, Language
+from fraudcrawler.base.base import (
+    Setup,
+    Host,
+    Location,
+    Language,
+    HttpxAsyncClient,
+)
 from fraudcrawler.scraping.search import (
     Search,
     SearchResult,
@@ -12,36 +19,42 @@ from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 
 
-@pytest.fixture
-def serpapi_google():
+@pytest_asyncio.fixture
+async def serpapi_google():
     setup = Setup()
-    return SerpAPIGoogle(api_key=setup.serpapi_key)
+    async with HttpxAsyncClient() as httpx_client:
+        yield SerpAPIGoogle(http_client=httpx_client, api_key=setup.serpapi_key)
 
 
-@pytest.fixture
-def serpapi_google_shopping():
+@pytest_asyncio.fixture
+async def serpapi_google_shopping():
     setup = Setup()
-    return SerpAPIGoogleShopping(api_key=setup.serpapi_key)
+    async with HttpxAsyncClient() as httpx_client:
+        yield SerpAPIGoogleShopping(http_client=httpx_client, api_key=setup.serpapi_key)
 
 
-@pytest.fixture
-def toppreise():
-    return Toppreise()
+@pytest_asyncio.fixture
+async def toppreise():
+    async with HttpxAsyncClient() as httpx_client:
+        yield Toppreise(http_client=httpx_client)
 
 
-@pytest.fixture
-def search():
+@pytest_asyncio.fixture
+async def search():
     setup = Setup()
-    return Search(serpapi_key=setup.serpapi_key)
+    async with HttpxAsyncClient() as httpx_client:
+        yield Search(http_client=httpx_client, serpapi_key=setup.serpapi_key)
 
 
-@pytest.fixture
-def enricher():
+@pytest_asyncio.fixture
+async def enricher():
     setup = Setup()
-    return Enricher(
-        user=setup.dataforseo_user,
-        pwd=setup.dataforseo_pwd,
-    )
+    async with HttpxAsyncClient() as httpx_client:
+        yield Enricher(
+            http_client=httpx_client,
+            user=setup.dataforseo_user,
+            pwd=setup.dataforseo_pwd,
+        )
 
 
 @pytest.fixture
@@ -79,11 +92,11 @@ def other_urls():
     ]
 
 
-@pytest.fixture
-def zyteapi():
+@pytest_asyncio.fixture
+async def zyteapi():
     setup = Setup()
-    zyteapi = ZyteAPI(api_key=setup.zyteapi_key)
-    return zyteapi
+    async with HttpxAsyncClient() as httpx_client:
+        yield ZyteAPI(http_client=httpx_client, api_key=setup.zyteapi_key)
 
 
 @pytest.mark.asyncio
@@ -101,7 +114,7 @@ async def test_serpapi_google_search(serpapi_google):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
-    assert all(res.search_engine_name == "Google" for res in results)
+    assert all(res.search_engine_name == "google" for res in results)
 
 
 @pytest.mark.asyncio
@@ -120,7 +133,7 @@ async def test_serpapi_google_shopping_search(serpapi_google_shopping):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
-    assert all(res.search_engine_name == "Google Shopping" for res in results)
+    assert all(res.search_engine_name == "google_shopping" for res in results)
 
 
 def test_search_engine_create_search_result(serpapi_google):
@@ -162,7 +175,7 @@ async def test_toppreise_search(toppreise):
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
-    assert all(res.search_engine_name == "Toppreise" for res in results)
+    assert all(res.search_engine_name == "toppreise" for res in results)
 
 
 def test_search_apply_filters(search):
@@ -255,25 +268,6 @@ def test_search_apply_filters(search):
 
 
 @pytest.mark.asyncio
-async def test_search_apply(search):
-    search_term = "Kaffee"
-    language = Language(name="German")
-    location = Location(name="Switzerland")
-    num_results = 5
-    search_engines = ["Google", "Google Shopping", "Toppreise"]
-    results = await search.apply(
-        search_term=search_term,
-        language=language,
-        location=location,
-        num_results=num_results,
-        search_engines=search_engines,
-    )
-    assert 0 < len(results) <= len(search_engines) * num_results
-    assert all(isinstance(res, SearchResult) for res in results)
-    assert all(res.url.startswith("http") for res in results)
-
-
-@pytest.mark.asyncio
 async def test_enricher_get_suggested_keywords(enricher):
     search_term = "sildenafil"
     location = Location(name="Switzerland", code="ch")
@@ -306,12 +300,12 @@ async def test_enricher_get_related_keywords(enricher):
 
 
 @pytest.mark.asyncio
-async def test_enricher_apply(enricher):
+async def test_enricher_enrich(enricher):
     search_term = "sildenafil"
     location = Location(name="Switzerland", code="ch")
     language = Language(name="German", code="de")
     n_terms = 5
-    terms = await enricher.apply(
+    terms = await enricher.enrich(
         search_term=search_term,
         location=location,
         language=language,
@@ -426,15 +420,19 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
 
 
 @pytest.mark.asyncio
-async def test_zyteapi_get_details(zyteapi):
-    url = "https://www.altibbi.com/answer/159"
-    product = await zyteapi.get_details(url=url)
+async def test_zyteapi_details(zyteapi):
+    url = "https://www.interdiscount.ch/it/product/liebherr-tp1410-136-l-bianco-0005000183"
+    product = await zyteapi.details(url=url)
     assert product
 
     prod_url = product.get("url").replace("://www.", "://")
     url = url.replace("://www.", "://")
     assert prod_url == url
     assert "product" in product
+    assert "name" in product["product"]
+    assert product["product"]["name"] is not None
+    assert "description" in product["product"]
+    assert product["product"]["description"] is not None
     assert "metadata" in product["product"]
 
 
@@ -449,3 +447,22 @@ def test_zyteapi_keep_product(zyteapi):
     }
     assert zyteapi.keep_product(details=details, threshold=0.1) is True
     assert zyteapi.keep_product(details=details, threshold=0.6) is False
+
+
+@pytest.mark.asyncio
+async def test_search_apply(search):
+    search_term = "Kaffee"
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+    num_results = 5
+    search_engines = ["google", "google_shopping", "toppreise"]
+    results = await search.apply(
+        search_term=search_term,
+        language=language,
+        location=location,
+        num_results=num_results,
+        search_engines=search_engines,
+    )
+    assert 0 < len(results) <= len(search_engines) * num_results
+    assert all(isinstance(res, SearchResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)

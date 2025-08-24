@@ -9,13 +9,18 @@ from pydantic import (
 from pydantic_settings import BaseSettings
 from urllib.parse import urlparse
 import re
-from typing import List, Dict
+from typing import Any, Dict, List
 
-import aiohttp
+import httpx
 
 from fraudcrawler.settings import (
     GOOGLE_LANGUAGES_FILENAME,
     GOOGLE_LOCATIONS_FILENAME,
+)
+from fraudcrawler.settings import (
+    DEFAULT_HTTPX_TIMEOUT,
+    DEFAULT_HTTPX_LIMITS,
+    DEFAULT_HTTPX_REDIRECTS,
 )
 
 logger = logging.getLogger(__name__)
@@ -182,55 +187,25 @@ class Prompt(BaseModel):
         return val
 
 
-class AsyncClient:
-    """Base class for sub-classes using async HTTP requests."""
+class HttpxAsyncClient(httpx.AsyncClient):
+    """Httpx async client that can be used to retain the default settings."""
 
-    @staticmethod
-    async def _extract_answer(
-        response: aiohttp.ClientResponse, answer_format: str
-    ) -> dict | str | bytes:
-        """Extracts the answer from the response based on the specified format."""
-        if answer_format == "json":
-            return await response.json()
-        elif answer_format == "text":
-            return await response.text()
-        elif answer_format == "bytes":
-            return await response.read()
-        else:
-            raise ValueError(f"Unsupported answer format: {answer_format}")
-
-    async def get(
+    def __init__(
         self,
-        url: str,
-        headers: dict | None = None,
-        params: dict | None = None,
-        answer_format: str = "json",
-    ) -> dict | str | bytes:
-        """Async GET request of a given URL returning the data."""
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(url=url, params=params) as response:
-                response.raise_for_status()
-                answer = await self._extract_answer(
-                    response=response, answer_format=answer_format
-                )
-        return answer
+        timeout: httpx.Timeout | Dict[str, Any] = DEFAULT_HTTPX_TIMEOUT,
+        limits: httpx.Limits | Dict[str, Any] = DEFAULT_HTTPX_LIMITS,
+        follow_redirects: bool = DEFAULT_HTTPX_REDIRECTS,
+        **kwargs: Any,
+    ) -> None:
+        if isinstance(timeout, dict):
+            timeout = httpx.Timeout(**timeout)
+        if isinstance(limits, dict):
+            limits = httpx.Limits(**limits)
 
-    async def post(
-        self,
-        url: str,
-        headers: dict | None = None,
-        data: List[dict] | dict | None = None,
-        auth: aiohttp.BasicAuth | None = None,
-        answer_format: str = "json",
-    ) -> dict | str | bytes:
-        """Async POST request of a given URL returning the data."""
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.post(url=url, json=data, auth=auth) as response:
-                response.raise_for_status()
-                answer = await self._extract_answer(
-                    response=response, answer_format=answer_format
-                )
-        return answer
+        kwargs.setdefault("timeout", timeout)
+        kwargs.setdefault("limits", limits)
+        kwargs.setdefault("follow_redirects", follow_redirects)
+        super().__init__(**kwargs)
 
 
 class DomainUtils:

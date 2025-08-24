@@ -2,12 +2,13 @@ from base64 import b64encode
 from collections import defaultdict
 import logging
 from pydantic import BaseModel
-from typing import cast, Dict, Iterator, List
+from typing import Dict, Iterator, List
 
+import httpx
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
-from fraudcrawler.base.base import Location, Language, AsyncClient
+from fraudcrawler.base.base import Location, Language
 from fraudcrawler.base.retry import get_async_retry
 
 
@@ -21,7 +22,7 @@ class Keyword(BaseModel):
     volume: int
 
 
-class Enricher(AsyncClient):
+class Enricher:
     """A client to interact with the DataForSEO API for enhancing searches (producing alternative search_terms)."""
 
     _auth_encoding = "ascii"
@@ -29,13 +30,15 @@ class Enricher(AsyncClient):
     _suggestions_endpoint = "/v3/dataforseo_labs/google/keyword_suggestions/live"
     _keywords_endpoint = "/v3/dataforseo_labs/google/related_keywords/live"
 
-    def __init__(self, user: str, pwd: str):
+    def __init__(self, http_client: httpx.AsyncClient, user: str, pwd: str):
         """Initializes the DataForSeoApiClient with the given username and password.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             user: The username for DataForSEO API.
             pwd: The password for DataForSEO API.
         """
+        self._http_client = http_client
         self._user = user
         self._pwd = pwd
         auth = f"{user}:{pwd}"
@@ -161,7 +164,9 @@ class Enricher(AsyncClient):
             }
         ]
         url = f"{self._base_endpoint}{self._suggestions_endpoint}"
-        logger.debug(f'DataForSEO url="{url}" with data="{data}".')
+        logger.debug(
+            f'DataForSEO search suggested keywords with url="{url}" and data="{data}".'
+        )
 
         # Perform the request and retry if necessary. There is some context aware logging
         #  - `before`: before the request is made (or before retrying)
@@ -175,12 +180,14 @@ class Enricher(AsyncClient):
         )
         async for attempt in retry:
             with attempt:
-                sugg_data = cast(
-                    Dict, await self.post(url=url, headers=self._headers, data=data)
+                response = await self._http_client.post(
+                    url=url, headers=self._headers, json=data
                 )
+                response.raise_for_status()
 
         # Extract the keywords from the response
-        keywords = self._extract_suggested_keywords(data=sugg_data)
+        data_suggested_keywords = response.json()
+        keywords = self._extract_suggested_keywords(data=data_suggested_keywords)
 
         logger.debug(f"Found {len(keywords)} suggestions from DataForSEO search.")
         return keywords
@@ -262,30 +269,36 @@ class Enricher(AsyncClient):
                 "limit": limit,
             }
         ]
+        url = f"{self._base_endpoint}{self._keywords_endpoint}"
         logger.debug(
-            f'DataForSEO search for related keywords with search_term="{search_term}".'
+            f'DataForSEO search related keywords with url="{url}" and data="{data}".'
         )
-        try:
-            url = f"{self._base_endpoint}{self._keywords_endpoint}"
-            logger.debug(f'DataForSEO url="{url}" with data="{data}".')
-            rel_data = cast(
-                Dict, await self.post(url=url, headers=self._headers, data=data)
-            )
-        except Exception as e:
-            logger.error(f"DataForSEO related keyword search failed with error: {e}.")
+
+        # Perform the request and retry if necessary. There is some context aware logging
+        #  - `before`: before the request is made (or before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_before(
+            search_term=search_term, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            search_term=search_term, retry_state=retry_state
+        )
+        async for attempt in retry:
+            with attempt:
+                response = await self._http_client.post(
+                    url=url, headers=self._headers, json=data
+                )
+                response.raise_for_status()
 
         # Extract the keywords from the response
-        try:
-            keywords = self._extract_related_keywords(data=rel_data)
-        except Exception as e:
-            logger.error(
-                f"Failed to extract related keywords from DataForSEO response with error: {e}."
-            )
+        data_related_keywords = response.json()
+        keywords = self._extract_related_keywords(data=data_related_keywords)
 
         logger.debug(f"Found {len(keywords)} related keywords from DataForSEO search.")
         return keywords
 
-    async def apply(
+    async def enrich(
         self,
         search_term: str,
         language: Language,

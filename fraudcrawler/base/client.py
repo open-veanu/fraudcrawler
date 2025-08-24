@@ -4,7 +4,7 @@ from datetime import datetime
 import logging
 from pathlib import Path
 from pydantic import BaseModel
-from typing import List
+from typing import List, Self
 
 import pandas as pd
 
@@ -53,6 +53,13 @@ class FraudCrawlerClient(Orchestrator):
             self._results_dir.mkdir(parents=True)
         self._results: List[Results] = []
 
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()  # let base set itself up
+        return self  # so `async with FraudCrawlerClient()` gives you this instance
+
+    async def __aexit__(self, *args, **kwargs) -> None:
+        await super().__aexit__(*args, **kwargs)
+
     async def _collect_results(
         self, queue_in: asyncio.Queue[ProductItem | None]
     ) -> None:
@@ -94,6 +101,7 @@ class FraudCrawlerClient(Orchestrator):
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
         search_engines: List[SearchEngineName | str] | None = None,
+        previously_collected_urls: List[str] | None = None,
     ) -> None:
         """Runs the pipeline steps: serp, enrich, zyte, process, and collect the results.
 
@@ -103,9 +111,10 @@ class FraudCrawlerClient(Orchestrator):
             location: The location to use for the query.
             deepness: The search depth and enrichment details.
             prompts: The list of prompts to use for classification.
-            marketplaces: The marketplaces to include in the search.
-            excluded_urls: The URLs to exclude from the search.
-            search_engines: The list of search engines to use for the search.
+            marketplaces: The marketplaces to include in the search (optional).
+            excluded_urls: The URLs to exclude from the search (optional).
+            search_engines: The list of search engines to use for the search (optional).
+            previously_collected_urls: The urls that have been collected previously and are ignored (optional).
         """
         # Handle results files
         timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
@@ -118,7 +127,7 @@ class FraudCrawlerClient(Orchestrator):
         self._results.append(Results(search_term=search_term, filename=filename))
 
         # Normalize inputs - convert strings to SearchEngineName enum values
-        nrm_search_engines: List[SearchEngineName] = list(SearchEngineName)
+        nrm_search_engines = list(SearchEngineName)
         if search_engines:
             nrm_search_engines = [
                 SearchEngineName(se) if isinstance(se, str) else se
@@ -126,8 +135,12 @@ class FraudCrawlerClient(Orchestrator):
             ]
 
         # Run the pipeline by calling the orchestrator's run method
+        async def _run(*args, **kwargs):
+            async with self:
+                return await super(FraudCrawlerClient, self).run(*args, **kwargs)
+
         asyncio.run(
-            super().run(
+            _run(
                 search_term=search_term,
                 search_engines=nrm_search_engines,
                 language=language,
@@ -136,6 +149,7 @@ class FraudCrawlerClient(Orchestrator):
                 prompts=prompts,
                 marketplaces=marketplaces,
                 excluded_urls=excluded_urls,
+                previously_collected_urls=previously_collected_urls,
             )
         )
 

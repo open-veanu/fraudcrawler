@@ -1,11 +1,12 @@
 import pytest
+import pytest_asyncio
 
 from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,
     PROCESSOR_DEFAULT_IF_MISSING,
 )
 
-from fraudcrawler.base.base import Setup, ClassificationResult
+from fraudcrawler.base.base import Setup, ClassificationResult, HttpxAsyncClient
 from fraudcrawler import Processor, Prompt, ProductItem
 
 
@@ -29,16 +30,20 @@ def prompt():
     return Prompt(
         name="test_prompt",
         product_item_fields=["product_name", "product_description"],
-        system_prompt="You are a random classifier. Choose either 0 or 1.",
+        system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
         allowed_classes=[0, 1],
     )
 
 
-@pytest.fixture
-def processor():
+@pytest_asyncio.fixture
+async def processor():
     setup = Setup()
-    processor = Processor(api_key=setup.openaiapi_key, model=PROCESSOR_DEFAULT_MODEL)
-    return processor
+    async with HttpxAsyncClient() as http_client:
+        yield Processor(
+            http_client=http_client,
+            api_key=setup.openaiapi_key,
+            model=PROCESSOR_DEFAULT_MODEL,
+        )
 
 
 def test_processor_get_product_details(product_item, prompt):
@@ -66,3 +71,6 @@ async def test_processor_classify_product(processor, product_item, prompt):
         classification.result in prompt.allowed_classes
         or classification.result == PROCESSOR_DEFAULT_IF_MISSING
     )
+    assert (
+        classification.result == 1
+    )  # Because the prompt forces 1 for test-related items

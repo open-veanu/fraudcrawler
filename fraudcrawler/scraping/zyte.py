@@ -1,18 +1,18 @@
 import logging
-from typing import List, cast, Dict
+from typing import List
 from base64 import b64decode
 
-import aiohttp
+import httpx
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
-from fraudcrawler.base.base import AsyncClient, DomainUtils
+from fraudcrawler.base.base import DomainUtils
 from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
 
 
-class ZyteAPI(AsyncClient, DomainUtils):
+class ZyteAPI(DomainUtils):
     """A client to interact with the Zyte API for fetching product details."""
 
     _endpoint = "https://api.zyte.com/v1/extract"
@@ -30,14 +30,17 @@ class ZyteAPI(AsyncClient, DomainUtils):
 
     def __init__(
         self,
+        http_client: httpx.AsyncClient,
         api_key: str,
     ):
         """Initializes the ZyteApiClient with the given API key and retry configurations.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for Zyte API.
         """
-        self._aiohttp_basic_auth = aiohttp.BasicAuth(api_key)
+        self._http_client = http_client
+        self._api_key = api_key
 
     def _log_before(self, url: str, retry_state: RetryCallState | None) -> None:
         """Context aware logging before the request is made."""
@@ -58,7 +61,7 @@ class ZyteAPI(AsyncClient, DomainUtils):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
-    async def get_details(self, url: str) -> dict:
+    async def details(self, url: str) -> dict:
         """Fetches product details for a single URL.
 
         Args:
@@ -97,15 +100,15 @@ class ZyteAPI(AsyncClient, DomainUtils):
         )
         async for attempt in retry:
             with attempt:
-                product = cast(
-                    Dict,
-                    await self.post(
-                        url=self._endpoint,
-                        data={"url": url, **self._config},
-                        auth=self._aiohttp_basic_auth,
-                    ),
+                response = await self._http_client.post(
+                    url=self._endpoint,
+                    json={"url": url, **self._config},
+                    auth=(self._api_key, ""),  # API key as username, empty password
                 )
-        return product
+                response.raise_for_status()
+
+        details = response.json()
+        return details
 
     @staticmethod
     def keep_product(

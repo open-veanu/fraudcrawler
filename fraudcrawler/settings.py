@@ -75,7 +75,18 @@ PROCESSOR_EMPTY_TOKEN_COUNT = -1
 PROCESSOR_USER_PROMPT_TEMPLATE = "Product Details:\n{product_details}\n\nRelevance:"
 PROCESSOR_PRODUCT_DETAILS_TEMPLATE = "{field_name}:\n{field_value}"
 
-# Async settings
+# Async workers settings
 DEFAULT_N_SERP_WKRS = 10
 DEFAULT_N_ZYTE_WKRS = 10
 DEFAULT_N_PROC_WKRS = 10
+
+# HTTPX client settings
+DEFAULT_HTTPX_TIMEOUT = {
+    "timeout": 600,
+    "connect": 5.0,
+}
+DEFAULT_HTTPX_LIMITS = {
+    "max_connections": 1000,
+    "max_keepalive_connections": 100,
+}
+DEFAULT_HTTPX_REDIRECTS = True

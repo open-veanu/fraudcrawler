@@ -2,14 +2,15 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import logging
 from pydantic import BaseModel
-from typing import cast, Dict, List
+from typing import Dict, List
 from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
+import httpx
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import SEARCH_DEFAULT_COUNTRY_CODES
-from fraudcrawler.base.base import Host, Language, Location, AsyncClient, DomainUtils
+from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
@@ -28,12 +29,12 @@ class SearchResult(BaseModel):
 class SearchEngineName(Enum):
     """Enum for search engine names."""
 
-    GOOGLE = "Google"
-    GOOGLE_SHOPPING = "Google Shopping"
-    TOPPREISE = "Toppreise"
+    GOOGLE = "google"
+    GOOGLE_SHOPPING = "google_shopping"
+    TOPPREISE = "toppreise"
 
 
-class SearchEngine(ABC, AsyncClient, DomainUtils):
+class SearchEngine(ABC, DomainUtils):
     """Abstract base class for search engines."""
 
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
@@ -95,12 +96,14 @@ class SerpAPI(SearchEngine):
 
     _endpoint = "https://serpapi.com/search"
 
-    def __init__(self, api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, api_key: str):
         """Initializes the SerpAPI client with the given API key.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
         """
+        self._http_client = http_client
         self._api_key = api_key
 
     @property
@@ -111,11 +114,11 @@ class SerpAPI(SearchEngine):
 
     @staticmethod
     @abstractmethod
-    def _extract_search_results_urls(response: dict) -> List[str]:
+    def _extract_search_results_urls(data: dict) -> List[str]:
         """Extracts search results urls from the response.
 
         Args:
-            response: The response from the SerpAPI search.
+            data: The json from the SerpAPI search response.
         """
         pass
 
@@ -167,7 +170,7 @@ class SerpAPI(SearchEngine):
         )
 
         # Setup the parameters
-        params = {
+        params: Dict[str, str | int] = {
             "engine": engine,
             "q": search_string,
             "google_domain": f"google.{location.code}",
@@ -194,10 +197,14 @@ class SerpAPI(SearchEngine):
         )
         async for attempt in retry:
             with attempt:
-                response = cast(Dict, await self.get(url=self._endpoint, params=params))
+                response = await self._http_client.get(
+                    url=self._endpoint, params=params
+                )
+                response.raise_for_status()
 
         # Extract the URLs from the response
-        urls = self._extract_search_results_urls(response=response)
+        data = response.json()
+        urls = self._extract_search_results_urls(data=data)
 
         logger.debug(
             f'Found total of {len(urls)} URLs from SerpAPI search for q="{search_string}" and engine="{engine}".'
@@ -208,13 +215,14 @@ class SerpAPI(SearchEngine):
 class SerpAPIGoogle(SerpAPI):
     """Search engine for Google in SerpAPI."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, api_key: str):
         """Initializes the SerpAPIGoogle client with the given API key.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
         """
-        super().__init__(api_key=api_key)
+        super().__init__(http_client=http_client, api_key=api_key)
 
     @property
     def _search_engine_name(self) -> str:
@@ -227,13 +235,13 @@ class SerpAPIGoogle(SerpAPI):
         return "google"
 
     @staticmethod
-    def _extract_search_results_urls(response: dict) -> List[str]:
-        """Extracts search results urls from the response.
+    def _extract_search_results_urls(data: dict) -> List[str]:
+        """Extracts search results urls from the response data.
 
         Args:
-            response: The response from the SerpApi search.
+            data: The json data from the SerpApi search response.
         """
-        results = response.get("organic_results")
+        results = data.get("organic_results")
         if results is not None:
             return [url for res in results if (url := res.get("link"))]
         return []
@@ -280,13 +288,14 @@ class SerpAPIGoogle(SerpAPI):
 class SerpAPIGoogleShopping(SerpAPI):
     """Search engine for Google Shopping in SerpAPI."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, api_key: str):
         """Initializes the SerpAPIGoogleShopping client with the given API key.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
         """
-        super().__init__(api_key=api_key)
+        super().__init__(http_client=http_client, api_key=api_key)
 
     @property
     def _search_engine_name(self) -> str:
@@ -299,13 +308,13 @@ class SerpAPIGoogleShopping(SerpAPI):
         return "google_shopping"
 
     @staticmethod
-    def _extract_search_results_urls(response: dict) -> List[str]:
-        """Extracts search results urls from the response.
+    def _extract_search_results_urls(data: dict) -> List[str]:
+        """Extracts search results urls from the response data.
 
         Args:
-            response: The response from the SerpApi search.
+            data: The json data from the SerpApi search response.
         """
-        results = response.get("shopping_results")
+        results = data.get("shopping_results")
         if results is not None:
             return [url for res in results if (url := res.get("product_link"))]
         return []
@@ -366,6 +375,14 @@ class Toppreise(SearchEngine):
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
     }
+
+    def __init__(self, http_client: httpx.AsyncClient):
+        """Initializes the Toppreise client.
+
+        Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
+        """
+        self._http_client = http_client
 
     @property
     def _search_engine_name(self) -> str:
@@ -433,16 +450,14 @@ class Toppreise(SearchEngine):
         )
         async for attempt in retry:
             with attempt:
-                content = cast(
-                    bytes,
-                    await self.get(
-                        url=url,
-                        headers=self._headers,
-                        answer_format="bytes",
-                    ),
+                response = await self._http_client.get(
+                    url=url,
+                    headers=self._headers,
                 )
+                response.raise_for_status()
 
         # Get external product urls from the content
+        content = response.content
         urls = self._get_external_product_urls(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
 
@@ -476,15 +491,18 @@ class Toppreise(SearchEngine):
 class Search(DomainUtils):
     """Class to perform searches using different search engines."""
 
-    def __init__(self, serpapi_key):
+    def __init__(self, http_client: httpx.AsyncClient, serpapi_key: str):
         """Initializes the Search class with the given SerpAPI key.
 
         Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
             serpapi_key: The API key for SERP API.
         """
-        self._google = SerpAPIGoogle(api_key=serpapi_key)
-        self._google_shopping = SerpAPIGoogleShopping(api_key=serpapi_key)
-        self._toppreise = Toppreise()
+        self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
+        self._google_shopping = SerpAPIGoogleShopping(
+            http_client=http_client, api_key=serpapi_key
+        )
+        self._toppreise = Toppreise(http_client=http_client)
 
     @staticmethod
     def _domain_in_host(domain: str, host: Host) -> bool:

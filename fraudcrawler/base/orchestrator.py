@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-from typing import Dict, List, cast
+from typing import cast, Dict, List, Self
 
 from bs4 import BeautifulSoup
+import httpx
 
 from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,
@@ -20,6 +21,7 @@ from fraudcrawler.base.base import (
     Location,
     Prompt,
     ProductItem,
+    HttpxAsyncClient,
 )
 from fraudcrawler import (
     Search,
@@ -60,8 +62,17 @@ class Orchestrator(ABC):
         n_serp_wkrs: int = DEFAULT_N_SERP_WKRS,
         n_zyte_wkrs: int = DEFAULT_N_ZYTE_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
+        # Configure a custom httpx client.
+        # We provide a `HttpxAsyncClient` class that you can pass
+        # to retain the default values we use for `limits`, `timeout` & `follow_redirects`.
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initializes the orchestrator with the given settings.
+
+        NOTE:
+        The class:`Orchestrator` must be used as context manager as follows:
+            async with Orchestrator(...) as orchestrator:
+                await orchestrator.run()
 
         Args:
             serpapi_key: The API key for SERP API.
@@ -73,16 +84,16 @@ class Orchestrator(ABC):
             n_serp_wkrs: Number of async workers for serp (optional).
             n_zyte_wkrs: Number of async workers for zyte (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
+            http_client: An httpx.AsyncClient to use for the async requests (optional).
         """
-        # Setup the clients
-        self._search = Search(serpapi_key=serpapi_key)
-        self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
-        self._url_collector = URLCollector()
-        self._zyteapi = ZyteAPI(api_key=zyteapi_key)
-        self._processor = Processor(
-            api_key=openaiapi_key,
-            model=openai_model,
-        )
+
+        # Store the variables for setting up the clients
+        self._serpapi_key = serpapi_key
+        self._dataforseo_user = dataforseo_user
+        self._dataforseo_pwd = dataforseo_pwd
+        self._zyteapi_key = zyteapi_key
+        self._openaiapi_key = openaiapi_key
+        self._openai_model = openai_model
 
         # Setup the async framework
         self._n_serp_wkrs = n_serp_wkrs
@@ -90,6 +101,44 @@ class Orchestrator(ABC):
         self._n_proc_wkrs = n_proc_wkrs
         self._queues: Dict[str, asyncio.Queue] | None = None
         self._workers: Dict[str, List[asyncio.Task] | asyncio.Task] | None = None
+
+        # Setup the httpx client
+        self._http_client = http_client
+        self._owns_http_client = http_client is None
+
+    async def __aenter__(self) -> Self:
+        """Creates and starts an httpx.AsyncClient if not provided."""
+        if self._http_client is None:
+            logger.debug("Creating a new httpx.AsyncClient owned by the orchestrator")
+            self._http_client = HttpxAsyncClient()
+            self._owns_http_client = True
+
+        # Setup the clients
+        self._search = Search(
+            http_client=self._http_client, serpapi_key=self._serpapi_key
+        )
+        self._enricher = Enricher(
+            http_client=self._http_client,
+            user=self._dataforseo_user,
+            pwd=self._dataforseo_pwd,
+        )
+        self._url_collector = URLCollector()
+        self._zyteapi = ZyteAPI(
+            http_client=self._http_client, api_key=self._zyteapi_key
+        )
+        self._processor = Processor(
+            http_client=self._http_client,
+            api_key=self._openaiapi_key,
+            model=self._openai_model,
+        )
+        return self
+
+    async def __aexit__(self, *args, **kwargs) -> None:
+        """Closes the httpx.AsyncClient if it was created by this orchestrator."""
+        if self._owns_http_client and self._http_client is not None:
+            logger.debug("Closing the httpx.AsyncClient owned by the orchestrator")
+            await self._http_client.aclose()
+            self._http_client = None
 
     async def _serp_execute(
         self,
@@ -198,7 +247,7 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Fetch the product details from Zyte API
-                    details = await self._zyteapi.get_details(url=product.url)
+                    details = await self._zyteapi.details(url=product.url)
                     url_resolved = self._zyteapi.extract_url_resolved(details=details)
                     if url_resolved:
                         product.url_resolved = url_resolved
@@ -436,7 +485,7 @@ class Orchestrator(ABC):
         if enrichment:
             # Call DataForSEO to get additional terms
             n_terms = enrichment.additional_terms
-            terms = await self._enricher.apply(
+            terms = await self._enricher.enrich(
                 search_term=search_term,
                 language=language,
                 location=location,
@@ -478,7 +527,6 @@ class Orchestrator(ABC):
             excluded_urls: The URLs to exclude from the search.
             previously_collected_urls: The urls that have been collected previously and are ignored.
         """
-
         # ---------------------------
         #        INITIAL SETUP
         # ---------------------------
@@ -641,4 +689,7 @@ class Orchestrator(ABC):
         finally:
             await res_queue.join()
 
+        # ---------------------------
+        #  CLOSING PIPELINE
+        # ---------------------------
         logger.info("Pipeline concluded; async framework is closed")

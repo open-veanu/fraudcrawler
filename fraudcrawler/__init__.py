@@ -13,6 +13,7 @@ from fraudcrawler.base.base import (
     Location,
     Prompt,
     ProductItem,
+    HttpxAsyncClient,
 )
 
 __all__ = [
@@ -31,4 +32,5 @@ __all__ = [
     "Deepness",
     "Enrichment",
     "Prompt",
+    "HttpxAsyncClient",
 ]
