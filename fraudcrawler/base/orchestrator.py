@@ -115,7 +115,7 @@ class Orchestrator(ABC):
 
         # Setup the clients
         self._search = Search(
-            http_client=self._http_client, serpapi_key=self._serpapi_key
+            http_client=self._http_client, serpapi_key=self._serpapi_key, zyte_api=self._zyteapi
         )
         self._enricher = Enricher(
             http_client=self._http_client,

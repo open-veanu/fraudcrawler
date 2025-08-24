@@ -9,7 +9,7 @@ from pydantic import (
 from pydantic_settings import BaseSettings
 from urllib.parse import urlparse
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TYPE_CHECKING
 
 import httpx
 
@@ -22,6 +22,9 @@ from fraudcrawler.settings import (
     DEFAULT_HTTPX_LIMITS,
     DEFAULT_HTTPX_REDIRECTS,
 )
+
+if TYPE_CHECKING:
+    from fraudcrawler.scraping.zyte import ZyteAPI
 
 logger = logging.getLogger(__name__)
 
@@ -241,3 +244,34 @@ class DomainUtils:
         if hostname and hostname.startswith("www."):
             hostname = hostname[4:]
         return hostname.lower()
+
+    async def _unblock_url(self, url: str, zyte_api: "ZyteAPI") -> bytes | None:
+        """Attempts to unblock a URL using Zyte proxy mode when direct access fails.
+        
+        This method is specifically designed to handle 403 Forbidden errors for domains
+        that may be blocking requests from certain IP ranges (like cloud providers).
+        
+        Args:
+            url: The URL to fetch using Zyte proxy mode.
+            zyte_api: An instance of ZyteAPI to use for the request.
+            
+        Returns:
+            The HTML content as bytes if successful, None if failed.
+        """
+        try:
+            logger.info(f"Attempting to unblock URL using Zyte proxy: {url}")
+            details = await zyte_api.details(url)
+            
+            if details and "httpResponseBody" in details:
+                # Decode the base64 content
+                import base64
+                html_content = base64.b64decode(details["httpResponseBody"])
+                logger.info(f"Successfully unblocked URL using Zyte proxy: {url}")
+                return html_content
+            else:
+                logger.warning(f"Zyte proxy request failed for URL: {url}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error unblocking URL with Zyte proxy: {url}, error: {e}")
+            return None

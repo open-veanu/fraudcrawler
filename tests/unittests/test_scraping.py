@@ -43,7 +43,7 @@ async def toppreise():
 async def search():
     setup = Setup()
     async with HttpxAsyncClient() as httpx_client:
-        yield Search(http_client=httpx_client, serpapi_key=setup.serpapi_key)
+        yield Search(http_client=httpx_client, serpapi_key=setup.serpapi_key, zyte_api=None)
 
 
 @pytest_asyncio.fixture
