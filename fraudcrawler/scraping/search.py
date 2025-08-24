@@ -450,7 +450,7 @@ class Toppreise(SearchEngine):
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
             search_string=search_string, retry_state=retry_state
         )
-        
+
         content = None
         try:
             async for attempt in retry:
@@ -463,7 +463,9 @@ class Toppreise(SearchEngine):
                     content = response.content
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 403 and self._zyte_api:
-                logger.warning(f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy")
+                logger.warning(
+                    f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
+                )
                 content = await self._unblock_url(url, self._zyte_api)
                 if content is None:
                     raise e  # Re-raise if zyte fallback also failed
@@ -471,7 +473,7 @@ class Toppreise(SearchEngine):
                 raise e
 
         if content is None:
-            raise httpx.HTTPStatusError("Failed to fetch content", request=None, response=None)
+            raise httpx.HTTPError("Failed to fetch content")
 
         # Get external product urls from the content
         urls = self._get_external_product_urls(content=content)
