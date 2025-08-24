@@ -232,7 +232,7 @@ class SerpAPIGoogle(SerpAPI):
     @property
     def _engine(self) -> str:
         """The search engine name used in the SerpAPI request."""
-        return "google"
+        return "Google"
 
     @staticmethod
     def _extract_search_results_urls(data: dict) -> List[str]:
@@ -305,7 +305,7 @@ class SerpAPIGoogleShopping(SerpAPI):
     @property
     def _engine(self) -> str:
         """The search engine name used in the SerpAPI request."""
-        return "google_shopping"
+        return "Google Shopping"
 
     @staticmethod
     def _extract_search_results_urls(data: dict) -> List[str]:
