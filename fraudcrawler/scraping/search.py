@@ -29,9 +29,9 @@ class SearchResult(BaseModel):
 class SearchEngineName(Enum):
     """Enum for search engine names."""
 
-    GOOGLE = "Google"
-    GOOGLE_SHOPPING = "Google Shopping"
-    TOPPREISE = "Toppreise"
+    GOOGLE = "google"
+    GOOGLE_SHOPPING = "google_shopping"
+    TOPPREISE = "toppreise"
 
 
 class SearchEngine(ABC, DomainUtils):
