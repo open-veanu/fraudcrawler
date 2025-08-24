@@ -376,13 +376,15 @@ class Toppreise(SearchEngine):
         "Upgrade-Insecure-Requests": "1",
     }
 
-    def __init__(self, http_client: httpx.AsyncClient):
+    def __init__(self, http_client: httpx.AsyncClient, zyte_api=None):
         """Initializes the Toppreise client.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
+            zyte_api: Optional ZyteAPI instance for fallback when direct access fails.
         """
         self._http_client = http_client
+        self._zyte_api = zyte_api
 
     @property
     def _search_engine_name(self) -> str:
@@ -448,16 +450,32 @@ class Toppreise(SearchEngine):
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
             search_string=search_string, retry_state=retry_state
         )
-        async for attempt in retry:
-            with attempt:
-                response = await self._http_client.get(
-                    url=url,
-                    headers=self._headers,
+
+        content = None
+        try:
+            async for attempt in retry:
+                with attempt:
+                    response = await self._http_client.get(
+                        url=url,
+                        headers=self._headers,
+                    )
+                    response.raise_for_status()
+                    content = response.content
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 403 and self._zyte_api:
+                logger.warning(
+                    f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
                 )
-                response.raise_for_status()
+                content = await self._unblock_url(url, self._zyte_api)
+                if content is None:
+                    raise e  # Re-raise if zyte fallback also failed
+            else:
+                raise e
+
+        if content is None:
+            raise httpx.HTTPError("Failed to fetch content")
 
         # Get external product urls from the content
-        content = response.content
         urls = self._get_external_product_urls(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
 
@@ -491,18 +509,19 @@ class Toppreise(SearchEngine):
 class Search(DomainUtils):
     """Class to perform searches using different search engines."""
 
-    def __init__(self, http_client: httpx.AsyncClient, serpapi_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, serpapi_key: str, zyte_api=None):
         """Initializes the Search class with the given SerpAPI key.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             serpapi_key: The API key for SERP API.
+            zyte_api: Optional ZyteAPI instance for fallback when direct access fails.
         """
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
         self._google_shopping = SerpAPIGoogleShopping(
             http_client=http_client, api_key=serpapi_key
         )
-        self._toppreise = Toppreise(http_client=http_client)
+        self._toppreise = Toppreise(http_client=http_client, zyte_api=zyte_api)
 
     @staticmethod
     def _domain_in_host(domain: str, host: Host) -> bool:
