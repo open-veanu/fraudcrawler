@@ -131,6 +131,17 @@ class SerpAPI(SearchEngine):
             search_string += " site:" + " OR site:".join(s for s in sites)
         return search_string
 
+    @staticmethod
+    def _get_google_domain(location: Location) -> str:
+        """Gets the Google domain for the given location if they do not use the default pattern google.tld"""
+        if location.name == "Brazil":
+            return "google.com.br"
+        elif location.name == "United Kingdom":
+            return "google.co.uk"
+        elif location.name == "Argentina":
+            return "google.com.ar"
+        return f"google.{location.code}"
+
     async def _search(
         self,
         search_string: str,
@@ -169,16 +180,19 @@ class SerpAPI(SearchEngine):
             f"num_results={num_results}."
         )
 
-        # Setup the parameters
+        # Get Google domain and country code
+        google_domain = self._get_google_domain(location)
+        country_code = location.code
+
         params: Dict[str, str | int] = {
             "engine": engine,
             "q": search_string,
-            "google_domain": f"google.{location.code}",
+            "google_domain": google_domain,
             "location_requested": location.name,
             "location_used": location.name,
-            "tbs": f"ctr:{location.code.upper()}",
-            "cr": f"country{location.code.upper()}",
-            "gl": location.code,
+            "tbs": f"ctr:{country_code.upper()}",
+            "cr": f"country{country_code.upper()}",
+            "gl": country_code,
             "hl": language.code,
             "num": num_results,
             "api_key": self._api_key,
