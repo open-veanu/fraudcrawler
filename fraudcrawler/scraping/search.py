@@ -377,15 +377,15 @@ class Toppreise(SearchEngine):
         "Upgrade-Insecure-Requests": "1",
     }
 
-    def __init__(self, http_client: httpx.AsyncClient, zyte_api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, zyteapi_key: str):
         """Initializes the Toppreise client.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
-            zyte_api_key: ZyteAPI key for fallback when direct access fails.
+            zyteapi_key: ZyteAPI key for fallback when direct access fails.
         """
         self._http_client = http_client
-        self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyte_api_key)
+        self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key)
 
     @property
     def _search_engine_name(self) -> str:
@@ -516,19 +516,23 @@ class Toppreise(SearchEngine):
 class Search(DomainUtils):
     """Class to perform searches using different search engines."""
 
-    def __init__(self, http_client: httpx.AsyncClient, serpapi_key: str, zyte_api=None):
+    def __init__(self, http_client: httpx.AsyncClient, serpapi_key: str, zyteapi_key: str):
         """Initializes the Search class with the given SerpAPI key.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             serpapi_key: The API key for SERP API.
-            zyte_api: Optional ZyteAPI instance for fallback when direct access fails.
+            zyteapi_key: ZyteAPI key for fallback when direct access fails.
         """
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
         self._google_shopping = SerpAPIGoogleShopping(
-            http_client=http_client, api_key=serpapi_key
+            http_client=http_client,
+            api_key=serpapi_key,
         )
-        self._toppreise = Toppreise(http_client=http_client, zyte_api=zyte_api)
+        self._toppreise = Toppreise(
+            http_client=http_client,
+            zyteapi_key=zyteapi_key,
+        )
 
     @staticmethod
     def _domain_in_host(domain: str, host: Host) -> bool:
