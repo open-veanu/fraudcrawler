@@ -385,7 +385,7 @@ class Toppreise(SearchEngine):
             zyte_api_key: ZyteAPI key for fallback when direct access fails.
         """
         self._http_client = http_client
-        self._zyte_api = ZyteAPI(http_client=http_client, api_key=zyte_api_key)
+        self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyte_api_key)
 
     @property
     def _search_engine_name(self) -> str:
@@ -474,7 +474,7 @@ class Toppreise(SearchEngine):
                     f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
                 )
                 try:
-                    content = await self._zyte_api.unblock_url_content(url)
+                    content = await self._zyteapi.unblock_url_content(url)
                 except Exception as e:
                     msg = f'Error unblocking URL="{url}" with Zyte proxy: {e}'
                     logger.error(msg)
