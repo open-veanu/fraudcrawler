@@ -117,7 +117,7 @@ class Orchestrator(ABC):
         self._search = Search(
             http_client=self._http_client,
             serpapi_key=self._serpapi_key,
-            zyte_api=self._zyteapi,
+            zyteapi_key=self._zyteapi_key,
         )
         self._enricher = Enricher(
             http_client=self._http_client,
