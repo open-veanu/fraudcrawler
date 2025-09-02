@@ -35,8 +35,9 @@ async def serpapi_google_shopping():
 
 @pytest_asyncio.fixture
 async def toppreise():
+    setup = Setup()
     async with HttpxAsyncClient() as httpx_client:
-        yield Toppreise(http_client=httpx_client)
+        yield Toppreise(http_client=httpx_client, zyteapi_key=setup.zyteapi_key)
 
 
 @pytest_asyncio.fixture
@@ -44,7 +45,9 @@ async def search():
     setup = Setup()
     async with HttpxAsyncClient() as httpx_client:
         yield Search(
-            http_client=httpx_client, serpapi_key=setup.serpapi_key, zyte_api=None
+            http_client=httpx_client,
+            serpapi_key=setup.serpapi_key,
+            zyteapi_key=setup.zyteapi_key,
         )
 
 
