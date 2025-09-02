@@ -160,7 +160,7 @@ class Processor:
         # Call the OpenAI API
         try:
             logger.debug(
-                f"Classifying product with url={url} using prompt={prompt.name} and user_prompt={user_prompt}."
+                f"Classifying product with url={url}, using prompt={prompt.name}."
             )
             # Perform the request and retry if necessary. There is some context aware logging
             #  - `before`: before the request is made (or before retrying)

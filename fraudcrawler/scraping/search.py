@@ -12,6 +12,7 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import SEARCH_DEFAULT_COUNTRY_CODES
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.scraping.zyte import ZyteAPI
 
 logger = logging.getLogger(__name__)
 
@@ -376,15 +377,15 @@ class Toppreise(SearchEngine):
         "Upgrade-Insecure-Requests": "1",
     }
 
-    def __init__(self, http_client: httpx.AsyncClient, zyte_api=None):
+    def __init__(self, http_client: httpx.AsyncClient, zyte_api_key: str):
         """Initializes the Toppreise client.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
-            zyte_api: Optional ZyteAPI instance for fallback when direct access fails.
+            zyte_api_key: ZyteAPI key for fallback when direct access fails.
         """
         self._http_client = http_client
-        self._zyte_api = zyte_api
+        self._zyte_api = ZyteAPI(http_client=http_client, api_key=zyte_api_key)
 
     @property
     def _search_engine_name(self) -> str:
@@ -431,6 +432,9 @@ class Toppreise(SearchEngine):
     async def _search(self, search_string: str, num_results: int) -> List[str]:
         """Performs a search on Toppreise and returns the URLs of the results.
 
+        If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
+        content using Zyte proxy mode.
+
         Args:
             search_string: The search string to use for the query.
             num_results: Max number of results to return.
@@ -451,7 +455,7 @@ class Toppreise(SearchEngine):
             search_string=search_string, retry_state=retry_state
         )
 
-        content = None
+        # Try to access the URL directly
         try:
             async for attempt in retry:
                 with attempt:
@@ -461,19 +465,22 @@ class Toppreise(SearchEngine):
                     )
                     response.raise_for_status()
                     content = response.content
+
+        # If we get a 403 Error (can happen depending on IP/location of deployment),
+        # we try to unblock the URL using Zyte proxy mode
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 403 and self._zyte_api:
+            if e.response.status_code == 403:
                 logger.warning(
                     f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
                 )
-                content = await self._unblock_url(url, self._zyte_api)
-                if content is None:
-                    raise e  # Re-raise if zyte fallback also failed
+                try:
+                    content = await self._zyte_api.unblock_url_content(url)
+                except Exception as e:
+                    msg = f'Error unblocking URL="{url}" with Zyte proxy: {e}'
+                    logger.error(msg)
+                    raise httpx.HTTPError(msg) from e
             else:
                 raise e
-
-        if content is None:
-            raise httpx.HTTPError("Failed to fetch content")
 
         # Get external product urls from the content
         urls = self._get_external_product_urls(content=content)
