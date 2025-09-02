@@ -255,5 +255,4 @@ class ZyteAPI(DomainUtils):
         if not details or "httpResponseBody" not in details:
             raise httpx.HTTPError("No httpResponseBody in Zyte response")
 
-        html_content = b64decode(details["httpResponseBody"])
-        return html_content
+        return b64decode(details["httpResponseBody"])
