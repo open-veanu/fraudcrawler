@@ -12,6 +12,7 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import SEARCH_DEFAULT_COUNTRY_CODES
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.scraping.zyte import ZyteAPI
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,17 @@ class SerpAPI(SearchEngine):
             search_string += " site:" + " OR site:".join(s for s in sites)
         return search_string
 
+    @staticmethod
+    def _get_google_domain(location: Location) -> str:
+        """Gets the Google domain for the given location if they do not use the default pattern google.tld"""
+        if location.name == "Brazil":
+            return "google.com.br"
+        elif location.name == "United Kingdom":
+            return "google.co.uk"
+        elif location.name == "Argentina":
+            return "google.com.ar"
+        return f"google.{location.code}"
+
     async def _search(
         self,
         search_string: str,
@@ -169,16 +181,19 @@ class SerpAPI(SearchEngine):
             f"num_results={num_results}."
         )
 
-        # Setup the parameters
+        # Get Google domain and country code
+        google_domain = self._get_google_domain(location)
+        country_code = location.code
+
         params: Dict[str, str | int] = {
             "engine": engine,
             "q": search_string,
-            "google_domain": f"google.{location.code}",
+            "google_domain": google_domain,
             "location_requested": location.name,
             "location_used": location.name,
-            "tbs": f"ctr:{location.code.upper()}",
-            "cr": f"country{location.code.upper()}",
-            "gl": location.code,
+            "tbs": f"ctr:{country_code.upper()}",
+            "cr": f"country{country_code.upper()}",
+            "gl": country_code,
             "hl": language.code,
             "num": num_results,
             "api_key": self._api_key,
@@ -376,13 +391,15 @@ class Toppreise(SearchEngine):
         "Upgrade-Insecure-Requests": "1",
     }
 
-    def __init__(self, http_client: httpx.AsyncClient):
+    def __init__(self, http_client: httpx.AsyncClient, zyteapi_key: str):
         """Initializes the Toppreise client.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
+            zyteapi_key: ZyteAPI key for fallback when direct access fails.
         """
         self._http_client = http_client
+        self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key)
 
     @property
     def _search_engine_name(self) -> str:
@@ -429,6 +446,9 @@ class Toppreise(SearchEngine):
     async def _search(self, search_string: str, num_results: int) -> List[str]:
         """Performs a search on Toppreise and returns the URLs of the results.
 
+        If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
+        content using Zyte proxy mode.
+
         Args:
             search_string: The search string to use for the query.
             num_results: Max number of results to return.
@@ -448,16 +468,35 @@ class Toppreise(SearchEngine):
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
             search_string=search_string, retry_state=retry_state
         )
-        async for attempt in retry:
-            with attempt:
-                response = await self._http_client.get(
-                    url=url,
-                    headers=self._headers,
+
+        # Try to access the URL directly
+        try:
+            async for attempt in retry:
+                with attempt:
+                    response = await self._http_client.get(
+                        url=url,
+                        headers=self._headers,
+                    )
+                    response.raise_for_status()
+                    content = response.content
+
+        # If we get a 403 Error (can happen depending on IP/location of deployment),
+        # we try to unblock the URL using Zyte proxy mode
+        except httpx.HTTPStatusError as err_direct:
+            if err_direct.response.status_code == 403:
+                logger.warning(
+                    f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
                 )
-                response.raise_for_status()
+                try:
+                    content = await self._zyteapi.unblock_url_content(url)
+                except Exception as err_resolve:
+                    msg = f'Error unblocking URL="{url}" with Zyte proxy: {err_resolve}'
+                    logger.error(msg)
+                    raise httpx.HTTPError(msg) from err_resolve
+            else:
+                raise err_direct
 
         # Get external product urls from the content
-        content = response.content
         urls = self._get_external_product_urls(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
 
@@ -491,18 +530,25 @@ class Toppreise(SearchEngine):
 class Search(DomainUtils):
     """Class to perform searches using different search engines."""
 
-    def __init__(self, http_client: httpx.AsyncClient, serpapi_key: str):
+    def __init__(
+        self, http_client: httpx.AsyncClient, serpapi_key: str, zyteapi_key: str
+    ):
         """Initializes the Search class with the given SerpAPI key.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             serpapi_key: The API key for SERP API.
+            zyteapi_key: ZyteAPI key for fallback when direct access fails.
         """
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
         self._google_shopping = SerpAPIGoogleShopping(
-            http_client=http_client, api_key=serpapi_key
+            http_client=http_client,
+            api_key=serpapi_key,
         )
-        self._toppreise = Toppreise(http_client=http_client)
+        self._toppreise = Toppreise(
+            http_client=http_client,
+            zyteapi_key=zyteapi_key,
+        )
 
     @staticmethod
     def _domain_in_host(domain: str, host: Host) -> bool:

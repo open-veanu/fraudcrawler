@@ -72,7 +72,7 @@ class Processor:
         """Context aware logging before the request is made."""
         if retry_state:
             logger.debug(
-                f"Classifying product with url={url} using prompt={prompt} (Attempt {retry_state.attempt_number})."
+                f"Classifying product with url={url} using prompt={prompt.name} (Attempt {retry_state.attempt_number})."
             )
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before.")
@@ -84,7 +84,7 @@ class Processor:
         """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
-                f"Attempt {retry_state.attempt_number} of classifying product with url={url} using prompt={prompt} "
+                f"Attempt {retry_state.attempt_number} of classifying product with url={url} using prompt={prompt.name} "
                 f"failed with error: {retry_state.outcome.exception()}. "
                 f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
@@ -160,7 +160,7 @@ class Processor:
         # Call the OpenAI API
         try:
             logger.debug(
-                f"Classifying product with url={url} using prompt={prompt.name} and user_prompt={user_prompt}."
+                f"Classifying product with url={url}, using prompt={prompt.name}."
             )
             # Perform the request and retry if necessary. There is some context aware logging
             #  - `before`: before the request is made (or before retrying)

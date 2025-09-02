@@ -17,6 +17,7 @@ from fraudcrawler.scraping.search import (
 )
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
+from fraudcrawler.scraping.search import SerpAPI
 
 
 @pytest_asyncio.fixture
@@ -35,15 +36,20 @@ async def serpapi_google_shopping():
 
 @pytest_asyncio.fixture
 async def toppreise():
+    setup = Setup()
     async with HttpxAsyncClient() as httpx_client:
-        yield Toppreise(http_client=httpx_client)
+        yield Toppreise(http_client=httpx_client, zyteapi_key=setup.zyteapi_key)
 
 
 @pytest_asyncio.fixture
 async def search():
     setup = Setup()
     async with HttpxAsyncClient() as httpx_client:
-        yield Search(http_client=httpx_client, serpapi_key=setup.serpapi_key)
+        yield Search(
+            http_client=httpx_client,
+            serpapi_key=setup.serpapi_key,
+            zyteapi_key=setup.zyteapi_key,
+        )
 
 
 @pytest_asyncio.fixture
@@ -142,6 +148,33 @@ def test_search_engine_create_search_result(serpapi_google):
     assert isinstance(result, SearchResult)
     assert result.url == url
     assert result.domain == "example.ch"
+
+
+def test_serpapi_get_google_domain():
+    """Test the _get_google_domain function for special cases and standard patterns."""
+    # Test special case for Brazil
+    brazil_location = Location(name="Brazil")
+    assert SerpAPI._get_google_domain(brazil_location) == "google.com.br"
+
+    # Test special case for United Kingdom
+    uk_location = Location(name="United Kingdom")
+    assert SerpAPI._get_google_domain(uk_location) == "google.co.uk"
+
+    # Test special case for Argentina
+    argentina_location = Location(name="Argentina")
+    assert SerpAPI._get_google_domain(argentina_location) == "google.com.ar"
+
+    # Test standard pattern for Switzerland
+    switzerland_location = Location(name="Switzerland")
+    assert SerpAPI._get_google_domain(switzerland_location) == "google.ch"
+
+    # Test standard pattern for Germany
+    germany_location = Location(name="Germany")
+    assert SerpAPI._get_google_domain(germany_location) == "google.de"
+
+    # Test standard pattern for France
+    france_location = Location(name="France")
+    assert SerpAPI._get_google_domain(france_location) == "google.fr"
 
 
 @pytest.mark.asyncio

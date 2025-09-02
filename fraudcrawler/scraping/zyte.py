@@ -1,6 +1,6 @@
+from base64 import b64decode
 import logging
 from typing import List
-from base64 import b64decode
 
 import httpx
 from tenacity import RetryCallState
@@ -242,3 +242,17 @@ class ZyteAPI(DomainUtils):
             decoded_string = decoded_bytes.decode("utf-8")
             return decoded_string
         return None
+
+    async def unblock_url_content(self, url: str) -> bytes:
+        """Unblock the content of an URL using Zyte proxy mode.
+
+        Args:
+            url: The URL to fetch using Zyte proxy mode.
+        """
+        logger.debug(f'Unblock URL content using Zyte proxy for url="{url}"')
+        details = await self.details(url)
+
+        if not details or "httpResponseBody" not in details:
+            raise httpx.HTTPError("No httpResponseBody in Zyte response")
+
+        return b64decode(details["httpResponseBody"])
