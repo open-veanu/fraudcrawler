@@ -468,19 +468,19 @@ class Toppreise(SearchEngine):
 
         # If we get a 403 Error (can happen depending on IP/location of deployment),
         # we try to unblock the URL using Zyte proxy mode
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 403:
+        except httpx.HTTPStatusError as err_direct:
+            if err_direct.response.status_code == 403:
                 logger.warning(
                     f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
                 )
                 try:
                     content = await self._zyteapi.unblock_url_content(url)
-                except Exception as e:
-                    msg = f'Error unblocking URL="{url}" with Zyte proxy: {e}'
+                except Exception as err_resolve:
+                    msg = f'Error unblocking URL="{url}" with Zyte proxy: {err_resolve}'
                     logger.error(msg)
-                    raise httpx.HTTPError(msg) from e
+                    raise httpx.HTTPError(msg) from err_resolve
             else:
-                raise e
+                raise err_direct
 
         # Get external product urls from the content
         urls = self._get_external_product_urls(content=content)
@@ -516,7 +516,9 @@ class Toppreise(SearchEngine):
 class Search(DomainUtils):
     """Class to perform searches using different search engines."""
 
-    def __init__(self, http_client: httpx.AsyncClient, serpapi_key: str, zyteapi_key: str):
+    def __init__(
+        self, http_client: httpx.AsyncClient, serpapi_key: str, zyteapi_key: str
+    ):
         """Initializes the Search class with the given SerpAPI key.
 
         Args:
