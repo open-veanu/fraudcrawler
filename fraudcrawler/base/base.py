@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import re
 from typing import Any, Dict, List
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 import httpx
 
 from fraudcrawler.settings import (
@@ -258,18 +258,29 @@ class ToppreiseUtils:
         "Upgrade-Insecure-Requests": "1",
     }
 
-    def _get_search_endpoint(self, language: Language) -> str:
+    @classmethod
+    def _get_search_endpoint(cls, language: Language) -> str:
         """Get the search endpoint based on the language."""
         search_path = TOPPREISE_SEARCH_PATHS.get(language.code, TOPPREISE_SEARCH_PATHS["default"])
-        return f'{self._endpoint}{search_path}'
+        return f'{cls._endpoint}{search_path}'
+
 
     @staticmethod
-    def _extract_search_results_urls(content: bytes) -> List[str]:
-        """Extracts product comparison URLs AND external product URLs."""
+    def _extract_links(tag: Tag, ext_products: bool = True, comp_products: bool = True) -> List[str]:
+        """Extracts all relevant product URLs from a BeautifulSoup object of a Toppreise page.
 
-        # Parse the HTML
-        soup = BeautifulSoup(content, "html.parser")
-        links = soup.find_all("a", href=True)
+        Note:
+            Depending on the arguments, it extracts:
+                - product comparison URLs (i.e. https://www.toppreise.ch/preisvergleich/...)
+                - external product URLs (i.e. https://www.example.com/ext_...).
+        
+        Args:
+            tag: BeautifulSoup Tag object containing the HTML to parse.
+            ext_products: Whether to extract external product URLs.
+            comp_products: Whether to extract product comparison URLs.
+        """
+        # Find all links in the page
+        links = tag.find_all("a", href=True)
 
         # Filter links to only include external product links
         hrefs = [
@@ -281,8 +292,11 @@ class ToppreiseUtils:
                 and not href.startswith("javascript:")  # Skip javascript links
                 and isinstance(href, str)  # Ensure href is a string
                 # Make sure the link is either an external product link (href contains 'ext_') 
-                #   or is a search result link (href contains 'preisvergleich', 'comparison-prix', or 'price-comparison')
-                and ("ext_" in href or any(pth in href for pth in TOPPREISE_COMPARISON_PATHS))
+                # or is a search result link (href contains 'preisvergleich', 'comparison-prix', or 'price-comparison')
+                and (
+                        ("ext_" in href and ext_products) or
+                        (any(pth in href for pth in TOPPREISE_COMPARISON_PATHS) and comp_products)
+                    )
             )
         ]
 
@@ -297,7 +311,36 @@ class ToppreiseUtils:
 
         # Return deduplicated urls
         urls = list(set(urls))
+        return urls
+
+    def _extract_search_product_urls(self, content: bytes) -> List[str]:
+        """Extracts product urls from a Toppreise search page (i.e. https://www.toppreise.ch/produktsuche)."""
+
+        # Parse the HTML
+        soup = BeautifulSoup(content, "html.parser")
+        main = soup.find("div", id="Page_Browsing")
+        if main is None:
+            logger.warning("No main content found in Toppreise search page.")
+            return []
+
+        # Extract links (external product links and comparison links)
+        urls = self._extract_links(tag=main)
+
         logger.debug(
-            f"Found {len(urls)} external product URLs from Toppreise search results."
+            f"Found {len(urls)} product URLs from Toppreise search results."
+        )
+        return urls
+    
+    def _extract_comparison_product_urls(self, content: bytes) -> List[str]:
+        """Extracts product urls from a Toppreise product comparison page (i.e. https://www.toppreise.ch/preisvergleich/...)."""
+
+        # Parse the HTML
+        soup = BeautifulSoup(content, "html.parser")
+
+        # Extract links (external product links only)
+        urls = self._extract_links(tag=soup, comp_products=False)
+
+        logger.debug(
+            f"Found {len(urls)} external product URLs from Toppreise comparison page."
         )
         return urls

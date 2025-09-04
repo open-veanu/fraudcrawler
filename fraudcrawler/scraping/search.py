@@ -464,7 +464,7 @@ class Toppreise(SearchEngine, ToppreiseUtils):
         content = await self.http_client_get_with_fallback(url=url, retry=retry)
 
         # Get external product urls from the content
-        urls = self._extract_search_results_urls(content=content)
+        urls = self._extract_search_product_urls(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
 
         return urls
@@ -573,7 +573,7 @@ class Searcher(DomainUtils):
         content = await self._toppreise.http_client_get_with_fallback(url=url, retry=retry)
 
         # Get external product urls from the content
-        urls = self._toppreise._extract_search_results_urls(content=content)
+        urls = self._toppreise._extract_comparison_product_urls(content=content)
 
         return urls
 

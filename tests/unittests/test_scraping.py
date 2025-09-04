@@ -135,7 +135,6 @@ async def test_serpapi_google_shopping_search(serpapi_google_shopping):
         location=location,
         num_results=num_results,
     )
-    print(f"Results: {results}")
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
@@ -451,6 +450,7 @@ async def test_searcher_apply(searcher):
     assert all(res.url.startswith("http") for res in results)
 
     # Test with Toppreise
+    search_term = "Liebherr CT 2531"
     search_engine = "toppreise"
     results = await searcher.apply(
         search_term=search_term,
@@ -551,3 +551,25 @@ def test_searcher_apply_filters(searcher):
     assert result.search_engine_name == "Engine"
     assert result.filtered is False
     assert result.filtered_at_stage is None
+    
+@pytest.mark.asyncio
+async def test_searcher_apply_toppreise_post_search(searcher):
+    """With the below search term there are links that should be added by post_search."""
+    search_term = "Liebherr CT 2531"
+    search_engine = "toppreise"
+    location = Location(name="Switzerland")
+    language = Language(name="German")
+    num_results = 23
+
+    results = await searcher.apply(
+        search_term=search_term,
+        search_engine=search_engine,
+        language=language,
+        location=location,
+        num_results=num_results,
+    )
+    assert num_results < len(results)   # post_search should add more results
+    assert all(isinstance(res, SearchResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
+    assert all(res.search_engine_name == "toppreise" for res in results)
+
