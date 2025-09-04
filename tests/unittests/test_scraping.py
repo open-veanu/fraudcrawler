@@ -200,7 +200,7 @@ async def test_serpapi_google_search_marketplaces(serpapi_google):
 @pytest.mark.asyncio
 async def test_toppreise_search(toppreise):
     search_term = "Liebherr CT 2531"
-    language = Language(name="German", code="de")
+    language = Language(name="German")
     num_results = 5
     results = await toppreise.search(
         search_term=search_term,
@@ -212,7 +212,7 @@ async def test_toppreise_search(toppreise):
     assert all(res.url.startswith("http") for res in results)
     assert all(res.search_engine_name == "toppreise" for res in results)
 
-    language = Language(code="fr")
+    language = Language(name="French")
     results = await toppreise.search(
         search_term=search_term,
         language=language,
@@ -223,7 +223,7 @@ async def test_toppreise_search(toppreise):
     assert all(res.url.startswith("http") for res in results)
     assert all(res.search_engine_name == "toppreise" for res in results)
 
-    language = Language(code="en")
+    language = Language(name="English")
     results = await toppreise.search(
         search_term=search_term,
         language=language,

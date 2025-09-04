@@ -523,7 +523,7 @@ class Searcher(DomainUtils):
             zyteapi_key=zyteapi_key,
         )
 
-    @property
+    @staticmethod
     def _post_search_log_before(
         url: str, retry_state: RetryCallState | None
     ) -> None:
@@ -536,7 +536,7 @@ class Searcher(DomainUtils):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before.")
 
-    @property
+    @staticmethod
     def _post_search_log_before_sleep(
         url: str, retry_state: RetryCallState | None
     ) -> None:
@@ -573,7 +573,7 @@ class Searcher(DomainUtils):
         content = await self._toppreise.http_client_get_with_fallback(url=url, retry=retry)
 
         # Get external product urls from the content
-        urls = self._extract_search_results_urls(content=content)
+        urls = self._toppreise._extract_search_results_urls(content=content)
 
         return urls
 
