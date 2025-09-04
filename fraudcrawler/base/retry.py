@@ -25,16 +25,22 @@ def _is_retryable_exception(err: BaseException) -> bool:
     return True
 
 
-def get_async_retry() -> AsyncRetrying:
+def get_async_retry(
+    stop_after: int = RETRY_STOP_AFTER_ATTEMPT,
+    initial_delay: int = RETRY_INITIAL_DELAY,
+    max_delay: int = RETRY_MAX_DELAY,
+    exp_base: int = RETRY_EXP_BASE,
+    jitter: int = RETRY_JITTER,
+) -> AsyncRetrying:
     """returns the retry configuration for async operations."""
     return AsyncRetrying(
         retry=retry_if_exception(_is_retryable_exception),
-        stop=stop_after_attempt(RETRY_STOP_AFTER_ATTEMPT),
+        stop=stop_after_attempt(stop_after),
         wait=wait_exponential_jitter(
-            initial=RETRY_INITIAL_DELAY,
-            max=RETRY_MAX_DELAY,
-            exp_base=RETRY_EXP_BASE,
-            jitter=RETRY_JITTER,
+            initial=initial_delay,
+            max=max_delay,
+            exp_base=exp_base,
+            jitter=jitter,
         ),
         reraise=True,
     )

@@ -24,7 +24,7 @@ from fraudcrawler.base.base import (
     HttpxAsyncClient,
 )
 from fraudcrawler import (
-    Search,
+    Searcher,
     SearchEngineName,
     Enricher,
     URLCollector,
@@ -114,7 +114,7 @@ class Orchestrator(ABC):
             self._owns_http_client = True
 
         # Setup the clients
-        self._search = Search(
+        self._searcher = Searcher(
             http_client=self._http_client,
             serpapi_key=self._serpapi_key,
             zyteapi_key=self._zyteapi_key,
@@ -161,17 +161,14 @@ class Orchestrator(ABC):
                 break
 
             try:
+                # Execute the search
                 search_term_type = item.pop("search_term_type")
-                # The search_engines are already SearchEngineName enum values
-                search_engines = item.pop("search_engines")
-
-                results = await self._search.apply(
-                    **item, search_engines=search_engines
-                )
-
+                results = await self._searcher.apply(**item)
                 logger.debug(
                     f"Search for {item['search_term']} returned {len(results)} results"
                 )
+
+                # Create ProductItems for each result
                 for res in results:
                     product = ProductItem(
                         search_term=item["search_term"],
@@ -205,29 +202,15 @@ class Orchestrator(ABC):
                 queue_in.task_done()
                 break
 
-            if not product.filtered:
-                # Clean the URL by removing tracking parameters
-                url = self._url_collector.remove_tracking_parameters(product.url)
-                product.url = url
-
-                if url in self._url_collector.collected_currently:
-                    # deduplicate on current run
-                    product.filtered = True
-                    product.filtered_at_stage = (
-                        "URL collection (current run deduplication)"
-                    )
-                    logger.debug(f"URL {url} already collected in current run")
-                elif url in self._url_collector.collected_previously:
-                    # deduplicate on previous runs coming from a db
-                    product.filtered = True
-                    product.filtered_at_stage = (
-                        "URL collection (previous run deduplication)"
-                    )
-                    logger.debug(f"URL {url} as already collected in previous run")
-                else:
-                    self._url_collector.collected_currently.add(url)
-
-            await queue_out.put(product)
+            if product.filtered:
+                # Check if the product has already been filtered
+                await queue_out.put(product)
+            else:
+                # Get all the products (might be multiple if the URL is a listing page)
+                products = await self._url_collector.apply(product=product)
+                for prod in products:
+                    await queue_out.put(prod)
+            
             queue_in.task_done()
 
     async def _zyte_execute(
@@ -264,7 +247,7 @@ class Orchestrator(ABC):
                         logger.debug(
                             f"URL resolved for {product.url} is {url_resolved}"
                         )
-                        product.domain = self._search._get_domain(url_resolved)
+                        product.domain = self._searcher._get_domain(url_resolved)
 
                     product.product_price = self._zyteapi.extract_product_price(
                         details=details
@@ -433,7 +416,7 @@ class Orchestrator(ABC):
         queue: asyncio.Queue[dict | None],
         search_term: str,
         search_term_type: str,
-        search_engines: List[SearchEngineName],
+        search_engine: SearchEngineName,
         language: Language,
         location: Location,
         num_results: int,
@@ -444,7 +427,7 @@ class Orchestrator(ABC):
         item = {
             "search_term": search_term,
             "search_term_type": search_term_type,
-            "search_engines": search_engines,
+            "search_engine": search_engine,
             "language": language,
             "location": location,
             "num_results": num_results,
@@ -465,7 +448,23 @@ class Orchestrator(ABC):
         marketplaces: List[Host] | None,
         excluded_urls: List[Host] | None,
     ) -> None:
-        """Adds all the (enriched) search_term (as serp items) to the queue."""
+        """Adds all the (enriched) search_term (as serp items) to the queue.
+        
+        One item consists of the following parameters:
+            - search_term: The search term for the query.
+            - search_term_type: The type of the search term (initial or enriched).
+            - search_engines: The search engines to use for the query.
+            - language: The language to use for the query.
+            - location: The location to use for the query.
+            - num_results: The number of results to return.
+            - marketplaces: The marketplaces to include in the search.
+            - excluded_urls: The URLs to exclude from the search.
+
+        For constructing such items we essentially have two loops:
+            for each search_term (initial + enriched)
+                for each search_engine
+                    add item to queue
+        """
         common_kwargs = {
             "queue": queue,
             "language": language,
@@ -475,13 +474,14 @@ class Orchestrator(ABC):
         }
 
         # Add initial items to the serp_queue
-        await self._add_serp_items_for_search_term(
-            search_term=search_term,
-            search_term_type="initial",
-            search_engines=search_engines,
-            num_results=deepness.num_results,
-            **common_kwargs,  # type: ignore[arg-type]
-        )
+        for se in search_engines:
+            await self._add_serp_items_for_search_term(
+                search_term=search_term,
+                search_term_type="initial",
+                search_engine=se,
+                num_results=deepness.num_results,
+                **common_kwargs,  # type: ignore[arg-type]
+            )
 
         # Enrich the search_terms
         enrichment = deepness.enrichment
@@ -497,13 +497,14 @@ class Orchestrator(ABC):
 
             # Add the enriched search terms to the serp_queue
             for trm in terms:
-                await self._add_serp_items_for_search_term(
-                    search_term=trm,
-                    search_term_type="enriched",
-                    search_engines=search_engines,
-                    num_results=enrichment.additional_urls_per_term,
-                    **common_kwargs,  # type: ignore[arg-type]
-                )
+                for se in search_engines:
+                    await self._add_serp_items_for_search_term(
+                        search_term=trm,
+                        search_term_type="enriched",
+                        search_engine=se,
+                        num_results=enrichment.additional_urls_per_term,
+                        **common_kwargs,  # type: ignore[arg-type]
+                    )
 
     async def run(
         self,
@@ -542,7 +543,7 @@ class Orchestrator(ABC):
 
         # Handle previously collected URLs
         if previously_collected_urls:
-            self._url_collector.collected_previously = set(previously_collected_urls)
+            self._url_collector.add_previously_collected_urls(urls=previously_collected_urls)
 
         # Setup the async framework
         n_terms_max = 1 + (

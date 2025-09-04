@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import re
 from typing import Any, Dict, List
 
+from bs4 import BeautifulSoup
 import httpx
 
 from fraudcrawler.settings import (
@@ -22,6 +23,7 @@ from fraudcrawler.settings import (
     DEFAULT_HTTPX_LIMITS,
     DEFAULT_HTTPX_REDIRECTS,
 )
+from fraudcrawler.settings import TOPPREISE_SEARCH_PATHS, TOPPREISE_COMPARISON_PATHS
 
 logger = logging.getLogger(__name__)
 
@@ -241,3 +243,61 @@ class DomainUtils:
         if hostname and hostname.startswith("www."):
             hostname = hostname[4:]
         return hostname.lower()
+
+
+class ToppreiseUtils:
+    """Utility class for Toppreise specific URL extraction."""
+
+    _endpoint = "https://www.toppreise.ch/"
+    _headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+    def _get_search_endpoint(self, language: Language) -> str:
+        """Get the search endpoint based on the language."""
+        search_path = TOPPREISE_SEARCH_PATHS.get(language.code, TOPPREISE_SEARCH_PATHS["default"])
+        return f'{self._endpoint}{search_path}'
+
+    @staticmethod
+    def _extract_search_results_urls(content: bytes) -> List[str]:
+        """Extracts product comparison URLs AND external product URLs."""
+
+        # Parse the HTML
+        soup = BeautifulSoup(content, "html.parser")
+        links = soup.find_all("a", href=True)
+
+        # Filter links to only include external product links
+        hrefs = [
+            href
+            for link in links
+            if (
+                hasattr(link, "get")  # Ensure we have a Tag object with href attribute
+                and (href := link.get("href"))  # Ensure href is not None
+                and not href.startswith("javascript:")  # Skip javascript links
+                and isinstance(href, str)  # Ensure href is a string
+                # Make sure the link is either an external product link (href contains 'ext_') 
+                #   or is a search result link (href contains 'preisvergleich', 'comparison-prix', or 'price-comparison')
+                and ("ext_" in href or any(pth in href for pth in TOPPREISE_COMPARISON_PATHS))
+            )
+        ]
+
+        # Make relative URLs absolute
+        urls = []
+        for href in hrefs:
+            if href.startswith("/"):
+                href = f"https://www.toppreise.ch{href}"
+            elif not href.startswith("http"):
+                href = f"https://www.toppreise.ch/{href}"
+            urls.append(href)
+
+        # Return deduplicated urls
+        urls = list(set(urls))
+        logger.debug(
+            f"Found {len(urls)} external product URLs from Toppreise search results."
+        )
+        return urls
