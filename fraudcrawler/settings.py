@@ -86,8 +86,8 @@ PROCESSOR_USER_PROMPT_TEMPLATE = "Product Details:\n{product_details}\n\nRelevan
 PROCESSOR_PRODUCT_DETAILS_TEMPLATE = "{field_name}:\n{field_value}"
 
 # Async workers settings
-DEFAULT_N_SRCH_WKRS = 10
-DEFAULT_N_ZYTE_WKRS = 10
+DEFAULT_N_SRCH_WKRS = 5
+DEFAULT_N_CNTX_WKRS = 15
 DEFAULT_N_PROC_WKRS = 10
 
 # HTTPX client settings

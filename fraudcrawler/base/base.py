@@ -135,7 +135,7 @@ class Deepness(BaseModel):
 class ProductItem(BaseModel):
     """Model representing a product item."""
 
-    # Serp/Enrich parameters
+    # Search parameters
     search_term: str
     search_term_type: str
     url: str
@@ -143,7 +143,7 @@ class ProductItem(BaseModel):
     search_engine_name: str
     domain: str
 
-    # Zyte parameters
+    # Context parameters
     product_name: str | None = None
     product_price: str | None = None
     product_description: str | None = None
