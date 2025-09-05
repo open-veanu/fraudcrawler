@@ -202,15 +202,10 @@ class Orchestrator(ABC):
                 queue_in.task_done()
                 break
 
-            if product.filtered:
-                # Check if the product has already been filtered
-                await queue_out.put(product)
-            else:
-                # Get all the products (might be multiple if the URL is a listing page)
-                products = await self._url_collector.apply(product=product)
-                for prod in products:
-                    await queue_out.put(prod)
+            if not product.filtered:
+                product = await self._url_collector.apply(product=product)
             
+            await queue_out.put(product)
             queue_in.task_done()
 
     async def _zyte_execute(

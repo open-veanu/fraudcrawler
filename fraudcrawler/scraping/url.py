@@ -10,17 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class URLCollector:
-    """A class to collect and de-duplicate URLs.
-    
-    Note:
-        It might happen that a search engine returns URLs for pages with multiple product listings
-        (e.g. Toppreise, Google Shopping). In this case, the URLCollector.apply method will extract
-        the individual product URLs. This step is search engine specific and needs to be implemented
-        individually.
-
-        The reason why it is not implemented in the search engine classes is that such links might arise
-        from any other search engine as well (i.e. Google Search can produce Toppreise links as well).
-    """
+    """A class to collect and de-duplicate URLs."""
 
     def __init__(self):
         self._collected_currently: Set[str] = set()
@@ -75,9 +65,15 @@ class URLCollector:
             fragment=parsed_url.fragment,
         )
         return urlunparse(clean_url)
-    
-    def _apply_deduplication(self, product: ProductItem) -> ProductItem:
-        """Apply deduplication to a ProductItem based on its URL."""
+
+    async def apply(self, product: ProductItem) -> ProductItem:
+        """Manages the collection and deduplication of ProductItems.
+
+        Args:
+            product: The product item to process.
+        """
+        logger.debug(f'Processing product with  url="{product.url}"')
+
         # Remove tracking parameters from the URL
         url = self._remove_tracking_parameters(product.url)
         product.url = url
@@ -103,62 +99,3 @@ class URLCollector:
             self._collected_currently.add(url)
 
         return product
-    
-
-    # def _get_toppreise_embedded_product_urls_(self, url: str) -> List[str]:
-    #     """Extract embedded product URLs from a Toppreise product listing page.
-        
-    #     Note:
-    #         In comparison to the function Toppreise._extract_search_results_urls, here
-    #         we extract the urls from the product comparison table (https://www.toppreise.ch/preisvergleich/).
-    #     """
-    #     pass
-
-
-    # def _get_embedded_product_urls(self, url: str) -> List[str]:
-    #     """Extract embedded product URLs for predefined product listing pages."""
-    #     pass
-
-    async def apply(self, product: ProductItem) -> List[ProductItem] | None:
-        """Collect all the relevant ProductItems from a given URL.
-        
-        Note:
-            This function handles a given ProductItem with respect to:
-                - Removing tracking parameters from the URL
-                - Extracting individual product URLs if the URL points to a page with multiple products items
-                  (as e.g. Toppreise, Google Shopping)
-                - Check if the product has been collected yet based on the cleaned URL
-
-        Args:
-            product: The ProductItem to process.
-        """
-        logger.debug(f"Applying URL processing to product: {product.url}")
-
-        # Check if the product has already been collected
-        product = self._apply_deduplication(product=product)
-        if product.filtered:
-            logger.debug(f'Product {product.url} filtered after deduplication')
-            return [product]
-
-        # Extract embedded product URLs if applicable
-        urls = self._get_embedded_product_urls(url=product.url)
-        if not urls:
-            logger.debug(f"No embedded product URLs extracted from {product.url}")
-            return [product]
-
-        # Create new ProductItems for each extracted URL
-        logger.debug(f"Extracted {len(urls)} embedded product URLs from {product.url}")
-        products: List[ProductItem] = []
-        for url in urls:
-            # Create new ProductItem
-            prod = deepcopy(product)
-            url = self._remove_tracking_parameters(url)
-            prod.url = url
-
-            # Check if the product has already been collected
-            prod = self._apply_deduplication(product=prod)
-            if not prod.filtered:
-                self._collected_currently.add(url)
-            products.append(prod)
-        
-        return products
