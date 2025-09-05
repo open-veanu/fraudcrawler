@@ -141,11 +141,11 @@ def test_toppreise_utils_get_search_endpoint():
     assert endpoint == "https://www.toppreise.ch/browse"
 
 
-def test_toppreise_utils_extract_search_product_urls():
+def test_toppreise_utils_extract_product_urls_from_search_page():
     tu = ToppreiseUtils()
     with open(ROOT_DIR / "tests" / "data" / "toppreise_search.html", "rb") as f:
         content = f.read()
-    urls = tu._extract_search_product_urls(content=content)
+    urls = tu._extract_product_urls_from_search_page(content=content)
     assert len(urls) == 23
     assert (
         "https://www.toppreise.ch/preisvergleich/Kuehl-Gefrierkombinationen/LIEBHERR-CT-2531-p615781?selsort=rd"
@@ -157,11 +157,11 @@ def test_toppreise_utils_extract_search_product_urls():
     )
 
 
-def test_toppreise_utils_extract_comparison_product_urls():
+def test_toppreise_utils_extract_product_urls_from_comparison_page():
     tu = ToppreiseUtils()
     with open(ROOT_DIR / "tests" / "data" / "toppreise_comparison.html", "rb") as f:
         content = f.read()
-    urls = tu._extract_comparison_product_urls(content=content)
+    urls = tu._extract_product_urls_from_comparison_page(content=content)
     assert len(urls) == 20
     assert (
         "https://www.toppreise.ch/ext_de?pid=615781&did=2532&oid=493842592&gdt=MjAyNS0wOS0wNCAyMjo0NDoyMw==&slsrt=pa&prcst=shipping&lpos=5"

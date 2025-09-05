@@ -320,7 +320,7 @@ class ToppreiseUtils:
         urls = list(set(urls))
         return urls
 
-    def _extract_search_product_urls(self, content: bytes) -> List[str]:
+    def _extract_product_urls_from_search_page(self, content: bytes) -> List[str]:
         """Extracts product urls from a Toppreise search page (i.e. https://www.toppreise.ch/produktsuche)."""
 
         # Parse the HTML
@@ -336,7 +336,7 @@ class ToppreiseUtils:
         logger.debug(f"Found {len(urls)} product URLs from Toppreise search results.")
         return urls
 
-    def _extract_comparison_product_urls(self, content: bytes) -> List[str]:
+    def _extract_product_urls_from_comparison_page(self, content: bytes) -> List[str]:
         """Extracts product urls from a Toppreise product comparison page (i.e. https://www.toppreise.ch/preisvergleich/...)."""
 
         # Parse the HTML

@@ -470,7 +470,7 @@ class Toppreise(SearchEngine, ToppreiseUtils):
         content = await self.http_client_get_with_fallback(url=url, retry=retry)
 
         # Get external product urls from the content
-        urls = self._extract_search_product_urls(content=content)
+        urls = self._extract_product_urls_from_search_page(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
 
         return urls
@@ -554,12 +554,13 @@ class Searcher(DomainUtils):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
-    async def _post_search_toppreise(self, url: str) -> List[str]:
-        """Post-search for product URLs from a Toppreise product listing page.
+    async def _post_search_toppreise_comparison(self, url: str) -> List[str]:
+        """Post-search for product URLs from a Toppreise product comparison page.
 
         Note:
-            In comparison to the function Toppreise._extract_search_results_urls, here
-            we extract the urls from the product comparison table (f.e. https://www.toppreise.ch/preisvergleich/).
+            In comparison to the function Toppreise._search, here we extract the urls from
+            product comparison pages (f.e. https://www.toppreise.ch/preisvergleich/). They can
+            also be found in the results of a google search.
 
         Args:
             url: The URL of the Toppreise product listing page.
@@ -579,17 +580,17 @@ class Searcher(DomainUtils):
         )
 
         # Get external product urls from the content
-        urls = self._toppreise._extract_comparison_product_urls(content=content)
+        urls = self._toppreise._extract_product_urls_from_comparison_page(content=content)
 
         return urls
 
-    async def _post_search_product_extraction(
+    async def _post_search(
         self, results: List[SearchResult]
     ) -> List[SearchResult]:
-        """Post-search for product URLs from the obtained results.
+        """Post-search for additional embedded product URLs from the obtained results.
 
         Note:
-            This function can be used to extract embedded product URLs from
+            This function is used to extract embedded product URLs from
             product listing pages (e.g. Toppreise, Google Shopping) if needed.
 
         Args:
@@ -604,7 +605,7 @@ class Searcher(DomainUtils):
                 logger.debug(
                     f'Extracting embedded product URLs from url="{url}" found by search_engine="{res.search_engine_name}"'
                 )
-                post_search_urls = await self._post_search_toppreise(url=url)
+                post_search_urls = await self._post_search_toppreise_comparison(url=url)
                 logger.debug(
                     f'Extracted {len(post_search_urls)} embedded product URLs from url="{url}".'
                 )
@@ -773,7 +774,7 @@ class Searcher(DomainUtils):
         # -------------------------------
         # POST-SEARCH URL EXTRACTION
         # -------------------------------
-        post_search_results = await self._post_search_product_extraction(
+        post_search_results = await self._post_search(
             results=results
         )
         post_search_results = post_search_results[:num_results]
