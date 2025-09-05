@@ -551,7 +551,8 @@ def test_searcher_apply_filters(searcher):
     assert result.search_engine_name == "Engine"
     assert result.filtered is False
     assert result.filtered_at_stage is None
-    
+
+
 @pytest.mark.asyncio
 async def test_searcher_apply_toppreise_post_search(searcher):
     """With the below search term there are links that should be added by post_search."""
@@ -568,8 +569,7 @@ async def test_searcher_apply_toppreise_post_search(searcher):
         location=location,
         num_results=num_results,
     )
-    assert num_results < len(results)   # post_search should add more results
+    assert num_results < len(results)  # post_search should add more results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
     assert all(res.search_engine_name == "toppreise" for res in results)
-

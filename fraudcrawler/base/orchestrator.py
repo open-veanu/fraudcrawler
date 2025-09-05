@@ -204,7 +204,7 @@ class Orchestrator(ABC):
 
             if not product.filtered:
                 product = await self._url_collector.apply(product=product)
-            
+
             await queue_out.put(product)
             queue_in.task_done()
 
@@ -444,7 +444,7 @@ class Orchestrator(ABC):
         excluded_urls: List[Host] | None,
     ) -> None:
         """Adds all the (enriched) search_term (as serp items) to the queue.
-        
+
         One item consists of the following parameters:
             - search_term: The search term for the query.
             - search_term_type: The type of the search term (initial or enriched).
@@ -538,7 +538,9 @@ class Orchestrator(ABC):
 
         # Handle previously collected URLs
         if previously_collected_urls:
-            self._url_collector.add_previously_collected_urls(urls=previously_collected_urls)
+            self._url_collector.add_previously_collected_urls(
+                urls=previously_collected_urls
+            )
 
         # Setup the async framework
         n_terms_max = 1 + (

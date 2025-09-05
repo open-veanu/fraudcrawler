@@ -8,7 +8,10 @@ from urllib.parse import quote_plus
 import httpx
 from tenacity import RetryCallState, AsyncRetrying
 
-from fraudcrawler.settings import SEARCH_DEFAULT_COUNTRY_CODES, TOPPREISE_COMPARISON_PATHS
+from fraudcrawler.settings import (
+    SEARCH_DEFAULT_COUNTRY_CODES,
+    TOPPREISE_COMPARISON_PATHS,
+)
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils, ToppreiseUtils
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.scraping.zyte import ZyteAPI
@@ -394,9 +397,10 @@ class Toppreise(SearchEngine, ToppreiseUtils):
     def _search_engine_name(self) -> str:
         """The name of the search engine."""
         return SearchEngineName.TOPPREISE.value
-    
 
-    async def http_client_get_with_fallback(self, url: str, retry: AsyncRetrying) -> bytes:
+    async def http_client_get_with_fallback(
+        self, url: str, retry: AsyncRetrying
+    ) -> bytes:
         """Performs a GET request with retries.
 
         If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
@@ -434,7 +438,9 @@ class Toppreise(SearchEngine, ToppreiseUtils):
                 raise err_direct
         return content
 
-    async def _search(self, search_string: str, language: Language, num_results: int) -> List[str]:
+    async def _search(
+        self, search_string: str, language: Language, num_results: int
+    ) -> List[str]:
         """Performs a search on Toppreise and returns the URLs of the results.
 
         If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
@@ -524,9 +530,7 @@ class Searcher(DomainUtils):
         )
 
     @staticmethod
-    def _post_search_log_before(
-        url: str, retry_state: RetryCallState | None
-    ) -> None:
+    def _post_search_log_before(url: str, retry_state: RetryCallState | None) -> None:
         """Context aware logging before the request is made."""
         if retry_state:
             logger.debug(
@@ -549,7 +553,7 @@ class Searcher(DomainUtils):
             )
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
-    
+
     async def _post_search_toppreise(self, url: str) -> List[str]:
         """Post-search for product URLs from a Toppreise product listing page.
 
@@ -570,14 +574,18 @@ class Searcher(DomainUtils):
         retry.before_sleep = lambda retry_state: self._post_search_log_before_sleep(
             url=url, retry_state=retry_state
         )
-        content = await self._toppreise.http_client_get_with_fallback(url=url, retry=retry)
+        content = await self._toppreise.http_client_get_with_fallback(
+            url=url, retry=retry
+        )
 
         # Get external product urls from the content
         urls = self._toppreise._extract_comparison_product_urls(content=content)
 
         return urls
 
-    async def _post_search_product_extraction(self, results: List[SearchResult]) -> List[SearchResult]:
+    async def _post_search_product_extraction(
+        self, results: List[SearchResult]
+    ) -> List[SearchResult]:
         """Post-search for product URLs from the obtained results.
 
         Note:
@@ -593,9 +601,13 @@ class Searcher(DomainUtils):
 
             # Extract embedded product URLs from the Toppreise product listing page
             if any(pth in url for pth in TOPPREISE_COMPARISON_PATHS):
-                logger.debug(f'Extracting embedded product URLs from url="{url}" found by search_engine="{res.search_engine_name}"')
+                logger.debug(
+                    f'Extracting embedded product URLs from url="{url}" found by search_engine="{res.search_engine_name}"'
+                )
                 post_search_urls = await self._post_search_toppreise(url=url)
-                logger.debug(f'Extracted {len(post_search_urls)} embedded product URLs from url="{url}".')
+                logger.debug(
+                    f'Extracted {len(post_search_urls)} embedded product URLs from url="{url}".'
+                )
 
                 psr = [
                     SearchResult(
@@ -753,16 +765,17 @@ class Searcher(DomainUtils):
                 language=language,
                 num_results=num_results,
             )
-        
+
         # Other search engines can be added here (raise unknown engine error otherwise)
         else:
             raise ValueError(f"Unknown search engine: {search_engine}")
 
-
         # -------------------------------
         # POST-SEARCH URL EXTRACTION
         # -------------------------------
-        post_search_results = await self._post_search_product_extraction(results=results)
+        post_search_results = await self._post_search_product_extraction(
+            results=results
+        )
         post_search_results = post_search_results[:num_results]
         results.extend(post_search_results)
 
@@ -780,5 +793,7 @@ class Searcher(DomainUtils):
             for res in results
         ]
 
-        logger.info(f'Search for term="{search_term}" using engine="{search_engine}" produced {len(results)} results.')
+        logger.info(
+            f'Search for term="{search_term}" using engine="{search_engine}" produced {len(results)} results.'
+        )
         return results

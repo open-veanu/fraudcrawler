@@ -20,7 +20,7 @@ GOOGLE_LANGUAGES_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-languag
 SEARCH_DEFAULT_COUNTRY_CODES: List[str] = [
     # ".com",
 ]
-TOPPREISE_SEARCH_PATHS =  {
+TOPPREISE_SEARCH_PATHS = {
     "de": "produktsuche",
     "fr": "chercher",
     "default": "browse",

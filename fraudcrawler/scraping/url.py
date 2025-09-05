@@ -1,4 +1,3 @@
-from copy import deepcopy
 import logging
 from typing import List, Set, Tuple
 from urllib.parse import urlparse, parse_qsl, urlencode, quote, urlunparse, ParseResult
@@ -81,19 +80,15 @@ class URLCollector:
         # deduplicate on current run
         if url in self._collected_currently:
             product.filtered = True
-            product.filtered_at_stage = (
-                "URL collection (current run deduplication)"
-            )
+            product.filtered_at_stage = "URL collection (current run deduplication)"
             logger.debug(f"URL {url} already collected in current run")
 
         # deduplicate on previous runs coming from a db
         elif url in self._collected_previously:
             product.filtered = True
-            product.filtered_at_stage = (
-                "URL collection (previous run deduplication)"
-            )
+            product.filtered_at_stage = "URL collection (previous run deduplication)"
             logger.debug(f"URL {url} as already collected in previous run")
-        
+
         # Add to currently collected URLs
         else:
             self._collected_currently.add(url)
