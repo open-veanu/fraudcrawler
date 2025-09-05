@@ -580,13 +580,13 @@ class Searcher(DomainUtils):
         )
 
         # Get external product urls from the content
-        urls = self._toppreise._extract_product_urls_from_comparison_page(content=content)
+        urls = self._toppreise._extract_product_urls_from_comparison_page(
+            content=content
+        )
 
         return urls
 
-    async def _post_search(
-        self, results: List[SearchResult]
-    ) -> List[SearchResult]:
+    async def _post_search(self, results: List[SearchResult]) -> List[SearchResult]:
         """Post-search for additional embedded product URLs from the obtained results.
 
         Note:
@@ -774,9 +774,7 @@ class Searcher(DomainUtils):
         # -------------------------------
         # POST-SEARCH URL EXTRACTION
         # -------------------------------
-        post_search_results = await self._post_search(
-            results=results
-        )
+        post_search_results = await self._post_search(results=results)
         post_search_results = post_search_results[:num_results]
         results.extend(post_search_results)
 
