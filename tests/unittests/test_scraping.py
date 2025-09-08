@@ -250,7 +250,7 @@ def test_toppreise_get_search_endpoint(toppreise):
 
 
 def test_toppreise_extract_product_urls_from_search_page(toppreise):
-    with open(ROOT_DIR / "tests" / "data" / "toppreise_search.html", "rb") as f:
+    with open(ROOT_DIR / "tests" / "files" / "toppreise_search.html", "rb") as f:
         content = f.read()
     urls = toppreise._extract_product_urls_from_search_page(content=content)
     assert len(urls) == 23
@@ -265,7 +265,7 @@ def test_toppreise_extract_product_urls_from_search_page(toppreise):
 
 
 def test_toppreise_extract_product_urls_from_comparison_page(toppreise):
-    with open(ROOT_DIR / "tests" / "data" / "toppreise_comparison.html", "rb") as f:
+    with open(ROOT_DIR / "tests" / "files" / "toppreise_comparison.html", "rb") as f:
         content = f.read()
     urls = toppreise._extract_product_urls_from_comparison_page(content=content)
     assert len(urls) == 20
