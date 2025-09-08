@@ -113,6 +113,27 @@ class SerpAPI(SearchEngine):
         self._http_client = http_client
         self._api_key = api_key
 
+    async def http_client_get(
+        self, url: str, headers: dict, retry: AsyncRetrying
+    ) -> bytes:
+        """Performs a GET request with retries.
+
+        Args:
+            url: The URL to request.
+            headers: HTTP headers to use for the request.
+            retry: The retry strategy to use.
+        """
+        async for attempt in retry:
+            with attempt:
+                response = await self._http_client.get(
+                    url=url,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response.content
+        # This should never be reached due to retry logic, but mypy needs it
+        raise RuntimeError("Retry exhausted without success")
+
     @property
     @abstractmethod
     def _engine(self) -> str:
@@ -340,6 +361,21 @@ class SerpAPIGoogleShopping(SerpAPI):
             return [url for res in results if (url := res.get("product_link"))]
         return []
 
+    async def _fetch_google_shopping_page_content(self, url: str) -> bytes:
+        """Fetches the content of a Google Shopping product page.
+
+        Args:
+            url: The URL of the Google Shopping product page.
+
+        Returns:
+            The HTML content as bytes.
+        """
+        retry = get_async_retry()
+        content = await self.http_client_get(
+            url=url, headers=self._headers, retry=retry
+        )
+        return content
+
     @staticmethod
     def _extract_merchant_urls_from_shopping_page(content: bytes) -> List[str]:
         """Extracts merchant URLs from a Google Shopping product page.
@@ -352,32 +388,39 @@ class SerpAPIGoogleShopping(SerpAPI):
         """
         # Parse the HTML
         soup = BeautifulSoup(content, "html.parser")
-        
+
         merchant_urls = []
         for link in soup.find_all("a", href=True):
-            href = link.get("href")
-            if href and "/url?q=" in href:
-                # Extract the q parameter value (the actual merchant URL)
-                # Handle both &amp; and & as separators
-                href_clean = href.replace("&amp;", "&")
-                match = re.search(r'q=([^&]+)', href_clean)
-                if match:
-                    encoded_url = match.group(1)
-                    try:
-                        # URL decode the merchant URL
-                        merchant_url = unquote(encoded_url)
-                        # Only include URLs that look like merchant product pages
-                        if (merchant_url.startswith("http") and 
-                            not merchant_url.startswith("https://www.google.com") and
-                            not merchant_url.startswith("https://www.google.ch")):
-                            merchant_urls.append(merchant_url)
-                    except Exception as e:
-                        logger.debug(f"Failed to decode URL {encoded_url}: {e}")
-                        continue
+            if hasattr(link, "get"):
+                href = link.get("href")
+                if href and "/url?q=" in href:
+                    # Extract the q parameter value (the actual merchant URL)
+                    # Handle both &amp; and & as separators
+                    href_clean = href.replace("&amp;", "&")
+                    match = re.search(r"q=([^&]+)", href_clean)
+                    if match:
+                        encoded_url = match.group(1)
+                        try:
+                            # URL decode the merchant URL
+                            merchant_url = unquote(encoded_url)
+                            # Only include URLs that look like merchant product pages
+                            if (
+                                merchant_url.startswith("http")
+                                and not merchant_url.startswith(
+                                    "https://www.google.com"
+                                )
+                                and not merchant_url.startswith("https://www.google.ch")
+                            ):
+                                merchant_urls.append(merchant_url)
+                        except Exception as e:
+                            logger.debug(f"Failed to decode URL {encoded_url}: {e}")
+                            continue
 
         # Return deduplicated URLs
         merchant_urls = list(set(merchant_urls))
-        logger.debug(f"Found {len(merchant_urls)} merchant URLs from Google Shopping product page.")
+        logger.debug(
+            f"Found {len(merchant_urls)} merchant URLs from Google Shopping product page."
+        )
         return merchant_urls
 
     async def search(
@@ -389,6 +432,9 @@ class SerpAPIGoogleShopping(SerpAPI):
         marketplaces: List[Host] | None = None,
     ) -> List[SearchResult]:
         """Performs a google shopping search using SerpApi and returns SearchResults.
+
+        Similar to Toppreise, this method extracts merchant URLs from Google Shopping product pages
+        and creates multiple SearchResult objects for each merchant URL found.
 
         Args:
             search_term: The search term to use for the query.
@@ -403,8 +449,8 @@ class SerpAPIGoogleShopping(SerpAPI):
             marketplaces=marketplaces,
         )
 
-        # Perform the search
-        urls = await self._search(
+        # Perform the search to get Google Shopping URLs
+        google_shopping_urls = await self._search(
             search_string=search_string,
             language=language,
             location=location,
@@ -414,12 +460,33 @@ class SerpAPIGoogleShopping(SerpAPI):
         # !!! NOTE !!!: Google Shopping results do not properly support the 'num' parameter,
         # so we might get more results than requested. This is a known issue with SerpAPI
         # and Google Shopping searches (see https://github.com/serpapi/public-roadmap/issues/1858)
-        urls = urls[:num_results]
+        google_shopping_urls = google_shopping_urls[:num_results]
 
-        # Create and return SearchResult objects from the URLs
-        results = [self._create_search_result(url=url) for url in urls]
+        # Extract merchant URLs from each Google Shopping product page (similar to Toppreise)
+        all_merchant_urls = []
+        for gs_url in google_shopping_urls:
+            logger.debug(
+                f"Extracting merchant URLs from Google Shopping product page: {gs_url}"
+            )
+            try:
+                # Fetch the Google Shopping page content
+                content = await self._fetch_google_shopping_page_content(gs_url)
+                # Extract merchant URLs from the page content
+                merchant_urls = self._extract_merchant_urls_from_shopping_page(content)
+                logger.debug(f"Found {len(merchant_urls)} merchant URLs from {gs_url}")
+                all_merchant_urls.extend(merchant_urls)
+            except Exception as e:
+                logger.warning(f"Failed to extract merchant URLs from {gs_url}: {e}")
+                continue
+
+        # Create SearchResult objects from merchant URLs (similar to Toppreise pattern)
+        results = [
+            self._create_search_result(url=merchant_url)
+            for merchant_url in all_merchant_urls
+        ]
+
         logger.debug(
-            f'Produced {len(results)} results from SerpAPI with engine="{self._engine}" and q="{search_string}".'
+            f'Produced {len(results)} merchant results from {len(google_shopping_urls)} Google Shopping URLs with q="{search_string}".'
         )
         return results
 
@@ -438,6 +505,47 @@ class Toppreise(SearchEngine):
         """
         self._http_client = http_client
         self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key)
+
+    async def http_client_get_with_fallback(
+        self, url: str, headers: dict, retry: AsyncRetrying
+    ) -> bytes:
+        """Performs a GET request with retries.
+
+        If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
+        content using Zyte proxy mode.
+
+        Args:
+            url: The URL to request.
+            headers: HTTP headers to use for the request.
+            retry: The retry strategy to use.
+        """
+        # Try to access the URL directly
+        try:
+            async for attempt in retry:
+                with attempt:
+                    response = await self._http_client.get(
+                        url=url,
+                        headers=headers,
+                    )
+                    response.raise_for_status()
+                    content = response.content
+
+        # If we get a 403 Error (can happen depending on IP/location of deployment),
+        # we try to unblock the URL using Zyte proxy mode
+        except httpx.HTTPStatusError as err_direct:
+            if err_direct.response.status_code == 403:
+                logger.warning(
+                    f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
+                )
+                try:
+                    content = await self._zyteapi.unblock_url_content(url)
+                except Exception as err_resolve:
+                    msg = f'Error unblocking URL="{url}" with Zyte proxy: {err_resolve}'
+                    logger.error(msg)
+                    raise httpx.HTTPError(msg) from err_resolve
+            else:
+                raise err_direct
+        return content
 
     @classmethod
     def _get_search_endpoint(cls, language: Language) -> str:
@@ -535,46 +643,6 @@ class Toppreise(SearchEngine):
         """The name of the search engine."""
         return SearchEngineName.TOPPREISE.value
 
-    async def http_client_get_with_fallback(
-        self, url: str, retry: AsyncRetrying
-    ) -> bytes:
-        """Performs a GET request with retries.
-
-        If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
-        content using Zyte proxy mode.
-
-        Args:
-            url: The URL to request.
-            retry: The retry strategy to use.
-        """
-        # Try to access the URL directly
-        try:
-            async for attempt in retry:
-                with attempt:
-                    response = await self._http_client.get(
-                        url=url,
-                        headers=self._headers,
-                    )
-                    response.raise_for_status()
-                    content = response.content
-
-        # If we get a 403 Error (can happen depending on IP/location of deployment),
-        # we try to unblock the URL using Zyte proxy mode
-        except httpx.HTTPStatusError as err_direct:
-            if err_direct.response.status_code == 403:
-                logger.warning(
-                    f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
-                )
-                try:
-                    content = await self._zyteapi.unblock_url_content(url)
-                except Exception as err_resolve:
-                    msg = f'Error unblocking URL="{url}" with Zyte proxy: {err_resolve}'
-                    logger.error(msg)
-                    raise httpx.HTTPError(msg) from err_resolve
-            else:
-                raise err_direct
-        return content
-
     async def _search(
         self, search_string: str, language: Language, num_results: int
     ) -> List[str]:
@@ -604,7 +672,9 @@ class Toppreise(SearchEngine):
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
             search_string=search_string, retry_state=retry_state
         )
-        content = await self.http_client_get_with_fallback(url=url, retry=retry)
+        content = await self.http_client_get_with_fallback(
+            url=url, headers=self._headers, retry=retry
+        )
 
         # Get external product urls from the content
         urls = self._extract_product_urls_from_search_page(content=content)
@@ -713,7 +783,7 @@ class Searcher(DomainUtils):
             url=url, retry_state=retry_state
         )
         content = await self._toppreise.http_client_get_with_fallback(
-            url=url, retry=retry
+            url=url, headers=self._toppreise._headers, retry=retry
         )
 
         # Get external product urls from the content
@@ -723,40 +793,8 @@ class Searcher(DomainUtils):
 
         return urls
 
-    async def _post_search_google_shopping(self, url: str) -> List[str]:
-        """Post-search for merchant URLs from a Google Shopping product page.
-
-        Note:
-            This function extracts merchant URLs from Google Shopping product pages
-            (e.g. https://www.google.com/shopping/product/...). The merchant URLs
-            are embedded in Google redirect URLs in the Buying Options section.
-
-        Args:
-            url: The URL of the Google Shopping product page.
-        """
-        # Perform the request and retry if necessary. There is some context aware logging:
-        #  - `before`: before the request is made (and before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
-        retry = get_async_retry(stop_after=self._post_search_retry_stop_after)
-        retry.before = lambda retry_state: self._post_search_log_before(
-            url=url, retry_state=retry_state
-        )
-        retry.before_sleep = lambda retry_state: self._post_search_log_before_sleep(
-            url=url, retry_state=retry_state
-        )
-        
-        async for attempt in retry:
-            with attempt:
-                response = await self._http_client.get(url=url, headers=self._headers)
-                response.raise_for_status()
-                content = response.content
-
-        # Get merchant URLs from the content
-        urls = self._google_shopping._extract_merchant_urls_from_shopping_page(
-            content=content
-        )
-
-        return urls
+    # Note: _post_search_google_shopping method removed - Google Shopping post-processing
+    # is now handled directly in SerpAPIGoogleShopping.search() method
 
     async def _post_search(self, results: List[SearchResult]) -> List[SearchResult]:
         """Post-search for additional embedded product URLs from the obtained results.
@@ -792,25 +830,8 @@ class Searcher(DomainUtils):
                 ]
                 post_search_results.extend(psr)
 
-            # Extract merchant URLs from Google Shopping product pages
-            elif "google" in url and "/shopping/product/" in url:
-                logger.debug(
-                    f'Extracting merchant URLs from Google Shopping product page url="{url}" found by search_engine="{res.search_engine_name}"'
-                )
-                post_search_urls = await self._post_search_google_shopping(url=url)
-                logger.info(
-                    f'Extracted {len(post_search_urls)} merchant URLs from Google Shopping product page url="{url}".'
-                )
-
-                psr = [
-                    SearchResult(
-                        url=psu,
-                        domain=self._get_domain(url=psu),
-                        search_engine_name=res.search_engine_name,
-                    )
-                    for psu in post_search_urls
-                ]
-                post_search_results.extend(psr)
+            # Note: Google Shopping post-processing is now handled directly in SerpAPIGoogleShopping.search()
+            # This section is intentionally left empty for Google Shopping URLs
 
         return post_search_results
 
