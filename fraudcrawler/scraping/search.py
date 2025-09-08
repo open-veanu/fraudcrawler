@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 import logging
+import re
 from pydantic import BaseModel
 from typing import Dict, List
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -339,6 +340,46 @@ class SerpAPIGoogleShopping(SerpAPI):
             return [url for res in results if (url := res.get("product_link"))]
         return []
 
+    @staticmethod
+    def _extract_merchant_urls_from_shopping_page(content: bytes) -> List[str]:
+        """Extracts merchant URLs from a Google Shopping product page.
+
+        Args:
+            content: The HTML content of the Google Shopping product page.
+
+        Returns:
+            List of merchant URLs extracted from the Buying Options.
+        """
+        # Parse the HTML
+        soup = BeautifulSoup(content, "html.parser")
+        
+        merchant_urls = []
+        for link in soup.find_all("a", href=True):
+            href = link.get("href")
+            if href and "/url?q=" in href:
+                # Extract the q parameter value (the actual merchant URL)
+                # Handle both &amp; and & as separators
+                href_clean = href.replace("&amp;", "&")
+                match = re.search(r'q=([^&]+)', href_clean)
+                if match:
+                    encoded_url = match.group(1)
+                    try:
+                        # URL decode the merchant URL
+                        merchant_url = unquote(encoded_url)
+                        # Only include URLs that look like merchant product pages
+                        if (merchant_url.startswith("http") and 
+                            not merchant_url.startswith("https://www.google.com") and
+                            not merchant_url.startswith("https://www.google.ch")):
+                            merchant_urls.append(merchant_url)
+                    except Exception as e:
+                        logger.debug(f"Failed to decode URL {encoded_url}: {e}")
+                        continue
+
+        # Return deduplicated URLs
+        merchant_urls = list(set(merchant_urls))
+        logger.debug(f"Found {len(merchant_urls)} merchant URLs from Google Shopping product page.")
+        return merchant_urls
+
     async def search(
         self,
         search_term: str,
@@ -387,14 +428,6 @@ class Toppreise(SearchEngine):
     """Search engine for toppreise.ch."""
 
     _endpoint = "https://www.toppreise.ch/"
-    _headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-    }
 
     def __init__(self, http_client: httpx.AsyncClient, zyteapi_key: str):
         """Initializes the Toppreise client.
@@ -690,6 +723,41 @@ class Searcher(DomainUtils):
 
         return urls
 
+    async def _post_search_google_shopping(self, url: str) -> List[str]:
+        """Post-search for merchant URLs from a Google Shopping product page.
+
+        Note:
+            This function extracts merchant URLs from Google Shopping product pages
+            (e.g. https://www.google.com/shopping/product/...). The merchant URLs
+            are embedded in Google redirect URLs in the Buying Options section.
+
+        Args:
+            url: The URL of the Google Shopping product page.
+        """
+        # Perform the request and retry if necessary. There is some context aware logging:
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry(stop_after=self._post_search_retry_stop_after)
+        retry.before = lambda retry_state: self._post_search_log_before(
+            url=url, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._post_search_log_before_sleep(
+            url=url, retry_state=retry_state
+        )
+        
+        async for attempt in retry:
+            with attempt:
+                response = await self._http_client.get(url=url, headers=self._headers)
+                response.raise_for_status()
+                content = response.content
+
+        # Get merchant URLs from the content
+        urls = self._google_shopping._extract_merchant_urls_from_shopping_page(
+            content=content
+        )
+
+        return urls
+
     async def _post_search(self, results: List[SearchResult]) -> List[SearchResult]:
         """Post-search for additional embedded product URLs from the obtained results.
 
@@ -712,6 +780,26 @@ class Searcher(DomainUtils):
                 post_search_urls = await self._post_search_toppreise_comparison(url=url)
                 logger.debug(
                     f'Extracted {len(post_search_urls)} embedded product URLs from url="{url}".'
+                )
+
+                psr = [
+                    SearchResult(
+                        url=psu,
+                        domain=self._get_domain(url=psu),
+                        search_engine_name=res.search_engine_name,
+                    )
+                    for psu in post_search_urls
+                ]
+                post_search_results.extend(psr)
+
+            # Extract merchant URLs from Google Shopping product pages
+            elif "google" in url and "/shopping/product/" in url:
+                logger.debug(
+                    f'Extracting merchant URLs from Google Shopping product page url="{url}" found by search_engine="{res.search_engine_name}"'
+                )
+                post_search_urls = await self._post_search_google_shopping(url=url)
+                logger.info(
+                    f'Extracted {len(post_search_urls)} merchant URLs from Google Shopping product page url="{url}".'
                 )
 
                 psr = [
