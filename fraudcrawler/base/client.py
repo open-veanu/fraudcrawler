@@ -103,7 +103,7 @@ class FraudCrawlerClient(Orchestrator):
         search_engines: List[SearchEngineName | str] | None = None,
         previously_collected_urls: List[str] | None = None,
     ) -> None:
-        """Runs the pipeline steps: serp, enrich, zyte, process, and collect the results.
+        """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
         Args:
             search_term: The search term for the query.

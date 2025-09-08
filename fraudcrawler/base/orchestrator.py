@@ -10,8 +10,8 @@ from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,
 )
 from fraudcrawler.settings import (
-    DEFAULT_N_SERP_WKRS,
-    DEFAULT_N_ZYTE_WKRS,
+    DEFAULT_N_SRCH_WKRS,
+    DEFAULT_N_CNTX_WKRS,
     DEFAULT_N_PROC_WKRS,
 )
 from fraudcrawler.base.base import (
@@ -59,8 +59,8 @@ class Orchestrator(ABC):
         zyteapi_key: str,
         openaiapi_key: str,
         openai_model: str = PROCESSOR_DEFAULT_MODEL,
-        n_serp_wkrs: int = DEFAULT_N_SERP_WKRS,
-        n_zyte_wkrs: int = DEFAULT_N_ZYTE_WKRS,
+        n_srch_wkrs: int = DEFAULT_N_SRCH_WKRS,
+        n_cntx_wkrs: int = DEFAULT_N_CNTX_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
         # Configure a custom httpx client.
         # We provide a `HttpxAsyncClient` class that you can pass
@@ -81,8 +81,8 @@ class Orchestrator(ABC):
             zyteapi_key: The API key for Zyte API.
             openaiapi_key: The API key for OpenAI.
             openai_model: The model to use for the processing (optional).
-            n_serp_wkrs: Number of async workers for serp (optional).
-            n_zyte_wkrs: Number of async workers for zyte (optional).
+            n_srch_wkrs: Number of async workers for the search (optional).
+            n_cntx_wkrs: Number of async workers for context extraction (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
             http_client: An httpx.AsyncClient to use for the async requests (optional).
         """
@@ -96,8 +96,8 @@ class Orchestrator(ABC):
         self._openai_model = openai_model
 
         # Setup the async framework
-        self._n_serp_wkrs = n_serp_wkrs
-        self._n_zyte_wkrs = n_zyte_wkrs
+        self._n_srch_wkrs = n_srch_wkrs
+        self._n_cntx_wkrs = n_cntx_wkrs
         self._n_proc_wkrs = n_proc_wkrs
         self._queues: Dict[str, asyncio.Queue] | None = None
         self._workers: Dict[str, List[asyncio.Task] | asyncio.Task] | None = None
@@ -143,7 +143,7 @@ class Orchestrator(ABC):
             await self._http_client.aclose()
             self._http_client = None
 
-    async def _serp_execute(
+    async def _srch_execute(
         self,
         queue_in: asyncio.Queue[dict | None],
         queue_out: asyncio.Queue[ProductItem | None],
@@ -208,7 +208,7 @@ class Orchestrator(ABC):
             await queue_out.put(product)
             queue_in.task_done()
 
-    async def _zyte_execute(
+    async def _cntx_execute(
         self,
         queue_in: asyncio.Queue[ProductItem | None],
         queue_out: asyncio.Queue[ProductItem | None],
@@ -227,7 +227,7 @@ class Orchestrator(ABC):
 
             if not product.filtered:
                 try:
-                    # Fetch the product details from Zyte API
+                    # Fetch the product context from Zyte API
                     details = await self._zyteapi.details(url=product.url)
                     url_resolved = self._zyteapi.extract_url_resolved(details=details)
                     if url_resolved:
@@ -237,7 +237,8 @@ class Orchestrator(ABC):
                     )
 
                     # If the resolved URL is different from the original URL, we also need to update the domain as
-                    # otherwise the unresolved domain will be shown, for example for unresolved domain toppreis.ch but resolved digitec.ch
+                    # otherwise the unresolved domain will be shown.
+                    # For example for an unresolved domain "toppreise.ch" but resolved "digitec.ch
                     if url_resolved and url_resolved != product.url:
                         logger.debug(
                             f"URL resolved for {product.url} is {url_resolved}"
@@ -327,52 +328,52 @@ class Orchestrator(ABC):
 
     def _setup_async_framework(
         self,
-        n_serp_wkrs: int,
-        n_zyte_wkrs: int,
+        n_srch_wkrs: int,
+        n_cntx_wkrs: int,
         n_proc_wkrs: int,
         prompts: List[Prompt],
     ) -> None:
         """Sets up the necessary queues and workers for the async framework.
 
         Args:
-            n_serp_wkrs: Number of async workers for serp.
-            n_zyte_wkrs: Number of async workers for zyte.
-            n_proc_wkrs: Number of async workers for processor.
+            n_srch_wkrs: Number of async workers for search.
+            n_cntx_wkrs: Number of async workers for context extraction.
+            n_proc_wkrs: Number of async workers for processing.
             prompts: The list of prompts used for the classification by func:`Processor.classify`.
         """
 
         # Setup the input/output queues for the workers
-        serp_queue: asyncio.Queue[dict | None] = asyncio.Queue()
+        srch_queue: asyncio.Queue[dict | None] = asyncio.Queue()
         url_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
-        zyte_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
+        cntx_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
         proc_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
         res_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
 
-        # Setup the Serp workers
-        serp_wkrs = [
+        # Setup the Search workers
+        srch_wkrs = [
             asyncio.create_task(
-                self._serp_execute(
-                    queue_in=serp_queue,
+                self._srch_execute(
+                    queue_in=srch_queue,
                     queue_out=url_queue,
                 )
             )
-            for _ in range(n_serp_wkrs)
+            for _ in range(n_srch_wkrs)
         ]
 
         # Setup the URL collector
         url_col = asyncio.create_task(
-            self._collect_url(queue_in=url_queue, queue_out=zyte_queue)
+            self._collect_url(queue_in=url_queue, queue_out=cntx_queue)
         )
 
-        # Setup the Zyte workers
-        zyte_wkrs = [
+        # Setup the context extraction workers
+        cntx_wkrs = [
             asyncio.create_task(
-                self._zyte_execute(
-                    queue_in=zyte_queue,
+                self._cntx_execute(
+                    queue_in=cntx_queue,
                     queue_out=proc_queue,
                 )
             )
-            for _ in range(n_zyte_wkrs)
+            for _ in range(n_cntx_wkrs)
         ]
 
         # Setup the processing workers
@@ -392,22 +393,22 @@ class Orchestrator(ABC):
 
         # Add the setup to the instance variables
         self._queues = {
-            "serp": serp_queue,
+            "srch": srch_queue,
             "url": url_queue,
-            "zyte": zyte_queue,
+            "cntx": cntx_queue,
             "proc": proc_queue,
             "res": res_queue,
         }
         self._workers = {
-            "serp": serp_wkrs,
+            "srch": srch_wkrs,
             "url": url_col,
-            "zyte": zyte_wkrs,
+            "cntx": cntx_wkrs,
             "proc": proc_wkrs,
             "res": res_col,
         }
 
     @staticmethod
-    async def _add_serp_items_for_search_term(
+    async def _add_search_items_for_search_term(
         queue: asyncio.Queue[dict | None],
         search_term: str,
         search_term_type: str,
@@ -429,10 +430,10 @@ class Orchestrator(ABC):
             "marketplaces": marketplaces,
             "excluded_urls": excluded_urls,
         }
-        logger.debug(f'Adding item="{item}" to serp_queue')
+        logger.debug(f'Adding item="{item}" to srch_queue')
         await queue.put(item)
 
-    async def _add_serp_items(
+    async def _add_srch_items(
         self,
         queue: asyncio.Queue[dict | None],
         search_term: str,
@@ -443,7 +444,7 @@ class Orchestrator(ABC):
         marketplaces: List[Host] | None,
         excluded_urls: List[Host] | None,
     ) -> None:
-        """Adds all the (enriched) search_term (as serp items) to the queue.
+        """Adds all the (enriched) search_term (as srch items) to the queue.
 
         One item consists of the following parameters:
             - search_term: The search term for the query.
@@ -468,9 +469,9 @@ class Orchestrator(ABC):
             "excluded_urls": excluded_urls,
         }
 
-        # Add initial items to the serp_queue
+        # Add initial items to the queue
         for se in search_engines:
-            await self._add_serp_items_for_search_term(
+            await self._add_search_items_for_search_term(
                 search_term=search_term,
                 search_term_type="initial",
                 search_engine=se,
@@ -490,10 +491,10 @@ class Orchestrator(ABC):
                 n_terms=n_terms,
             )
 
-            # Add the enriched search terms to the serp_queue
+            # Add the enriched search terms to the queue
             for trm in terms:
                 for se in search_engines:
-                    await self._add_serp_items_for_search_term(
+                    await self._add_search_items_for_search_term(
                         search_term=trm,
                         search_term_type="enriched",
                         search_engine=se,
@@ -513,7 +514,7 @@ class Orchestrator(ABC):
         excluded_urls: List[Host] | None = None,
         previously_collected_urls: List[str] | None = None,
     ) -> None:
-        """Runs the pipeline steps: serp, enrich, zyte, process, and collect the results.
+        """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
         Args:
             search_term: The search term for the query.
@@ -546,16 +547,16 @@ class Orchestrator(ABC):
         n_terms_max = 1 + (
             deepness.enrichment.additional_terms if deepness.enrichment else 0
         )
-        n_serp_wkrs = min(self._n_serp_wkrs, n_terms_max)
-        n_zyte_wkrs = min(self._n_zyte_wkrs, deepness.num_results)
+        n_srch_wkrs = min(self._n_srch_wkrs, n_terms_max)
+        n_cntx_wkrs = min(self._n_cntx_wkrs, deepness.num_results)
         n_proc_wkrs = min(self._n_proc_wkrs, deepness.num_results)
 
         logger.debug(
-            f"setting up async framework (#workers: serp={n_serp_wkrs}, zyte={n_zyte_wkrs}, proc={n_proc_wkrs})"
+            f"setting up async framework (#workers: srch={n_srch_wkrs}, cntx={n_cntx_wkrs}, proc={n_proc_wkrs})"
         )
         self._setup_async_framework(
-            n_serp_wkrs=n_serp_wkrs,
-            n_zyte_wkrs=n_zyte_wkrs,
+            n_srch_wkrs=n_srch_wkrs,
+            n_cntx_wkrs=n_cntx_wkrs,
             n_proc_wkrs=n_proc_wkrs,
             prompts=prompts,
         )
@@ -565,21 +566,21 @@ class Orchestrator(ABC):
             raise ValueError(
                 "Async framework is not setup. Please call _setup_async_framework() first."
             )
-        if not all([k in self._queues for k in ["serp", "url", "zyte", "proc", "res"]]):
+        if not all([k in self._queues for k in ["srch", "url", "cntx", "proc", "res"]]):
             raise ValueError(
                 "The queues of the async framework are not setup correctly."
             )
         if not all(
-            [k in self._workers for k in ["serp", "url", "zyte", "proc", "res"]]
+            [k in self._workers for k in ["srch", "url", "cntx", "proc", "res"]]
         ):
             raise ValueError(
                 "The workers of the async framework are not setup correctly."
             )
 
-        # Add the search items to the serp_queue
-        serp_queue = self._queues["serp"]
-        await self._add_serp_items(
-            queue=serp_queue,
+        # Add the search items to the srch_queue
+        srch_queue = self._queues["srch"]
+        await self._add_srch_items(
+            queue=srch_queue,
             search_term=search_term,
             search_engines=search_engines,
             language=language,
@@ -589,26 +590,26 @@ class Orchestrator(ABC):
             excluded_urls=excluded_urls,
         )
 
-        # ---------------------------
-        #   ORCHESTRATE SERP WORKERS
-        # ---------------------------
-        # Add the sentinels to the serp_queue
-        for _ in range(n_serp_wkrs):
-            await serp_queue.put(None)
+        # -----------------------------
+        #  ORCHESTRATE SEARCH WORKERS
+        # -----------------------------
+        # Add the sentinels to the srch_queue
+        for _ in range(n_srch_wkrs):
+            await srch_queue.put(None)
 
-        # Wait for the serp workers to be concluded before adding the sentinels to the url_queue
-        serp_workers = self._workers["serp"]
+        # Wait for the srch workers to be concluded before adding the sentinels to the url_queue
+        srch_workers = self._workers["srch"]
         try:
-            logger.debug("Waiting for serp_workers to conclude their tasks...")
-            serp_res = await asyncio.gather(*serp_workers, return_exceptions=True)
-            for i, res in enumerate(serp_res):
+            logger.debug("Waiting for srch_workers to conclude their tasks...")
+            srch_res = await asyncio.gather(*srch_workers, return_exceptions=True)
+            for i, res in enumerate(srch_res):
                 if isinstance(res, Exception):
-                    logger.error(f"Error in serp_worker {i}: {res}")
-            logger.debug("...serp_workers concluded their tasks")
+                    logger.error(f"Error in srch_worker {i}: {res}")
+            logger.debug("...srch_workers concluded their tasks")
         except Exception as e:
-            logger.error(f"Gathering serp_workers failed: {e}")
+            logger.error(f"Gathering srch_workers failed: {e}")
         finally:
-            await serp_queue.join()
+            await srch_queue.join()
 
         # ---------------------------
         #  ORCHESTRATE URL COLLECTOR
@@ -617,7 +618,7 @@ class Orchestrator(ABC):
         url_queue = self._queues["url"]
         await url_queue.put(None)
 
-        # Wait for the url_collector to be concluded before adding the sentinels to the zyte_queue
+        # Wait for the url_collector to be concluded before adding the sentinels to the cntx_queue
         url_collector = cast(asyncio.Task, self._workers["url"])
         try:
             logger.debug("Waiting for url_collector to conclude its tasks...")
@@ -628,27 +629,27 @@ class Orchestrator(ABC):
         finally:
             await url_queue.join()
 
-        # ---------------------------
-        #  ORCHESTRATE ZYTE WORKERS
-        # ---------------------------
-        # Add the sentinels to the zyte_queue
-        zyte_queue = self._queues["zyte"]
-        for _ in range(n_zyte_wkrs):
-            await zyte_queue.put(None)
+        # -----------------------------
+        #  ORCHESTRATE CONTEXT WORKERS
+        # -----------------------------
+        # Add the sentinels to the cntx_queue
+        cntx_queue = self._queues["cntx"]
+        for _ in range(n_cntx_wkrs):
+            await cntx_queue.put(None)
 
-        # Wait for the zyte_workers to be concluded before adding the sentinels to the proc_queue
-        zyte_workers = self._workers["zyte"]
+        # Wait for the cntx_workers to be concluded before adding the sentinels to the proc_queue
+        cntx_workers = self._workers["cntx"]
         try:
-            logger.debug("Waiting for zyte_workers to conclude their tasks...")
-            zyte_res = await asyncio.gather(*zyte_workers, return_exceptions=True)
-            for i, res in enumerate(zyte_res):
+            logger.debug("Waiting for cntx_workers to conclude their tasks...")
+            cntx_res = await asyncio.gather(*cntx_workers, return_exceptions=True)
+            for i, res in enumerate(cntx_res):
                 if isinstance(res, Exception):
-                    logger.error(f"Error in zyte_worker {i}: {res}")
-            logger.debug("...zyte_workers concluded their tasks")
+                    logger.error(f"Error in cntx_worker {i}: {res}")
+            logger.debug("...cntx_workers concluded their tasks")
         except Exception as e:
-            logger.error(f"Gathering zyte_workers failed: {e}")
+            logger.error(f"Gathering cntx_workers failed: {e}")
         finally:
-            await zyte_queue.join()
+            await cntx_queue.join()
 
         # ---------------------------
         #  ORCHESTRATE PROC WORKERS

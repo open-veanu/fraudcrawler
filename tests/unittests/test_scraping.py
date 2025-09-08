@@ -18,6 +18,7 @@ from fraudcrawler.scraping.search import (
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 from fraudcrawler.scraping.search import SerpAPI
+from fraudcrawler.settings import ROOT_DIR
 
 
 @pytest_asyncio.fixture
@@ -232,6 +233,46 @@ async def test_toppreise_search(toppreise):
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
     assert all(res.search_engine_name == "toppreise" for res in results)
+
+
+def test_toppreise_get_search_endpoint(toppreise):
+    language = Language(name="German", code="de")
+    endpoint = toppreise._get_search_endpoint(language=language)
+    assert endpoint == "https://www.toppreise.ch/produktsuche"
+
+    language = Language(name="French", code="fr")
+    endpoint = toppreise._get_search_endpoint(language=language)
+    assert endpoint == "https://www.toppreise.ch/chercher"
+
+    language = Language(name="English", code="en")
+    endpoint = toppreise._get_search_endpoint(language=language)
+    assert endpoint == "https://www.toppreise.ch/browse"
+
+
+def test_toppreise_extract_product_urls_from_search_page(toppreise):
+    with open(ROOT_DIR / "tests" / "data" / "toppreise_search.html", "rb") as f:
+        content = f.read()
+    urls = toppreise._extract_product_urls_from_search_page(content=content)
+    assert len(urls) == 23
+    assert (
+        "https://www.toppreise.ch/preisvergleich/Kuehl-Gefrierkombinationen/LIEBHERR-CT-2531-p615781?selsort=rd"
+        in urls
+    )
+    assert (
+        "https://www.toppreise.ch/ext_de?pid=0&did=2511&oid=506961161&gdt=MjAyNS0wOS0wNCAyMjo0Mjo0OQ==&slsrt=rd&prcst=shipping&lpos=10"
+        in urls
+    )
+
+
+def test_toppreise_extract_product_urls_from_comparison_page(toppreise):
+    with open(ROOT_DIR / "tests" / "data" / "toppreise_comparison.html", "rb") as f:
+        content = f.read()
+    urls = toppreise._extract_product_urls_from_comparison_page(content=content)
+    assert len(urls) == 20
+    assert (
+        "https://www.toppreise.ch/ext_de?pid=615781&did=2532&oid=493842592&gdt=MjAyNS0wOS0wNCAyMjo0NDoyMw==&slsrt=pa&prcst=shipping&lpos=5"
+        in urls
+    )
 
 
 @pytest.mark.asyncio
