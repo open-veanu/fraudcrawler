@@ -3,6 +3,7 @@ from typing import List, Set, Tuple
 from urllib.parse import urlparse, parse_qsl, urlencode, quote, urlunparse, ParseResult
 
 from fraudcrawler.settings import KNOWN_TRACKERS
+from fraudcrawler.base.base import ProductItem
 
 logger = logging.getLogger(__name__)
 
@@ -11,11 +12,19 @@ class URLCollector:
     """A class to collect and de-duplicate URLs."""
 
     def __init__(self):
-        self.collected_currently: Set[str] = set()
-        self.collected_previously: Set[str] = set()
+        self._collected_currently: Set[str] = set()
+        self._collected_previously: Set[str] = set()
+
+    def add_previously_collected_urls(self, urls: List[str]) -> None:
+        """Add a set of previously collected URLs to the internal state.
+
+        Args:
+            urls: A set of URLs that have been collected in previous runs.
+        """
+        self._collected_previously.update(urls)
 
     @staticmethod
-    def remove_tracking_parameters(url: str) -> str:
+    def _remove_tracking_parameters(url: str) -> str:
         """Remove tracking parameters from URLs.
 
         Args:
@@ -55,3 +64,33 @@ class URLCollector:
             fragment=parsed_url.fragment,
         )
         return urlunparse(clean_url)
+
+    async def apply(self, product: ProductItem) -> ProductItem:
+        """Manages the collection and deduplication of ProductItems.
+
+        Args:
+            product: The product item to process.
+        """
+        logger.debug(f'Processing product with  url="{product.url}"')
+
+        # Remove tracking parameters from the URL
+        url = self._remove_tracking_parameters(product.url)
+        product.url = url
+
+        # deduplicate on current run
+        if url in self._collected_currently:
+            product.filtered = True
+            product.filtered_at_stage = "URL collection (current run deduplication)"
+            logger.debug(f"URL {url} already collected in current run")
+
+        # deduplicate on previous runs coming from a db
+        elif url in self._collected_previously:
+            product.filtered = True
+            product.filtered_at_stage = "URL collection (previous run deduplication)"
+            logger.debug(f"URL {url} as already collected in previous run")
+
+        # Add to currently collected URLs
+        else:
+            self._collected_currently.add(url)
+
+        return product

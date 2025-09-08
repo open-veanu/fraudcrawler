@@ -8,6 +8,7 @@ from fraudcrawler.base.base import (
     Enrichment,
     Deepness,
     Prompt,
+    DomainUtils,
 )
 
 
@@ -106,3 +107,19 @@ def test_prompt():
             product_item_fields=product_item_fields,
             allowed_classes=[0.5, 1],
         )
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("http://www.google.com/search?q=x", "google.com"),
+        ("https://Google.com", "google.com"),
+        ("example.com", "example.com"),
+        ("www.example.com", "example.com"),
+        ("sub.domain.co.uk", "sub.domain.co.uk"),
+        ("https://www.sub.example.co.uk:8080/path", "sub.example.co.uk"),
+    ],
+)
+def test_domain_utils_get_domain(url, expected):
+    du = DomainUtils()
+    assert du._get_domain(url) == expected

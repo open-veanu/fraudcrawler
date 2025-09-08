@@ -6,10 +6,15 @@ from typing import Dict, List
 from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
+from bs4.element import Tag
 import httpx
-from tenacity import RetryCallState
+from tenacity import RetryCallState, AsyncRetrying
 
-from fraudcrawler.settings import SEARCH_DEFAULT_COUNTRY_CODES
+from fraudcrawler.settings import (
+    SEARCH_DEFAULT_COUNTRY_CODES,
+    TOPPREISE_SEARCH_PATHS,
+    TOPPREISE_COMPARISON_PATHS,
+)
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.scraping.zyte import ZyteAPI
@@ -381,7 +386,7 @@ class SerpAPIGoogleShopping(SerpAPI):
 class Toppreise(SearchEngine):
     """Search engine for toppreise.ch."""
 
-    _endpoint = "https://www.toppreise.ch/produktsuche"
+    _endpoint = "https://www.toppreise.ch/"
     _headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -401,18 +406,32 @@ class Toppreise(SearchEngine):
         self._http_client = http_client
         self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key)
 
-    @property
-    def _search_engine_name(self) -> str:
-        """The name of the search engine."""
-        return SearchEngineName.TOPPREISE.value
+    @classmethod
+    def _get_search_endpoint(cls, language: Language) -> str:
+        """Get the search endpoint based on the language."""
+        search_path = TOPPREISE_SEARCH_PATHS.get(
+            language.code, TOPPREISE_SEARCH_PATHS["default"]
+        )
+        return f"{cls._endpoint}{search_path}"
 
     @staticmethod
-    def _get_external_product_urls(content: bytes) -> List[str]:
-        """Extracts external product URLs from the Toppreise search results page."""
+    def _extract_links(
+        element: Tag, ext_products: bool = True, comp_products: bool = True
+    ) -> List[str]:
+        """Extracts all relevant product URLs from a BeautifulSoup object of a Toppreise page.
 
-        # Parse the HTML
-        soup = BeautifulSoup(content, "html.parser")
-        links = soup.find_all("a", href=True)
+        Note:
+            Depending on the arguments, it extracts:
+                - product comparison URLs (i.e. https://www.toppreise.ch/preisvergleich/...)
+                - external product URLs (i.e. https://www.example.com/ext_...).
+
+        Args:
+            tag: BeautifulSoup Tag object containing the HTML to parse.
+            ext_products: Whether to extract external product URLs.
+            comp_products: Whether to extract product comparison URLs.
+        """
+        # Find all links in the page
+        links = element.find_all("a", href=True)
 
         # Filter links to only include external product links
         hrefs = [
@@ -423,7 +442,15 @@ class Toppreise(SearchEngine):
                 and (href := link.get("href"))  # Ensure href is not None
                 and not href.startswith("javascript:")  # Skip javascript links
                 and isinstance(href, str)  # Ensure href is a string
-                and "ext_" in href  # Skip links that are not external product link
+                # Make sure the link is either an external product link (href contains 'ext_')
+                # or is a search result link (href contains 'preisvergleich', 'comparison-prix', or 'price-comparison')
+                and (
+                    ("ext_" in href and ext_products)
+                    or (
+                        any(pth in href for pth in TOPPREISE_COMPARISON_PATHS)
+                        and comp_products
+                    )
+                )
             )
         ]
 
@@ -438,37 +465,55 @@ class Toppreise(SearchEngine):
 
         # Return deduplicated urls
         urls = list(set(urls))
+        return urls
+
+    def _extract_product_urls_from_search_page(self, content: bytes) -> List[str]:
+        """Extracts product urls from a Toppreise search page (i.e. https://www.toppreise.ch/produktsuche)."""
+
+        # Parse the HTML
+        soup = BeautifulSoup(content, "html.parser")
+        main = soup.find("div", id="Page_Browsing")
+        if not isinstance(main, Tag):
+            logger.warning("No main content found in Toppreise search page.")
+            return []
+
+        # Extract links (external product links and comparison links)
+        urls = self._extract_links(element=main)
+
+        logger.debug(f"Found {len(urls)} product URLs from Toppreise search results.")
+        return urls
+
+    def _extract_product_urls_from_comparison_page(self, content: bytes) -> List[str]:
+        """Extracts product urls from a Toppreise product comparison page (i.e. https://www.toppreise.ch/preisvergleich/...)."""
+
+        # Parse the HTML
+        soup = BeautifulSoup(content, "html.parser")
+
+        # Extract links (external product links only)
+        urls = self._extract_links(element=soup, comp_products=False)
+
         logger.debug(
-            f"Found {len(urls)} external product URLs from Toppreise search results."
+            f"Found {len(urls)} external product URLs from Toppreise comparison page."
         )
         return urls
 
-    async def _search(self, search_string: str, num_results: int) -> List[str]:
-        """Performs a search on Toppreise and returns the URLs of the results.
+    @property
+    def _search_engine_name(self) -> str:
+        """The name of the search engine."""
+        return SearchEngineName.TOPPREISE.value
+
+    async def http_client_get_with_fallback(
+        self, url: str, retry: AsyncRetrying
+    ) -> bytes:
+        """Performs a GET request with retries.
 
         If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
         content using Zyte proxy mode.
 
         Args:
-            search_string: The search string to use for the query.
-            num_results: Max number of results to return.
+            url: The URL to request.
+            retry: The retry strategy to use.
         """
-        # Build the search URL for Toppreise
-        encoded_search = quote_plus(search_string)
-        url = f"{self._endpoint}?q={encoded_search}"
-        logger.debug(f"Toppreise search URL: {url}")
-
-        # Perform the request and retry if necessary. There is some context aware logging:
-        #  - `before`: before the request is made (and before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
-        retry = get_async_retry()
-        retry.before = lambda retry_state: self._log_before(
-            search_string=search_string, retry_state=retry_state
-        )
-        retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            search_string=search_string, retry_state=retry_state
-        )
-
         # Try to access the URL directly
         try:
             async for attempt in retry:
@@ -495,9 +540,41 @@ class Toppreise(SearchEngine):
                     raise httpx.HTTPError(msg) from err_resolve
             else:
                 raise err_direct
+        return content
+
+    async def _search(
+        self, search_string: str, language: Language, num_results: int
+    ) -> List[str]:
+        """Performs a search on Toppreise and returns the URLs of the results.
+
+        If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
+        content using Zyte proxy mode.
+
+        Args:
+            search_string: The search string to use for the query.
+            language: The language to use for the query.
+            num_results: Max number of results to return.
+        """
+        # Build the search URL for Toppreise
+        endpoint = self._get_search_endpoint(language=language)
+        encoded_search = quote_plus(search_string)
+        url = f"{endpoint}?q={encoded_search}"
+        logger.debug(f"Toppreise search URL: {url}")
+
+        # Perform the request and retry if necessary. There is some context aware logging:
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_before(
+            search_string=search_string, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            search_string=search_string, retry_state=retry_state
+        )
+        content = await self.http_client_get_with_fallback(url=url, retry=retry)
 
         # Get external product urls from the content
-        urls = self._get_external_product_urls(content=content)
+        urls = self._extract_product_urls_from_search_page(content=content)
         urls = urls[:num_results]  # Limit to num_results if needed
 
         return urls
@@ -505,17 +582,20 @@ class Toppreise(SearchEngine):
     async def search(
         self,
         search_term: str,
+        language: Language,
         num_results: int,
     ) -> List[SearchResult]:
         """Performs a Toppreise search and returns SearchResults.
 
         Args:
             search_term: The search term to use for the query.
+            language: The language to use for the search.
             num_results: Max number of results to return.
         """
         # Perform the search
         urls = await self._search(
             search_string=search_term,
+            language=language,
             num_results=num_results,
         )
 
@@ -527,8 +607,10 @@ class Toppreise(SearchEngine):
         return results
 
 
-class Search(DomainUtils):
+class Searcher(DomainUtils):
     """Class to perform searches using different search engines."""
+
+    _post_search_retry_stop_after = 3
 
     def __init__(
         self, http_client: httpx.AsyncClient, serpapi_key: str, zyteapi_key: str
@@ -540,6 +622,7 @@ class Search(DomainUtils):
             serpapi_key: The API key for SERP API.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
         """
+        self._http_client = http_client
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
         self._google_shopping = SerpAPIGoogleShopping(
             http_client=http_client,
@@ -549,6 +632,99 @@ class Search(DomainUtils):
             http_client=http_client,
             zyteapi_key=zyteapi_key,
         )
+
+    @staticmethod
+    def _post_search_log_before(url: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before the request is made."""
+        if retry_state:
+            logger.debug(
+                f'Performing post search for url="{url}" '
+                f"(attempt {retry_state.attempt_number})."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before.")
+
+    @staticmethod
+    def _post_search_log_before_sleep(
+        url: str, retry_state: RetryCallState | None
+    ) -> None:
+        """Context aware logging before sleeping after a failed request."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f'Attempt {retry_state.attempt_number} of post search for url="{url}" '
+                f"failed with error: {retry_state.outcome.exception()}. "
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
+
+    async def _post_search_toppreise_comparison(self, url: str) -> List[str]:
+        """Post-search for product URLs from a Toppreise product comparison page.
+
+        Note:
+            In comparison to the function Toppreise._search, here we extract the urls from
+            product comparison pages (f.e. https://www.toppreise.ch/preisvergleich/). They can
+            also be found in the results of a google search.
+
+        Args:
+            url: The URL of the Toppreise product listing page.
+        """
+        # Perform the request and retry if necessary. There is some context aware logging:
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry(stop_after=self._post_search_retry_stop_after)
+        retry.before = lambda retry_state: self._post_search_log_before(
+            url=url, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._post_search_log_before_sleep(
+            url=url, retry_state=retry_state
+        )
+        content = await self._toppreise.http_client_get_with_fallback(
+            url=url, retry=retry
+        )
+
+        # Get external product urls from the content
+        urls = self._toppreise._extract_product_urls_from_comparison_page(
+            content=content
+        )
+
+        return urls
+
+    async def _post_search(self, results: List[SearchResult]) -> List[SearchResult]:
+        """Post-search for additional embedded product URLs from the obtained results.
+
+        Note:
+            This function is used to extract embedded product URLs from
+            product listing pages (e.g. Toppreise, Google Shopping) if needed.
+
+        Args:
+            results: The list of SearchResult objects obtained from the search.
+        """
+        post_search_results: List[SearchResult] = []
+        for res in results:
+            url = res.url
+
+            # Extract embedded product URLs from the Toppreise product listing page
+            if any(pth in url for pth in TOPPREISE_COMPARISON_PATHS):
+                logger.debug(
+                    f'Extracting embedded product URLs from url="{url}" found by search_engine="{res.search_engine_name}"'
+                )
+                post_search_urls = await self._post_search_toppreise_comparison(url=url)
+                logger.debug(
+                    f'Extracted {len(post_search_urls)} embedded product URLs from url="{url}".'
+                )
+
+                psr = [
+                    SearchResult(
+                        url=psu,
+                        domain=self._get_domain(url=psu),
+                        search_engine_name=res.search_engine_name,
+                    )
+                    for psu in post_search_urls
+                ]
+                post_search_results.extend(psr)
+
+        return post_search_results
 
     @staticmethod
     def _domain_in_host(domain: str, host: Host) -> bool:
@@ -638,63 +814,77 @@ class Search(DomainUtils):
     async def apply(
         self,
         search_term: str,
+        search_engine: SearchEngineName | str,
         language: Language,
         location: Location,
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
-        search_engines: List[SearchEngineName | str] | None = None,
     ) -> List[SearchResult]:
         """Performs a search and returns SearchResults.
 
         Args:
             search_term: The search term to use for the query.
+            search_engine: The search engine to use for the search.
             language: The language to use for the query ('hl' parameter).
             location: The location to use for the query ('gl' parameter).
             num_results: Max number of results per search engine.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
-            search_engines: The list of search engines to use for the search.
         """
-        if search_engines is None:
-            search_engines = list(SearchEngineName)
-        else:
-            search_engines = [
-                SearchEngineName(sen) if isinstance(sen, str) else sen
-                for sen in search_engines
-            ]
-        results: List[SearchResult] = []
+        logger.info(
+            f'Performing search for term="{search_term}" using engine="{search_engine}".'
+        )
+
+        # -------------------------------
+        # SEARCH
+        # -------------------------------
+        # Map string to SearchEngineName if needed
+        if isinstance(search_engine, str):
+            search_engine = SearchEngineName(search_engine)
 
         # Make SerpAPI google search
-        if SearchEngineName.GOOGLE in search_engines:
-            res = await self._google.search(
+        if search_engine == SearchEngineName.GOOGLE:
+            results = await self._google.search(
                 search_term=search_term,
                 language=language,
                 location=location,
                 num_results=num_results,
                 marketplaces=marketplaces,
             )
-            results.extend(res)
 
         # Make SerpAPI google shopping search
-        if SearchEngineName.GOOGLE_SHOPPING in search_engines:
-            res = await self._google_shopping.search(
+        elif search_engine == SearchEngineName.GOOGLE_SHOPPING:
+            results = await self._google_shopping.search(
                 search_term=search_term,
                 language=language,
                 location=location,
                 num_results=num_results,
                 marketplaces=marketplaces,
             )
-            results.extend(res)
 
         # Make Toppreise search
-        if SearchEngineName.TOPPREISE in search_engines:
-            res = await self._toppreise.search(
+        elif search_engine == SearchEngineName.TOPPREISE:
+            results = await self._toppreise.search(
                 search_term=search_term,
+                language=language,
                 num_results=num_results,
             )
-            results.extend(res)
 
+        # Other search engines can be added here (raise unknown engine error otherwise)
+        else:
+            raise ValueError(f"Unknown search engine: {search_engine}")
+
+        # -------------------------------
+        # POST-SEARCH URL EXTRACTION
+        # -------------------------------
+        post_search_results = await self._post_search(results=results)
+        post_search_results = post_search_results[:num_results]
+        results.extend(post_search_results)
+
+        # -------------------------------
+        # FILTERS
+        # -------------------------------
         # Apply filters
         results = [
             self._apply_filters(
@@ -706,5 +896,7 @@ class Search(DomainUtils):
             for res in results
         ]
 
-        logger.debug(f"Search produced a total of {len(results)} results.")
+        logger.info(
+            f'Search for term="{search_term}" using engine="{search_engine}" produced {len(results)} results.'
+        )
         return results

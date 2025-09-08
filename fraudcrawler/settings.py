@@ -14,11 +14,21 @@ RETRY_EXP_BASE = 4
 RETRY_JITTER = 1
 RETRY_SKIP_IF_CODE = [400, 401, 403]  # Skip retrying on these HTTP status codes
 
-# Serp settings
+# Search settings
 GOOGLE_LOCATIONS_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-locations.json"
 GOOGLE_LANGUAGES_FILENAME = ROOT_DIR / "fraudcrawler" / "base" / "google-languages.json"
 SEARCH_DEFAULT_COUNTRY_CODES: List[str] = [
     # ".com",
+]
+TOPPREISE_SEARCH_PATHS = {
+    "de": "produktsuche",
+    "fr": "chercher",
+    "default": "browse",
+}
+TOPPREISE_COMPARISON_PATHS = [
+    "preisvergleich",
+    "comparison-prix",
+    "price-comparison",
 ]
 
 # URL De-duplication settings
@@ -76,8 +86,8 @@ PROCESSOR_USER_PROMPT_TEMPLATE = "Product Details:\n{product_details}\n\nRelevan
 PROCESSOR_PRODUCT_DETAILS_TEMPLATE = "{field_name}:\n{field_value}"
 
 # Async workers settings
-DEFAULT_N_SERP_WKRS = 10
-DEFAULT_N_ZYTE_WKRS = 10
+DEFAULT_N_SRCH_WKRS = 5
+DEFAULT_N_CNTX_WKRS = 15
 DEFAULT_N_PROC_WKRS = 10
 
 # HTTPX client settings

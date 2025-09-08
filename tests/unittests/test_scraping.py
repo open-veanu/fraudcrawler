@@ -9,7 +9,7 @@ from fraudcrawler.base.base import (
     HttpxAsyncClient,
 )
 from fraudcrawler.scraping.search import (
-    Search,
+    Searcher,
     SearchResult,
     SerpAPIGoogle,
     SerpAPIGoogleShopping,
@@ -18,6 +18,7 @@ from fraudcrawler.scraping.search import (
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
 from fraudcrawler.scraping.search import SerpAPI
+from fraudcrawler.settings import ROOT_DIR
 
 
 @pytest_asyncio.fixture
@@ -42,10 +43,10 @@ async def toppreise():
 
 
 @pytest_asyncio.fixture
-async def search():
+async def searcher():
     setup = Setup()
     async with HttpxAsyncClient() as httpx_client:
-        yield Search(
+        yield Searcher(
             http_client=httpx_client,
             serpapi_key=setup.serpapi_key,
             zyteapi_key=setup.zyteapi_key,
@@ -135,7 +136,6 @@ async def test_serpapi_google_shopping_search(serpapi_google_shopping):
         location=location,
         num_results=num_results,
     )
-    print(f"Results: {results}")
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
@@ -200,9 +200,33 @@ async def test_serpapi_google_search_marketplaces(serpapi_google):
 @pytest.mark.asyncio
 async def test_toppreise_search(toppreise):
     search_term = "Liebherr CT 2531"
+    language = Language(name="German")
     num_results = 5
     results = await toppreise.search(
         search_term=search_term,
+        language=language,
+        num_results=num_results,
+    )
+    assert 0 < len(results) <= num_results
+    assert all(isinstance(res, SearchResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
+    assert all(res.search_engine_name == "toppreise" for res in results)
+
+    language = Language(name="French")
+    results = await toppreise.search(
+        search_term=search_term,
+        language=language,
+        num_results=num_results,
+    )
+    assert 0 < len(results) <= num_results
+    assert all(isinstance(res, SearchResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
+    assert all(res.search_engine_name == "toppreise" for res in results)
+
+    language = Language(name="English")
+    results = await toppreise.search(
+        search_term=search_term,
+        language=language,
         num_results=num_results,
     )
     assert 0 < len(results) <= num_results
@@ -211,93 +235,44 @@ async def test_toppreise_search(toppreise):
     assert all(res.search_engine_name == "toppreise" for res in results)
 
 
-def test_search_apply_filters(search):
-    location = Location(name="Switzerland")
+def test_toppreise_get_search_endpoint(toppreise):
+    language = Language(name="German", code="de")
+    endpoint = toppreise._get_search_endpoint(language=language)
+    assert endpoint == "https://www.toppreise.ch/produktsuche"
 
-    # No filters applied
-    result = SearchResult(
-        url="https://www.example.ch",
-        domain="example.ch",
-        search_engine_name="Engine",
-    )
-    result = search._apply_filters(result=result, location=location)
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://www.example.ch"
-    assert result.domain == "example.ch"
-    assert result.search_engine_name == "Engine"
-    assert result.filtered is False
-    assert result.filtered_at_stage is None
+    language = Language(name="French", code="fr")
+    endpoint = toppreise._get_search_endpoint(language=language)
+    assert endpoint == "https://www.toppreise.ch/chercher"
 
-    # Country code filter applied
-    result = SearchResult(
-        url="https://www.example.org",
-        domain="example.org",
-        search_engine_name="Engine",
-    )
-    result = search._apply_filters(result=result, location=location)
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://www.example.org"
-    assert result.domain == "example.org"
-    assert result.search_engine_name == "Engine"
-    assert result.filtered is True
-    assert isinstance(result.filtered_at_stage, str)
-    assert result.filtered_at_stage == "Search (country code filtering)"
+    language = Language(name="English", code="en")
+    endpoint = toppreise._get_search_endpoint(language=language)
+    assert endpoint == "https://www.toppreise.ch/browse"
 
-    # Marketplace filter not applied (would be applied for country code but is overridden)
-    result = SearchResult(
-        url="https://www.example.org",
-        domain="example.org",
-        search_engine_name="Engine",
-    )
-    marketplaces = [Host(name="Example", domains="example.org")]
-    result = search._apply_filters(
-        result=result, location=location, marketplaces=marketplaces
-    )
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://www.example.org"
-    assert result.domain == "example.org"
-    assert result.search_engine_name == "Engine"
-    assert result.filtered is False
-    assert result.filtered_at_stage is None
 
-    # Excluded URLs filter applied
-    result = SearchResult(
-        url="https://de.example.ch",
-        domain="de.example.ch",
-        search_engine_name="Engine",
+def test_toppreise_extract_product_urls_from_search_page(toppreise):
+    with open(ROOT_DIR / "tests" / "files" / "toppreise_search.html", "rb") as f:
+        content = f.read()
+    urls = toppreise._extract_product_urls_from_search_page(content=content)
+    assert len(urls) == 23
+    assert (
+        "https://www.toppreise.ch/preisvergleich/Kuehl-Gefrierkombinationen/LIEBHERR-CT-2531-p615781?selsort=rd"
+        in urls
     )
-    excluded_urls = [Host(name="Example", domains="example.ch")]
-    result = search._apply_filters(
-        result=result, location=location, excluded_urls=excluded_urls
+    assert (
+        "https://www.toppreise.ch/ext_de?pid=0&did=2511&oid=506961161&gdt=MjAyNS0wOS0wNCAyMjo0Mjo0OQ==&slsrt=rd&prcst=shipping&lpos=10"
+        in urls
     )
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://de.example.ch"
-    assert result.domain == "de.example.ch"
-    assert result.search_engine_name == "Engine"
-    assert result.filtered is True
-    assert isinstance(result.filtered_at_stage, str)
-    assert result.filtered_at_stage == "Search (excluded URLs filtering)"
 
-    # No filters applied
-    result = SearchResult(
-        url="https://www.example.ch",
-        domain="example.ch",
-        search_engine_name="Engine",
+
+def test_toppreise_extract_product_urls_from_comparison_page(toppreise):
+    with open(ROOT_DIR / "tests" / "files" / "toppreise_comparison.html", "rb") as f:
+        content = f.read()
+    urls = toppreise._extract_product_urls_from_comparison_page(content=content)
+    assert len(urls) == 20
+    assert (
+        "https://www.toppreise.ch/ext_de?pid=615781&did=2532&oid=493842592&gdt=MjAyNS0wOS0wNCAyMjo0NDoyMw==&slsrt=pa&prcst=shipping&lpos=5"
+        in urls
     )
-    marketplaces = [Host(name="Example", domains="example.org")]
-    excluded_urls = [Host(name="Example", domains="example.de")]
-    result = search._apply_filters(
-        result=result,
-        location=location,
-        marketplaces=marketplaces,
-        excluded_urls=excluded_urls,
-    )
-    assert isinstance(result, SearchResult)
-    assert result.url == "https://www.example.ch"
-    assert result.domain == "example.ch"
-    assert result.search_engine_name == "Engine"
-    assert result.filtered is False
-    assert result.filtered_at_stage is None
 
 
 @pytest.mark.asyncio
@@ -356,7 +331,7 @@ def test_remove_tracking_parameters_ricardo_urls(url_collector, ricardo_urls):
     )
 
     for url in ricardo_urls:
-        cleaned = url_collector.remove_tracking_parameters(url)
+        cleaned = url_collector._remove_tracking_parameters(url)
         assert cleaned == expected_clean, f"Failed to clean URL: {url}"
 
 
@@ -369,7 +344,7 @@ def test_remove_tracking_parameters_ebay_urls(url_collector, ebay_urls):
     ]
 
     for url, expected in zip(ebay_urls, expected_clean_urls):
-        cleaned = url_collector.remove_tracking_parameters(url)
+        cleaned = url_collector._remove_tracking_parameters(url)
         assert cleaned == expected, f"Failed to clean eBay URL: {url}"
 
 
@@ -382,7 +357,7 @@ def test_remove_tracking_parameters_other_urls(url_collector, other_urls):
     ]
 
     for url, expected in zip(other_urls, expected_clean_urls):
-        cleaned = url_collector.remove_tracking_parameters(url)
+        cleaned = url_collector._remove_tracking_parameters(url)
         assert cleaned == expected, f"Failed to clean other URL: {url}"
 
 
@@ -395,7 +370,7 @@ def test_remove_tracking_parameters_no_tracking(url_collector):
     ]
 
     for url in clean_urls:
-        cleaned = url_collector.remove_tracking_parameters(url)
+        cleaned = url_collector._remove_tracking_parameters(url)
         assert cleaned == url, f"Clean URL was modified: {url}"
 
 
@@ -429,7 +404,7 @@ def test_remove_tracking_parameters_edge_cases(url_collector):
     ]
 
     for url, expected in test_cases:
-        cleaned = url_collector.remove_tracking_parameters(url)
+        cleaned = url_collector._remove_tracking_parameters(url)
         assert cleaned == expected, f"Failed to clean edge case URL: {url}"
 
 
@@ -446,7 +421,7 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
 
     for tracker in known_trackers:
         url = f"https://www.ricardo.ch/product/?{tracker}=test_value"
-        cleaned = url_collector.remove_tracking_parameters(url)
+        cleaned = url_collector._remove_tracking_parameters(url)
         assert cleaned == "https://www.ricardo.ch/product/", (
             f"Failed to remove tracker: {tracker}"
         )
@@ -483,19 +458,159 @@ def test_zyteapi_keep_product(zyteapi):
 
 
 @pytest.mark.asyncio
-async def test_search_apply(search):
+async def test_searcher_apply(searcher):
     search_term = "Kaffee"
     language = Language(name="German")
     location = Location(name="Switzerland")
     num_results = 5
-    search_engines = ["google", "google_shopping", "toppreise"]
-    results = await search.apply(
+
+    # Test with Google
+    search_engine = "google"
+    results = await searcher.apply(
         search_term=search_term,
+        search_engine=search_engine,
         language=language,
         location=location,
         num_results=num_results,
-        search_engines=search_engines,
     )
-    assert 0 < len(results) <= len(search_engines) * num_results
+    assert 0 < len(results)
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
+
+    # Test with Google Shopping
+    search_engine = "google_shopping"
+    results = await searcher.apply(
+        search_term=search_term,
+        search_engine=search_engine,
+        language=language,
+        location=location,
+        num_results=num_results,
+    )
+    assert 0 < len(results)
+    assert all(isinstance(res, SearchResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
+
+    # Test with Toppreise
+    search_term = "Liebherr CT 2531"
+    search_engine = "toppreise"
+    results = await searcher.apply(
+        search_term=search_term,
+        search_engine=search_engine,
+        language=language,
+        location=location,
+        num_results=num_results,
+    )
+    assert 0 < len(results)
+    assert all(isinstance(res, SearchResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
+
+
+def test_searcher_apply_filters(searcher):
+    location = Location(name="Switzerland")
+
+    # No filters applied
+    result = SearchResult(
+        url="https://www.example.ch",
+        domain="example.ch",
+        search_engine_name="Engine",
+    )
+    result = searcher._apply_filters(result=result, location=location)
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://www.example.ch"
+    assert result.domain == "example.ch"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
+
+    # Country code filter applied
+    result = SearchResult(
+        url="https://www.example.org",
+        domain="example.org",
+        search_engine_name="Engine",
+    )
+    result = searcher._apply_filters(result=result, location=location)
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://www.example.org"
+    assert result.domain == "example.org"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is True
+    assert isinstance(result.filtered_at_stage, str)
+    assert result.filtered_at_stage == "Search (country code filtering)"
+
+    # Marketplace filter not applied (would be applied for country code but is overridden)
+    result = SearchResult(
+        url="https://www.example.org",
+        domain="example.org",
+        search_engine_name="Engine",
+    )
+    marketplaces = [Host(name="Example", domains="example.org")]
+    result = searcher._apply_filters(
+        result=result, location=location, marketplaces=marketplaces
+    )
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://www.example.org"
+    assert result.domain == "example.org"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
+
+    # Excluded URLs filter applied
+    result = SearchResult(
+        url="https://de.example.ch",
+        domain="de.example.ch",
+        search_engine_name="Engine",
+    )
+    excluded_urls = [Host(name="Example", domains="example.ch")]
+    result = searcher._apply_filters(
+        result=result, location=location, excluded_urls=excluded_urls
+    )
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://de.example.ch"
+    assert result.domain == "de.example.ch"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is True
+    assert isinstance(result.filtered_at_stage, str)
+    assert result.filtered_at_stage == "Search (excluded URLs filtering)"
+
+    # No filters applied
+    result = SearchResult(
+        url="https://www.example.ch",
+        domain="example.ch",
+        search_engine_name="Engine",
+    )
+    marketplaces = [Host(name="Example", domains="example.org")]
+    excluded_urls = [Host(name="Example", domains="example.de")]
+    result = searcher._apply_filters(
+        result=result,
+        location=location,
+        marketplaces=marketplaces,
+        excluded_urls=excluded_urls,
+    )
+    assert isinstance(result, SearchResult)
+    assert result.url == "https://www.example.ch"
+    assert result.domain == "example.ch"
+    assert result.search_engine_name == "Engine"
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
+
+
+@pytest.mark.asyncio
+async def test_searcher_apply_toppreise_post_search(searcher):
+    """With the below search term there are links that should be added by post_search."""
+    search_term = "Liebherr CT 2531"
+    search_engine = "toppreise"
+    location = Location(name="Switzerland")
+    language = Language(name="German")
+    num_results = 23
+
+    results = await searcher.apply(
+        search_term=search_term,
+        search_engine=search_engine,
+        language=language,
+        location=location,
+        num_results=num_results,
+    )
+    assert num_results < len(results)  # post_search should add more results
+    assert all(isinstance(res, SearchResult) for res in results)
+    assert all(res.url.startswith("http") for res in results)
+    assert all(res.search_engine_name == "toppreise" for res in results)
