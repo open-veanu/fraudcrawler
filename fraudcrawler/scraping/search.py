@@ -84,6 +84,31 @@ class SearchEngine(ABC, DomainUtils):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
+    @classmethod
+    def _log_http_before(cls, url: str, retry_state: RetryCallState | None) -> None:
+        """Context aware logging before HTTP request is made."""
+        if retry_state:
+            logger.debug(
+                f'Performing HTTP request in {cls.__name__} to url="{url}" '
+                f"(attempt {retry_state.attempt_number})."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before.")
+
+    @classmethod
+    def _log_http_before_sleep(
+        cls, url: str, retry_state: RetryCallState | None
+    ) -> None:
+        """Context aware logging before sleeping after a failed HTTP request."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f'Attempt {retry_state.attempt_number} of {cls.__name__} HTTP request to url="{url}" '
+                f"failed with error: {retry_state.outcome.exception()}. "
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
+
     def _create_search_result(self, url: str) -> SearchResult:
         """From a given url it creates the class:`SearchResult` instance."""
         # Get marketplace name
@@ -123,6 +148,16 @@ class SerpAPI(SearchEngine):
             headers: HTTP headers to use for the request.
             retry: The retry strategy to use.
         """
+        # Perform the request and retry if necessary. There is some context aware logging:
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry.before = lambda retry_state: self._log_http_before(
+            url=url, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_http_before_sleep(
+            url=url, retry_state=retry_state
+        )
+
         async for attempt in retry:
             with attempt:
                 response = await self._http_client.get(
