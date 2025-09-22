@@ -542,7 +542,7 @@ class Toppreise(SearchEngine):
         self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key)
 
     async def http_client_get_with_fallback(
-        self, url: str, headers: dict, retry: AsyncRetrying
+        self, url: str, retry: AsyncRetrying
     ) -> bytes:
         """Performs a GET request with retries.
 
@@ -551,7 +551,6 @@ class Toppreise(SearchEngine):
 
         Args:
             url: The URL to request.
-            headers: HTTP headers to use for the request.
             retry: The retry strategy to use.
         """
         # Try to access the URL directly
@@ -560,7 +559,7 @@ class Toppreise(SearchEngine):
                 with attempt:
                     response = await self._http_client.get(
                         url=url,
-                        headers=headers,
+                        headers=self._headers,
                     )
                     response.raise_for_status()
                     content = response.content
@@ -818,7 +817,7 @@ class Searcher(DomainUtils):
             url=url, retry_state=retry_state
         )
         content = await self._toppreise.http_client_get_with_fallback(
-            url=url, headers=self._toppreise._headers, retry=retry
+            url=url, retry=retry
         )
 
         # Get external product urls from the content
