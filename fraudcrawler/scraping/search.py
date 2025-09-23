@@ -8,7 +8,7 @@ from urllib.parse import quote_plus
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 import httpx
-from tenacity import RetryCallState, AsyncRetrying
+from tenacity import RetryCallState
 
 from fraudcrawler.settings import (
     SEARCH_DEFAULT_COUNTRY_CODES,
@@ -45,6 +45,14 @@ class SearchEngine(ABC, DomainUtils):
 
     _hostname_pattern = r"^(?:https?:\/\/)?([^\/:?#]+)"
 
+    def __init__(self, http_client: httpx.AsyncClient):
+        """Initializes the SearchEngine with the given HTTP client.
+
+        Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
+        """
+        self._http_client = http_client
+
     @property
     @abstractmethod
     def _search_engine_name(self) -> str:
@@ -55,33 +63,6 @@ class SearchEngine(ABC, DomainUtils):
     async def search(self, *args, **kwargs) -> List[SearchResult]:
         """Apply the search with the given parameters and return results."""
         pass
-
-    @classmethod
-    def _log_before(
-        cls, search_string: str, retry_state: RetryCallState | None
-    ) -> None:
-        """Context aware logging before the request is made."""
-        if retry_state:
-            logger.debug(
-                f'Performing search in {cls.__name__} with q="{search_string}" '
-                f"(attempt {retry_state.attempt_number})."
-            )
-        else:
-            logger.debug(f"retry_state is {retry_state}; not logging before.")
-
-    @classmethod
-    def _log_before_sleep(
-        cls, search_string: str, retry_state: RetryCallState | None
-    ) -> None:
-        """Context aware logging before sleeping after a failed request."""
-        if retry_state and retry_state.outcome:
-            logger.warning(
-                f'Attempt {retry_state.attempt_number} of {cls.__name__} search with q="{search_string}" '
-                f"failed with error: {retry_state.outcome.exception()}. "
-                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
-            )
-        else:
-            logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
 
     def _create_search_result(self, url: str) -> SearchResult:
         """From a given url it creates the class:`SearchResult` instance."""
@@ -96,6 +77,69 @@ class SearchEngine(ABC, DomainUtils):
         )
         return result
 
+    @classmethod
+    def _log_before(
+        cls, url: str, params: dict | None, retry_state: RetryCallState | None
+    ) -> None:
+        """Context aware logging before HTTP request is made."""
+        if retry_state:
+            logger.debug(
+                f'Performing HTTP request in {cls.__name__} to url="{url}" '
+                f"with params={params} (attempt {retry_state.attempt_number})."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before.")
+
+    @classmethod
+    def _log_before_sleep(
+        cls, url: str, params: dict | None, retry_state: RetryCallState | None
+    ) -> None:
+        """Context aware logging before sleeping after a failed HTTP request."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f"Attempt {retry_state.attempt_number} of {cls.__name__} HTTP request "
+                f'to url="{url}" with params="{params}" '
+                f"failed with error: {retry_state.outcome.exception()}. "
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
+
+    async def http_client_get(
+        self, url: str, params: dict | None = None, headers: dict | None = None
+    ) -> httpx.Response:
+        """Performs a GET request with retries.
+
+        Args:
+            retry: The retry strategy to use.
+            url: The URL to request.
+            params: Query parameters for the request.
+            headers: HTTP headers to use for the request.
+        """
+        # Perform the request and retry if necessary. There is some context aware logging:
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_before(
+            url=url, params=params, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            url=url, params=params, retry_state=retry_state
+        )
+
+        async for attempt in retry:
+            with attempt:
+                response = await self._http_client.get(
+                    url=url,
+                    params=params,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response
+
+        # In case of not entering the for loop (for some strange reason)
+        raise RuntimeError("Retry exhausted without success")
+
 
 class SerpAPI(SearchEngine):
     """Base class for SerpAPI search engines."""
@@ -109,7 +153,7 @@ class SerpAPI(SearchEngine):
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
         """
-        self._http_client = http_client
+        super().__init__(http_client=http_client)
         self._api_key = api_key
 
     @property
@@ -205,22 +249,10 @@ class SerpAPI(SearchEngine):
         }
         logger.debug(f"SerpAPI search with params: {params}")
 
-        # Perform the request and retry if necessary. There is some context aware logging:
-        #  - `before`: before the request is made (and before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
-        retry = get_async_retry()
-        retry.before = lambda retry_state: self._log_before(
-            search_string=search_string, retry_state=retry_state
+        # Perform the search request
+        response: httpx.Response = await self.http_client_get(
+            url=self._endpoint, params=params
         )
-        retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            search_string=search_string, retry_state=retry_state
-        )
-        async for attempt in retry:
-            with attempt:
-                response = await self._http_client.get(
-                    url=self._endpoint, params=params
-                )
-                response.raise_for_status()
 
         # Extract the URLs from the response
         data = response.json()
@@ -336,7 +368,21 @@ class SerpAPIGoogleShopping(SerpAPI):
         """
         results = data.get("shopping_results")
         if results is not None:
-            return [url for res in results if (url := res.get("product_link"))]
+            # return [url for res in results if (url := res.get("product_link"))]   # c.f. https://github.com/serpapi/public-roadmap/issues/3045
+            return [
+                url
+                for res in results
+                if (url := res.get("serpapi_immersive_product_api"))
+            ]
+        return []
+
+    @staticmethod
+    def _extract_product_urls_from_immersive_product_api(data: dict) -> List[str]:
+        """Extracts product urls from the serpapi immersive product API data."""
+        if results := data.get("product_results"):
+            stores = results.get("stores", [])
+            urls = [url for sre in stores if (url := sre.get("link"))]
+            return list(set(urls))
         return []
 
     async def search(
@@ -348,6 +394,9 @@ class SerpAPIGoogleShopping(SerpAPI):
         marketplaces: List[Host] | None = None,
     ) -> List[SearchResult]:
         """Performs a google shopping search using SerpApi and returns SearchResults.
+
+        Similar to Toppreise, this method extracts merchant URLs from Google Shopping product pages
+        and creates multiple SearchResult objects for each merchant URL found.
 
         Args:
             search_term: The search term to use for the query.
@@ -362,7 +411,7 @@ class SerpAPIGoogleShopping(SerpAPI):
             marketplaces=marketplaces,
         )
 
-        # Perform the search
+        # Perform the search to get Google Shopping URLs
         urls = await self._search(
             search_string=search_string,
             language=language,
@@ -375,10 +424,10 @@ class SerpAPIGoogleShopping(SerpAPI):
         # and Google Shopping searches (see https://github.com/serpapi/public-roadmap/issues/1858)
         urls = urls[:num_results]
 
-        # Create and return SearchResult objects from the URLs
+        # Create SearchResult objects from merchant URLs (similar to Toppreise pattern)
         results = [self._create_search_result(url=url) for url in urls]
         logger.debug(
-            f'Produced {len(results)} results from SerpAPI with engine="{self._engine}" and q="{search_string}".'
+            f'Produced {len(results)} results from Google Shopping search with q="{search_string}".'
         )
         return results
 
@@ -387,14 +436,6 @@ class Toppreise(SearchEngine):
     """Search engine for toppreise.ch."""
 
     _endpoint = "https://www.toppreise.ch/"
-    _headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-    }
 
     def __init__(self, http_client: httpx.AsyncClient, zyteapi_key: str):
         """Initializes the Toppreise client.
@@ -403,8 +444,41 @@ class Toppreise(SearchEngine):
             http_client: An httpx.AsyncClient to use for the async requests.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
         """
-        self._http_client = http_client
+        super().__init__(http_client=http_client)
         self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key)
+
+    async def http_client_get_with_fallback(self, url: str) -> bytes:
+        """Performs a GET request with retries.
+
+        If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
+        content using Zyte proxy mode.
+
+        Args:
+            url: The URL to request.
+        """
+        # Try to access the URL directly
+        try:
+            response: httpx.Response = await self.http_client_get(
+                url=url, headers=self._headers
+            )
+            content = response.content
+
+        # If we get a 403 Error (can happen depending on IP/location of deployment),
+        # we try to unblock the URL using Zyte proxy mode
+        except httpx.HTTPStatusError as err_direct:
+            if err_direct.response.status_code == 403:
+                logger.warning(
+                    f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
+                )
+                try:
+                    content = await self._zyteapi.unblock_url_content(url)
+                except Exception as err_resolve:
+                    msg = f'Error unblocking URL="{url}" with Zyte proxy: {err_resolve}'
+                    logger.error(msg)
+                    raise httpx.HTTPError(msg) from err_resolve
+            else:
+                raise err_direct
+        return content
 
     @classmethod
     def _get_search_endpoint(cls, language: Language) -> str:
@@ -502,46 +576,6 @@ class Toppreise(SearchEngine):
         """The name of the search engine."""
         return SearchEngineName.TOPPREISE.value
 
-    async def http_client_get_with_fallback(
-        self, url: str, retry: AsyncRetrying
-    ) -> bytes:
-        """Performs a GET request with retries.
-
-        If direct access fails (e.g. 403 Forbidden), it will attempt to unblock the URL
-        content using Zyte proxy mode.
-
-        Args:
-            url: The URL to request.
-            retry: The retry strategy to use.
-        """
-        # Try to access the URL directly
-        try:
-            async for attempt in retry:
-                with attempt:
-                    response = await self._http_client.get(
-                        url=url,
-                        headers=self._headers,
-                    )
-                    response.raise_for_status()
-                    content = response.content
-
-        # If we get a 403 Error (can happen depending on IP/location of deployment),
-        # we try to unblock the URL using Zyte proxy mode
-        except httpx.HTTPStatusError as err_direct:
-            if err_direct.response.status_code == 403:
-                logger.warning(
-                    f"Received 403 Forbidden for {url}, attempting to unblock with Zyte proxy"
-                )
-                try:
-                    content = await self._zyteapi.unblock_url_content(url)
-                except Exception as err_resolve:
-                    msg = f'Error unblocking URL="{url}" with Zyte proxy: {err_resolve}'
-                    logger.error(msg)
-                    raise httpx.HTTPError(msg) from err_resolve
-            else:
-                raise err_direct
-        return content
-
     async def _search(
         self, search_string: str, language: Language, num_results: int
     ) -> List[str]:
@@ -561,17 +595,8 @@ class Toppreise(SearchEngine):
         url = f"{endpoint}?q={encoded_search}"
         logger.debug(f"Toppreise search URL: {url}")
 
-        # Perform the request and retry if necessary. There is some context aware logging:
-        #  - `before`: before the request is made (and before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
-        retry = get_async_retry()
-        retry.before = lambda retry_state: self._log_before(
-            search_string=search_string, retry_state=retry_state
-        )
-        retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            search_string=search_string, retry_state=retry_state
-        )
-        content = await self.http_client_get_with_fallback(url=url, retry=retry)
+        # Perform the request with fallback if necessary
+        content = await self.http_client_get_with_fallback(url=url)
 
         # Get external product urls from the content
         urls = self._extract_product_urls_from_search_page(content=content)
@@ -633,61 +658,44 @@ class Searcher(DomainUtils):
             zyteapi_key=zyteapi_key,
         )
 
-    @staticmethod
-    def _post_search_log_before(url: str, retry_state: RetryCallState | None) -> None:
-        """Context aware logging before the request is made."""
-        if retry_state:
-            logger.debug(
-                f'Performing post search for url="{url}" '
-                f"(attempt {retry_state.attempt_number})."
-            )
-        else:
-            logger.debug(f"retry_state is {retry_state}; not logging before.")
+    async def _post_search_google_shopping_immersive(self, url: str) -> List[str]:
+        """Post-search for product URLs from a Google Shopping immersive product page.
 
-    @staticmethod
-    def _post_search_log_before_sleep(
-        url: str, retry_state: RetryCallState | None
-    ) -> None:
-        """Context aware logging before sleeping after a failed request."""
-        if retry_state and retry_state.outcome:
-            logger.warning(
-                f'Attempt {retry_state.attempt_number} of post search for url="{url}" '
-                f"failed with error: {retry_state.outcome.exception()}. "
-                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
-            )
-        else:
-            logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
+        Args:
+            url: The URL of the Google Shopping product page.
+        """
+        # Add SerpAPI key to the url
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}api_key={self._google_shopping._api_key}"
+
+        # Fetch the content of the Google Shopping product page
+        response = await self._google_shopping.http_client_get(url=url)
+
+        # Get external product urls from the data
+        data = response.json()
+        urls = self._google_shopping._extract_product_urls_from_immersive_product_api(
+            data=data
+        )
+        return urls
 
     async def _post_search_toppreise_comparison(self, url: str) -> List[str]:
         """Post-search for product URLs from a Toppreise product comparison page.
 
         Note:
             In comparison to the function Toppreise._search, here we extract the urls from
-            product comparison pages (f.e. https://www.toppreise.ch/preisvergleich/). They can
-            also be found in the results of a google search.
+            product comparison pages (f.e. https://www.toppreise.ch/preisvergleich/). These
+            pages can also be found in the results of a google search.
 
         Args:
             url: The URL of the Toppreise product listing page.
         """
-        # Perform the request and retry if necessary. There is some context aware logging:
-        #  - `before`: before the request is made (and before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
-        retry = get_async_retry(stop_after=self._post_search_retry_stop_after)
-        retry.before = lambda retry_state: self._post_search_log_before(
-            url=url, retry_state=retry_state
-        )
-        retry.before_sleep = lambda retry_state: self._post_search_log_before_sleep(
-            url=url, retry_state=retry_state
-        )
-        content = await self._toppreise.http_client_get_with_fallback(
-            url=url, retry=retry
-        )
+        # Perform the request with fallback if necessary
+        content = await self._toppreise.http_client_get_with_fallback(url=url)
 
         # Get external product urls from the content
         urls = self._toppreise._extract_product_urls_from_comparison_page(
             content=content
         )
-
         return urls
 
     async def _post_search(self, results: List[SearchResult]) -> List[SearchResult]:
@@ -703,9 +711,22 @@ class Searcher(DomainUtils):
         post_search_results: List[SearchResult] = []
         for res in results:
             url = res.url
+            post_search_urls: List[str] = []
+
+            # Extract embedded product URLs from the Google Shopping immersive product page
+            if "engine=google_immersive_product" in url:
+                logger.debug(
+                    f'Extracting embedded product URLs from url="{url}" found by search_engine="{res.search_engine_name}"'
+                )
+                post_search_urls = await self._post_search_google_shopping_immersive(
+                    url=url
+                )
+                logger.debug(
+                    f'Extracted {len(post_search_urls)} embedded product URLs from url="{url}".'
+                )
 
             # Extract embedded product URLs from the Toppreise product listing page
-            if any(pth in url for pth in TOPPREISE_COMPARISON_PATHS):
+            elif any(pth in url for pth in TOPPREISE_COMPARISON_PATHS):
                 logger.debug(
                     f'Extracting embedded product URLs from url="{url}" found by search_engine="{res.search_engine_name}"'
                 )
@@ -714,15 +735,16 @@ class Searcher(DomainUtils):
                     f'Extracted {len(post_search_urls)} embedded product URLs from url="{url}".'
                 )
 
-                psr = [
-                    SearchResult(
-                        url=psu,
-                        domain=self._get_domain(url=psu),
-                        search_engine_name=res.search_engine_name,
-                    )
-                    for psu in post_search_urls
-                ]
-                post_search_results.extend(psr)
+            # Add the extracted product URLs as SearchResult objects
+            psr = [
+                SearchResult(
+                    url=psu,
+                    domain=self._get_domain(url=psu),
+                    search_engine_name=res.search_engine_name,
+                )
+                for psu in post_search_urls
+            ]
+            post_search_results.extend(psr)
 
         return post_search_results
 
