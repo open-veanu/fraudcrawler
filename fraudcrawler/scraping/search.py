@@ -368,7 +368,8 @@ class SerpAPIGoogleShopping(SerpAPI):
         """
         results = data.get("shopping_results")
         if results is not None:
-            return [url for res in results if (url := res.get("product_link"))]
+            # return [url for res in results if (url := res.get("product_link"))]   # c.f. https://github.com/serpapi/public-roadmap/issues/3045
+            return [url for res in results if (url := res.get("serpapi_immersive_product_api"))]
         return []
 
     async def _fetch_google_shopping_page_content(self, url: str) -> bytes:
@@ -397,40 +398,40 @@ class SerpAPIGoogleShopping(SerpAPI):
         """
         # Parse the HTML
         soup = BeautifulSoup(content, "html.parser")
-
-        merchant_urls = []
-        for link in soup.find_all("a", href=True):
-            if hasattr(link, "get"):
-                href = link.get("href")
-                if href and "/url?q=" in href:
-                    # Extract the q parameter value (the actual merchant URL)
-                    # Handle both &amp; and & as separators
-                    href_clean = href.replace("&amp;", "&")
-                    match = re.search(r"q=([^&]+)", href_clean)
-                    if match:
-                        encoded_url = match.group(1)
-                        try:
-                            # URL decode the merchant URL
-                            merchant_url = unquote(encoded_url)
-                            # Only include URLs that look like merchant product pages
-                            if (
-                                merchant_url.startswith("http")
-                                and not merchant_url.startswith(
-                                    "https://www.google.com"
-                                )
-                                and not merchant_url.startswith("https://www.google.ch")
-                            ):
-                                merchant_urls.append(merchant_url)
-                        except Exception as e:
-                            logger.debug(f"Failed to decode URL {encoded_url}: {e}")
-                            continue
-
+        
+        urls = []
+        links = soup.find_all("a", href=True)
+        for link in links:
+            if (
+                hasattr(link, "get") and
+                (href := link.get("href")) and
+                "/url?q=" in href
+            ):
+                # Extract the q parameter value (the actual merchant URL)
+                # Handle both &amp; and & as separators
+                href_clean = href.replace("&amp;", "&")
+                if (match := re.search(r"q=([^&]+)", href_clean)):
+                    encoded_url = match.group(1)
+                    try:
+                        # URL decode the merchant URL
+                        merchant_url = unquote(encoded_url)
+                        # Only include URLs that look like merchant product pages
+                        if (
+                            merchant_url.startswith("http")
+                            and not merchant_url.startswith("https://www.google.")
+                        ):
+                            urls.append(merchant_url)
+                    except Exception as e:
+                        logger.debug(f"Failed to decode URL {encoded_url}: {e}")
+                        continue
+        
         # Return deduplicated URLs
-        merchant_urls = list(set(merchant_urls))
+        urls = list(set(urls))
         logger.debug(
-            f"Found {len(merchant_urls)} merchant URLs from Google Shopping product page."
+            f"Found {len(urls)} merchant URLs from Google Shopping product page."
         )
-        return merchant_urls
+
+        return urls
 
     async def search(
         self,
@@ -459,7 +460,7 @@ class SerpAPIGoogleShopping(SerpAPI):
         )
 
         # Perform the search to get Google Shopping URLs
-        google_shopping_urls = await self._search(
+        urls = await self._search(
             search_string=search_string,
             language=language,
             location=location,
@@ -469,33 +470,12 @@ class SerpAPIGoogleShopping(SerpAPI):
         # !!! NOTE !!!: Google Shopping results do not properly support the 'num' parameter,
         # so we might get more results than requested. This is a known issue with SerpAPI
         # and Google Shopping searches (see https://github.com/serpapi/public-roadmap/issues/1858)
-        google_shopping_urls = google_shopping_urls[:num_results]
-
-        # Extract merchant URLs from each Google Shopping product page (similar to Toppreise)
-        all_merchant_urls = []
-        for gs_url in google_shopping_urls:
-            logger.debug(
-                f"Extracting merchant URLs from Google Shopping product page: {gs_url}"
-            )
-            try:
-                # Fetch the Google Shopping page content
-                content = await self._fetch_google_shopping_page_content(gs_url)
-                # Extract merchant URLs from the page content
-                merchant_urls = self._extract_merchant_urls_from_shopping_page(content)
-                logger.debug(f"Found {len(merchant_urls)} merchant URLs from {gs_url}")
-                all_merchant_urls.extend(merchant_urls)
-            except Exception as e:
-                logger.warning(f"Failed to extract merchant URLs from {gs_url}: {e}")
-                continue
+        urls = urls[:num_results]
 
         # Create SearchResult objects from merchant URLs (similar to Toppreise pattern)
-        results = [
-            self._create_search_result(url=merchant_url)
-            for merchant_url in all_merchant_urls
-        ]
-
+        results = [self._create_search_result(url=url) for url in urls]
         logger.debug(
-            f'Produced {len(results)} merchant results from {len(google_shopping_urls)} Google Shopping URLs with q="{search_string}".'
+            f'Produced {len(results)} results from Google Shopping search with q="{search_string}".'
         )
         return results
 
@@ -665,9 +645,8 @@ class Toppreise(SearchEngine):
         url = f"{endpoint}?q={encoded_search}"
         logger.debug(f"Toppreise search URL: {url}")
 
-        content = await self.http_client_get_with_fallback(
-            url=url, headers=self._headers
-        )
+        # Perform the request with fallback if necessary
+        content = await self.http_client_get_with_fallback(url=url)
 
         # Get external product urls from the content
         urls = self._extract_product_urls_from_search_page(content=content)
