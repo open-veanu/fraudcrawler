@@ -371,67 +371,15 @@ class SerpAPIGoogleShopping(SerpAPI):
             # return [url for res in results if (url := res.get("product_link"))]   # c.f. https://github.com/serpapi/public-roadmap/issues/3045
             return [url for res in results if (url := res.get("serpapi_immersive_product_api"))]
         return []
-
-    async def _fetch_google_shopping_page_content(self, url: str) -> bytes:
-        """Fetches the content of a Google Shopping product page.
-
-        Args:
-            url: The URL of the Google Shopping product page.
-
-        Returns:
-            The HTML content as bytes.
-        """
-        response: httpx.Response = await self.http_client_get(
-            url=url, headers=self._headers
-        )
-        return response.content
-
+    
     @staticmethod
-    def _extract_merchant_urls_from_shopping_page(content: bytes) -> List[str]:
-        """Extracts merchant URLs from a Google Shopping product page.
-
-        Args:
-            content: The HTML content of the Google Shopping product page.
-
-        Returns:
-            List of merchant URLs extracted from the Buying Options.
-        """
-        # Parse the HTML
-        soup = BeautifulSoup(content, "html.parser")
-        
-        urls = []
-        links = soup.find_all("a", href=True)
-        for link in links:
-            if (
-                hasattr(link, "get") and
-                (href := link.get("href")) and
-                "/url?q=" in href
-            ):
-                # Extract the q parameter value (the actual merchant URL)
-                # Handle both &amp; and & as separators
-                href_clean = href.replace("&amp;", "&")
-                if (match := re.search(r"q=([^&]+)", href_clean)):
-                    encoded_url = match.group(1)
-                    try:
-                        # URL decode the merchant URL
-                        merchant_url = unquote(encoded_url)
-                        # Only include URLs that look like merchant product pages
-                        if (
-                            merchant_url.startswith("http")
-                            and not merchant_url.startswith("https://www.google.")
-                        ):
-                            urls.append(merchant_url)
-                    except Exception as e:
-                        logger.debug(f"Failed to decode URL {encoded_url}: {e}")
-                        continue
-        
-        # Return deduplicated URLs
-        urls = list(set(urls))
-        logger.debug(
-            f"Found {len(urls)} merchant URLs from Google Shopping product page."
-        )
-
-        return urls
+    def _extract_product_urls_from_immersive_product_api(data: dict) -> List[str]:
+        """Extracts product urls from the serpapi immersive product API data."""
+        if (results := data.get("product_results")):
+            stores = results.get("stores", [])
+            urls = [url for sre in stores if (url := sre.get("link"))]
+            return list(set(urls))
+        return []
 
     async def search(
         self,
@@ -708,6 +656,24 @@ class Searcher(DomainUtils):
             zyteapi_key=zyteapi_key,
         )
 
+    async def _post_search_google_shopping_immersive(self, url: str) -> List[str]:
+        """Post-search for product URLs from a Google Shopping immersive product page.
+
+        Args:
+            url: The URL of the Google Shopping product page.
+        """
+        # Add SerpAPI key to the url
+        sep = "&" if "?" in url else "?"
+        url = f'{url}{sep}api_key={self._google_shopping._api_key}'
+
+        # Fetch the content of the Google Shopping product page
+        response = await self._google_shopping.http_client_get(url=url)
+        
+        # Get external product urls from the data
+        data = response.json()
+        urls = self._google_shopping._extract_product_urls_from_immersive_product_api(data=data)
+        return urls
+
     async def _post_search_toppreise_comparison(self, url: str) -> List[str]:
         """Post-search for product URLs from a Toppreise product comparison page.
 
@@ -728,8 +694,6 @@ class Searcher(DomainUtils):
         )
         return urls
 
-    # Note: _post_search_google_shopping method removed - Google Shopping post-processing
-    # is now handled directly in SerpAPIGoogleShopping.search() method
 
     async def _post_search(self, results: List[SearchResult]) -> List[SearchResult]:
         """Post-search for additional embedded product URLs from the obtained results.
@@ -744,9 +708,20 @@ class Searcher(DomainUtils):
         post_search_results: List[SearchResult] = []
         for res in results:
             url = res.url
+            post_search_urls: List[str] = []
+
+            # Extract embedded product URLs from the Google Shopping immersive product page
+            if 'engine=google_immersive_product' in url:
+                logger.debug(
+                    f'Extracting embedded product URLs from url="{url}" found by search_engine="{res.search_engine_name}"'
+                )
+                post_search_urls = await self._post_search_google_shopping_immersive(url=url)
+                logger.debug(
+                    f'Extracted {len(post_search_urls)} embedded product URLs from url="{url}".'
+                )
 
             # Extract embedded product URLs from the Toppreise product listing page
-            if any(pth in url for pth in TOPPREISE_COMPARISON_PATHS):
+            elif any(pth in url for pth in TOPPREISE_COMPARISON_PATHS):
                 logger.debug(
                     f'Extracting embedded product URLs from url="{url}" found by search_engine="{res.search_engine_name}"'
                 )
@@ -755,18 +730,16 @@ class Searcher(DomainUtils):
                     f'Extracted {len(post_search_urls)} embedded product URLs from url="{url}".'
                 )
 
-                psr = [
-                    SearchResult(
-                        url=psu,
-                        domain=self._get_domain(url=psu),
-                        search_engine_name=res.search_engine_name,
-                    )
-                    for psu in post_search_urls
-                ]
-                post_search_results.extend(psr)
-
-            # Note: Google Shopping post-processing is now handled directly in SerpAPIGoogleShopping.search()
-            # This section is intentionally left empty for Google Shopping URLs
+            # Add the extracted product URLs as SearchResult objects
+            psr = [
+                SearchResult(
+                    url=psu,
+                    domain=self._get_domain(url=psu),
+                    search_engine_name=res.search_engine_name,
+                )
+                for psu in post_search_urls
+            ]
+            post_search_results.extend(psr)
 
         return post_search_results
 
