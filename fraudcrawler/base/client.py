@@ -46,6 +46,7 @@ class FraudCrawlerClient(Orchestrator):
             dataforseo_pwd=setup.dataforseo_pwd,
             zyteapi_key=setup.zyteapi_key,
             openaiapi_key=setup.openaiapi_key,
+            apimodels_key=setup.apimodels_key,
         )
 
         self._results_dir = _RESULTS_DIR

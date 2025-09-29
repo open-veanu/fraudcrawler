@@ -38,6 +38,7 @@ class Setup(BaseSettings):
     dataforseo_user: str
     dataforseo_pwd: str
     zyteapi_key: str
+    apimodels_key: str
     openaiapi_key: str
 
     class Config:

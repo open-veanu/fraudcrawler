@@ -8,7 +8,7 @@ from fraudcrawler.scraping.search import (
     SerpAPIGoogleShopping,
     Toppreise,
 )
-from fraudcrawler import Enricher, URLCollector, ZyteAPI
+from fraudcrawler import Enricher, URLCollector, ZyteAPI, ApiModels
 from fraudcrawler.scraping.enrich import Keyword
 
 
@@ -84,6 +84,13 @@ def zyteapi():
     setup = Setup()
     zyteapi = ZyteAPI(api_key=setup.zyteapi_key)
     return zyteapi
+
+
+@pytest.fixture
+def apimodels():
+    setup = Setup()
+    apimodels = ApiModels(apimodels_key=setup.apimodels_key)
+    return apimodels
 
 
 @pytest.mark.asyncio
@@ -449,3 +456,19 @@ def test_zyteapi_keep_product(zyteapi):
     }
     assert zyteapi.keep_product(details=details, threshold=0.1) is True
     assert zyteapi.keep_product(details=details, threshold=0.6) is False
+
+
+@pytest.mark.asyncio
+async def test_apimodels_get_details_from_text(apimodels):
+    """Test ApiModels text analysis functionality."""
+    product_text = "This is a sample product description for testing purposes."
+    result = await apimodels.get_details_from_text(product_text=product_text)
+    assert result is not None
+    # Check for expected response format
+    assert "prediction" in result
+    assert "confidence" in result
+    assert "label" in result
+    assert isinstance(result["prediction"], int)
+    assert isinstance(result["confidence"], (int, float))
+    assert isinstance(result["label"], str)
+        

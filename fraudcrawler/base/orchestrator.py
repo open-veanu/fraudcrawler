@@ -26,6 +26,7 @@ from fraudcrawler import (
     SearchEngineName,
     Enricher,
     URLCollector,
+    ApiModels,
     ZyteAPI,
     Processor,
 )
@@ -56,6 +57,7 @@ class Orchestrator(ABC):
         dataforseo_pwd: str,
         zyteapi_key: str,
         openaiapi_key: str,
+        apimodels_key: str,
         openai_model: str = PROCESSOR_DEFAULT_MODEL,
         n_serp_wkrs: int = DEFAULT_N_SERP_WKRS,
         n_zyte_wkrs: int = DEFAULT_N_ZYTE_WKRS,
@@ -69,6 +71,7 @@ class Orchestrator(ABC):
             dataforseo_pwd: The password for DataForSEO.
             zyteapi_key: The API key for Zyte API.
             openaiapi_key: The API key for OpenAI.
+            apimodels_key: The API key for ApiModels.
             openai_model: The model to use for the processing (optional).
             n_serp_wkrs: Number of async workers for serp (optional).
             n_zyte_wkrs: Number of async workers for zyte (optional).
@@ -79,6 +82,8 @@ class Orchestrator(ABC):
         self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
         self._url_collector = URLCollector()
         self._zyteapi = ZyteAPI(api_key=zyteapi_key)
+        self._api_models = ApiModels(apimodels_key=apimodels_key)
+
         self._processor = Processor(
             api_key=openaiapi_key,
             model=openai_model,
@@ -234,6 +239,15 @@ class Orchestrator(ABC):
                     if not self._zyteapi.keep_product(details=details):
                         product.filtered = True
                         product.filtered_at_stage = "Zyte probability threshold"
+                    
+                    try:
+                        # Try ApiModels in parallel (as backup for "is_product")
+                        #veanu_is_product = await self._api_models.get_details_from_text(product_text=product.html_clean)
+                        logger.debug(f"Successfully fetched details from Veanu's ApiModels for {product.url}")
+                    except Exception as e:
+                        logger.warning(f"Error executing ApiModels search: {e}.")
+
+
                 except Exception as e:
                     logger.warning(f"Error executing Zyte API search: {e}.")
             await queue_out.put(product)

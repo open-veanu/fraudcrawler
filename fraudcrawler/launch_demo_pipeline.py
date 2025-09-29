@@ -15,7 +15,7 @@ def search(search_term: str):
     # Setup the search
     language = Language(name="German")
     location = Location(name="Switzerland")
-    deepness = Deepness(num_results=10)
+    deepness = Deepness(num_results=150)
     prompts = [
         Prompt(
             name="availability",
@@ -50,9 +50,9 @@ def search(search_term: str):
         # ),
     ]
     # # Optional: Add tern ENRICHEMENT
-    # from fraudcrawler import Enrichment
+    from fraudcrawler import Enrichment
 
-    # deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
+    deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
 
     # Optional: Add MARKETPLACES and EXCLUDED_URLS
     from fraudcrawler import Host
@@ -97,4 +97,13 @@ def search(search_term: str):
 
 
 if __name__ == "__main__":
-    search(search_term='Liebherr "TP1410"')
+    search(search_term='Spielzeug Kühlschrank')
+
+#Caso Design "Sound"
+#AEG „SKE612F“
+#Liebherr „CT 2131“
+#LG "GML643PZ6F"
+#Liebherr „Rf 4200-20“
+#Liebherr „GX 823“
+#Kibernetik "Split Klimagerät"
+#Spielzeug Kühlschrank
