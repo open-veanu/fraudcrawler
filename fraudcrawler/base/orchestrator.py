@@ -3,10 +3,12 @@ import asyncio
 import logging
 from typing import cast, Dict, List, Self
 
-from bs4 import BeautifulSoup
 import httpx
+import re
 
 from fraudcrawler.settings import (
+    EXACT_MATCH_PRODUCT_FIELDS,
+    EXACT_MATCH_FIELD_SEPARATOR,
     PROCESSOR_DEFAULT_MODEL,
 )
 from fraudcrawler.settings import (
@@ -28,7 +30,6 @@ from fraudcrawler import (
     SearchEngineName,
     Enricher,
     URLCollector,
-    ZyteAPI,
     Processor,
 )
 
@@ -227,10 +228,21 @@ class Orchestrator(ABC):
 
             if not product.filtered:
                 try:
-                    # Fetch the product context from Zyte API
+                    # Fetch and enrich the product context from Zyte API
                     details = await self._zyteapi.details(url=product.url)
                     product = self._zyteapi.enrich_context(product=product, details=details)
 
+                    # Filter the product based on the probability threshold
+                    if not self._zyteapi.keep_product(details=details):
+                        product.filtered = True
+                        product.filtered_at_stage = "Context (Zyte probability threshold)"
+
+                    # Check for exact match inside the full product context
+                    product = self._check_exact_search(product=product)
+                    if not product.filtered and product.exact_search and not product.exact_search_match:
+                        product.filtered = True
+                        product.filtered_at_stage = "Context (exact search)"
+                        
                 except Exception as e:
                     logger.warning(f"Error executing Zyte API search: {e}.")
             await queue_out.put(product)
@@ -467,6 +479,81 @@ class Orchestrator(ABC):
                         num_results=enrichment.additional_urls_per_term,
                         **common_kwargs,  # type: ignore[arg-type]
                     )
+
+    @staticmethod
+    def _is_exact_search(search_term: str) -> bool:
+        """Check if the search term is an exact search (contains double quotation marks).
+
+        Args:
+            search_term: The search term to check.
+
+        Returns:
+            True if the search term contains double quotation marks, False otherwise.
+        """
+        return '"' in search_term
+
+    @staticmethod
+    def _extract_exact_search_terms(search_term: str) -> list[str]:
+        """Extract all exact search terms from within double quotation marks.
+
+        Args:
+            search_term: The search term that may contain double quotation marks.
+
+        Returns:
+            A list of extracted search terms without quotes, or empty list if no quotes found.
+        """
+        # Find all double-quoted strings
+        double_quote_matches = re.findall(r'"([^"]*)"', search_term)
+        return double_quote_matches
+
+    @staticmethod
+    def _check_exact_search_terms_match(
+        product: ProductItem,
+        exact_search_terms: list[str],
+    ) -> bool:
+        """Check if the product, represented by a string of selected attributes, matches ALL of the exact search terms.
+
+        Args:
+            product: The product item.
+            exact_search_terms: List of exact search terms to match against.
+        """
+        field_values = [
+            str(val) for fld in EXACT_MATCH_PRODUCT_FIELDS
+            if (val := getattr(product, fld, None)) is not None
+        ]
+        product_str_lower = EXACT_MATCH_FIELD_SEPARATOR.join(field_values).lower()
+
+        return all(
+            re.search(re.escape(est.lower()), product_str_lower)
+            for est in exact_search_terms
+        )
+
+    def _check_exact_search(self, product: ProductItem) -> ProductItem:
+        """Checks if the search term requests an exact search and if yes, checks for conformity."""
+        # Check for exact search and apply regex matching
+        exact_search = self._is_exact_search(product.search_term)
+        product.exact_search = exact_search
+
+        # Only set exact_search_match if this was an exact search (contains quotes)
+        if exact_search:
+            exact_search_terms = self._extract_exact_search_terms(
+                product.search_term
+            )
+            if exact_search_terms:
+                product.exact_search_match = self._check_exact_search_terms_match(
+                    product=product, exact_search_terms=exact_search_terms
+                )
+                logger.debug(
+                    f"Exact search terms {exact_search_terms} matched: {product.exact_search_match} "
+                    f"for offer with url={product.url}"
+                )
+            else:
+                logger.warning(
+                    f"is_exact_search=True but no exact search terms found in search_term='{product.search_term}' "
+                    f"for offer with url={product.url}"
+                )
+        # If exact_search is False, product.exact_search_match remains False (default value)
+        return product
 
     async def run(
         self,

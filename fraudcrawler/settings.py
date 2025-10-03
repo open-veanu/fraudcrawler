@@ -78,6 +78,15 @@ ENRICHMENT_DEFAULT_LIMIT = 10
 # Zyte settings
 ZYTE_DEFALUT_PROBABILITY_THRESHOLD = 0.1
 
+# Exact match settings
+EXACT_MATCH_PRODUCT_FIELDS = {
+    "url_resolved"
+    "product_name",
+    "product_description",
+    "html",
+}
+EXACT_MATCH_FIELD_SEPARATOR = "\n"
+
 # Processor settings
 PROCESSOR_DEFAULT_MODEL = "gpt-4o"
 PROCESSOR_DEFAULT_IF_MISSING = -1

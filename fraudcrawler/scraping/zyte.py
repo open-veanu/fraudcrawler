@@ -2,11 +2,12 @@ from base64 import b64decode
 import logging
 from typing import List
 
+from bs4 import BeautifulSoup
 import httpx
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
-from fraudcrawler.base.base import DomainUtils
+from fraudcrawler.base.base import DomainUtils, ProductItem
 from fraudcrawler.base.retry import get_async_retry
 
 logger = logging.getLogger(__name__)
@@ -60,26 +61,6 @@ class ZyteAPI(DomainUtils):
             )
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before_sleep.")
-
-    @staticmethod
-    def _keep_product(
-        details: dict,
-        threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD,
-    ) -> bool:
-        """Determines whether to keep the product based on the probability threshold.
-
-        Args:
-            details: A product details data dictionary.
-            threshold: The probability threshold used to filter the products.
-        """
-        try:
-            prob = float(details["product"]["metadata"]["probability"])
-        except KeyError:
-            logger.warning(
-                f"Product with url={details.get('url')} has no probability value - product is ignored"
-            )
-            return False
-        return prob > threshold
 
     @staticmethod
     def _extract_product_name(details: dict) -> str | None:
@@ -195,10 +176,11 @@ class ZyteAPI(DomainUtils):
         return None
 
     def enrich_context(self, product: ProductItem, details: dict) -> ProductItem:
+        product.product_name = self._extract_product_name(details=details)
+        
         url_resolved = self._extract_url_resolved(details=details)
         if url_resolved:
             product.url_resolved = url_resolved
-        product.product_name = self._extract_product_name(details=details)
 
         # If the resolved URL is different from the original URL, we also need to update the domain as
         # otherwise the unresolved domain will be shown.
@@ -207,28 +189,46 @@ class ZyteAPI(DomainUtils):
             logger.debug(
                 f"URL resolved for {product.url} is {url_resolved}"
             )
-            product.domain = self._searcher._get_domain(url_resolved)
+            product.domain = self._get_domain(url=url_resolved)
 
-        product.product_price = self._zyteapi.extract_product_price(
+        product.product_price = self._extract_product_price(
             details=details
         )
         product.product_description = (
-            self._zyteapi.extract_product_description(details=details)
+            self._extract_product_description(details=details)
         )
-        product.product_images = self._zyteapi.extract_image_urls(
+        product.product_images = self._extract_image_urls(
             details=details
         )
-        product.probability = self._zyteapi.extract_probability(
+        product.probability = self._extract_probability(
             details=details
         )
-        product.html = self._zyteapi.extract_html(details=details)
+        product.html = self._extract_html(details=details)
         if product.html:
             soup = BeautifulSoup(product.html, "html.parser")
             product.html_clean = soup.get_text(separator=" ", strip=True)
-        # Filter the product based on the probability threshold
-        if not self._zyteapi.keep_product(details=details):
-            product.filtered = True
-            product.filtered_at_stage = "Zyte probability threshold"
+        
+        return product
+
+    @staticmethod
+    def keep_product(
+        details: dict,
+        threshold: float = ZYTE_DEFALUT_PROBABILITY_THRESHOLD,
+    ) -> bool:
+        """Determines whether to keep the product based on the probability threshold.
+
+        Args:
+            details: A product details data dictionary.
+            threshold: The probability threshold used to filter the products.
+        """
+        try:
+            prob = float(details["product"]["metadata"]["probability"])
+        except KeyError:
+            logger.warning(
+                f"Product with url={details.get('url')} has no probability value - product is ignored"
+            )
+            return False
+        return prob > threshold
 
     async def unblock_url_content(self, url: str) -> bytes:
         """Unblock the content of an URL using Zyte proxy mode.
