@@ -229,42 +229,8 @@ class Orchestrator(ABC):
                 try:
                     # Fetch the product context from Zyte API
                     details = await self._zyteapi.details(url=product.url)
-                    url_resolved = self._zyteapi.extract_url_resolved(details=details)
-                    if url_resolved:
-                        product.url_resolved = url_resolved
-                    product.product_name = self._zyteapi.extract_product_name(
-                        details=details
-                    )
+                    product = self._zyteapi.enrich_context(product=product, details=details)
 
-                    # If the resolved URL is different from the original URL, we also need to update the domain as
-                    # otherwise the unresolved domain will be shown.
-                    # For example for an unresolved domain "toppreise.ch" but resolved "digitec.ch
-                    if url_resolved and url_resolved != product.url:
-                        logger.debug(
-                            f"URL resolved for {product.url} is {url_resolved}"
-                        )
-                        product.domain = self._searcher._get_domain(url_resolved)
-
-                    product.product_price = self._zyteapi.extract_product_price(
-                        details=details
-                    )
-                    product.product_description = (
-                        self._zyteapi.extract_product_description(details=details)
-                    )
-                    product.product_images = self._zyteapi.extract_image_urls(
-                        details=details
-                    )
-                    product.probability = self._zyteapi.extract_probability(
-                        details=details
-                    )
-                    product.html = self._zyteapi.extract_html(details=details)
-                    if product.html:
-                        soup = BeautifulSoup(product.html, "html.parser")
-                        product.html_clean = soup.get_text(separator=" ", strip=True)
-                    # Filter the product based on the probability threshold
-                    if not self._zyteapi.keep_product(details=details):
-                        product.filtered = True
-                        product.filtered_at_stage = "Zyte probability threshold"
                 except Exception as e:
                     logger.warning(f"Error executing Zyte API search: {e}.")
             await queue_out.put(product)
