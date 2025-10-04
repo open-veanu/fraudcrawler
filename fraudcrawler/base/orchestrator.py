@@ -29,6 +29,7 @@ from fraudcrawler import (
     Searcher,
     SearchEngineName,
     Enricher,
+    ZyteAPI,
     URLCollector,
     Processor,
 )
@@ -230,19 +231,27 @@ class Orchestrator(ABC):
                 try:
                     # Fetch and enrich the product context from Zyte API
                     details = await self._zyteapi.details(url=product.url)
-                    product = self._zyteapi.enrich_context(product=product, details=details)
+                    product = self._zyteapi.enrich_context(
+                        product=product, details=details
+                    )
 
                     # Filter the product based on the probability threshold
                     if not self._zyteapi.keep_product(details=details):
                         product.filtered = True
-                        product.filtered_at_stage = "Context (Zyte probability threshold)"
+                        product.filtered_at_stage = (
+                            "Context (Zyte probability threshold)"
+                        )
 
                     # Check for exact match inside the full product context
                     product = self._check_exact_search(product=product)
-                    if not product.filtered and product.exact_search and not product.exact_search_match:
+                    if (
+                        not product.filtered
+                        and product.exact_search
+                        and not product.exact_search_match
+                    ):
                         product.filtered = True
                         product.filtered_at_stage = "Context (exact search)"
-                        
+
                 except Exception as e:
                     logger.warning(f"Error executing Zyte API search: {e}.")
             await queue_out.put(product)
@@ -518,7 +527,8 @@ class Orchestrator(ABC):
             exact_search_terms: List of exact search terms to match against.
         """
         field_values = [
-            str(val) for fld in EXACT_MATCH_PRODUCT_FIELDS
+            str(val)
+            for fld in EXACT_MATCH_PRODUCT_FIELDS
             if (val := getattr(product, fld, None)) is not None
         ]
         product_str_lower = EXACT_MATCH_FIELD_SEPARATOR.join(field_values).lower()
@@ -536,9 +546,7 @@ class Orchestrator(ABC):
 
         # Only set exact_search_match if this was an exact search (contains quotes)
         if exact_search:
-            exact_search_terms = self._extract_exact_search_terms(
-                product.search_term
-            )
+            exact_search_terms = self._extract_exact_search_terms(product.search_term)
             if exact_search_terms:
                 product.exact_search_match = self._check_exact_search_terms_match(
                     product=product, exact_search_terms=exact_search_terms

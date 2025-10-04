@@ -80,8 +80,7 @@ ZYTE_DEFALUT_PROBABILITY_THRESHOLD = 0.1
 
 # Exact match settings
 EXACT_MATCH_PRODUCT_FIELDS = {
-    "url_resolved"
-    "product_name",
+    "url_resolvedproduct_name",
     "product_description",
     "html",
 }

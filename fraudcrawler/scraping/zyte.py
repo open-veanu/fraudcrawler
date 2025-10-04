@@ -177,7 +177,7 @@ class ZyteAPI(DomainUtils):
 
     def enrich_context(self, product: ProductItem, details: dict) -> ProductItem:
         product.product_name = self._extract_product_name(details=details)
-        
+
         url_resolved = self._extract_url_resolved(details=details)
         if url_resolved:
             product.url_resolved = url_resolved
@@ -186,28 +186,18 @@ class ZyteAPI(DomainUtils):
         # otherwise the unresolved domain will be shown.
         # For example for an unresolved domain "toppreise.ch" but resolved "digitec.ch
         if url_resolved and url_resolved != product.url:
-            logger.debug(
-                f"URL resolved for {product.url} is {url_resolved}"
-            )
+            logger.debug(f"URL resolved for {product.url} is {url_resolved}")
             product.domain = self._get_domain(url=url_resolved)
 
-        product.product_price = self._extract_product_price(
-            details=details
-        )
-        product.product_description = (
-            self._extract_product_description(details=details)
-        )
-        product.product_images = self._extract_image_urls(
-            details=details
-        )
-        product.probability = self._extract_probability(
-            details=details
-        )
+        product.product_price = self._extract_product_price(details=details)
+        product.product_description = self._extract_product_description(details=details)
+        product.product_images = self._extract_image_urls(details=details)
+        product.probability = self._extract_probability(details=details)
         product.html = self._extract_html(details=details)
         if product.html:
             soup = BeautifulSoup(product.html, "html.parser")
             product.html_clean = soup.get_text(separator=" ", strip=True)
-        
+
         return product
 
     @staticmethod
