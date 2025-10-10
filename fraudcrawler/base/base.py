@@ -140,6 +140,8 @@ class ProductItem(BaseModel):
     url_resolved: str
     search_engine_name: str
     domain: str
+    exact_search: bool = False
+    exact_search_match: bool = False
 
     # Context parameters
     product_name: str | None = None
