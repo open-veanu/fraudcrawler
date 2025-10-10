@@ -97,4 +97,4 @@ def search(search_term: str):
 
 
 if __name__ == "__main__":
-    search(search_term='Kaffeebohnen')
+    search(search_term="Kaffeebohnen")
