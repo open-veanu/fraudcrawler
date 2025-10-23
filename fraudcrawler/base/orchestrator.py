@@ -31,7 +31,9 @@ from fraudcrawler import (
     Enricher,
     ZyteAPI,
     URLCollector,
+    ScrapingConfig,
     Processor,
+    ProcessingConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -261,7 +263,7 @@ class Orchestrator(ABC):
         self,
         queue_in: asyncio.Queue[ProductItem | None],
         queue_out: asyncio.Queue[ProductItem | None],
-        prompts: List[Prompt],
+        processing_config: ProcessingConfig,
     ) -> None:
         """Collects the product details from the queue_in, processes them (filtering, relevance, etc.) and puts the results into queue_out.
 
@@ -269,6 +271,7 @@ class Orchestrator(ABC):
             queue_in: The input queue containing the product details.
             queue_out: The output queue to put the processed product details.
             prompts: The list of prompts to use for classification.
+            processing_config: Sets up the processing pipeline step.
         """
 
         # Process the products
@@ -282,7 +285,7 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Run all the configured prompts
-                    for prompt in prompts:
+                    for prompt in processing_config.prompts:
                         classification = await self._processor.classify(
                             product=product,
                             prompt=prompt,
@@ -318,7 +321,7 @@ class Orchestrator(ABC):
         n_srch_wkrs: int,
         n_cntx_wkrs: int,
         n_proc_wkrs: int,
-        prompts: List[Prompt],
+        processing_config: ProcessingConfig,
     ) -> None:
         """Sets up the necessary queues and workers for the async framework.
 
@@ -326,7 +329,7 @@ class Orchestrator(ABC):
             n_srch_wkrs: Number of async workers for search.
             n_cntx_wkrs: Number of async workers for context extraction.
             n_proc_wkrs: Number of async workers for processing.
-            prompts: The list of prompts used for the classification by func:`Processor.classify`.
+            processing_config: Sets up the processing pipeline step.
         """
 
         # Setup the input/output queues for the workers
@@ -369,7 +372,7 @@ class Orchestrator(ABC):
                 self._proc_execute(
                     queue_in=proc_queue,
                     queue_out=res_queue,
-                    prompts=prompts,
+                    processing_config=processing_config,
                 )
             )
             for _ in range(n_proc_wkrs)
@@ -423,13 +426,7 @@ class Orchestrator(ABC):
     async def _add_srch_items(
         self,
         queue: asyncio.Queue[dict | None],
-        search_term: str,
-        search_engines: List[SearchEngineName],
-        language: Language,
-        location: Location,
-        deepness: Deepness,
-        marketplaces: List[Host] | None,
-        excluded_urls: List[Host] | None,
+        scraping_config: ScrapingConfig,
     ) -> None:
         """Adds all the (enriched) search_term (as srch items) to the queue.
 
@@ -448,12 +445,17 @@ class Orchestrator(ABC):
                 for each search_engine
                     add item to queue
         """
+        search_term = scraping_config.search_term
+        search_engines = scraping_config.search_engines
+        language = scraping_config.language
+        location = scraping_config.location
+        deepness = scraping_config.deepness
         common_kwargs = {
             "queue": queue,
             "language": language,
             "location": location,
-            "marketplaces": marketplaces,
-            "excluded_urls": excluded_urls,
+            "marketplaces": scraping_config.marketplaces,
+            "excluded_urls": scraping_config.excluded_urls,
         }
 
         # Add initial items to the queue
@@ -495,21 +497,15 @@ class Orchestrator(ABC):
 
         Args:
             search_term: The search term to check.
-
-        Returns:
-            True if the search term contains double quotation marks, False otherwise.
         """
         return '"' in search_term
 
     @staticmethod
     def _extract_exact_search_terms(search_term: str) -> list[str]:
-        """Extract all exact search terms from within double quotation marks.
+        """Extract all exact search terms from within double quotation marks (empty if no quotes found).
 
         Args:
             search_term: The search term that may contain double quotation marks.
-
-        Returns:
-            A list of extracted search terms without quotes, or empty list if no quotes found.
         """
         # Find all double-quoted strings
         double_quote_matches = re.findall(r'"([^"]*)"', search_term)
@@ -565,46 +561,31 @@ class Orchestrator(ABC):
 
     async def run(
         self,
-        search_term: str,
-        search_engines: List[SearchEngineName],
-        language: Language,
-        location: Location,
-        deepness: Deepness,
-        prompts: List[Prompt],
-        marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
-        previously_collected_urls: List[str] | None = None,
+        scraping_config: ScrapingConfig,
+        processing_config: ProcessingConfig,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
         Args:
-            search_term: The search term for the query.
-            search_engines: The list of search engines to use for the search query.
-            language: The language to use for the query.
-            location: The location to use for the query.
-            deepness: The search depth and enrichment details.
-            prompts: The list of prompt to use for classification.
-            marketplaces: The marketplaces to include in the search.
-            excluded_urls: The URLs to exclude from the search.
-            previously_collected_urls: The urls that have been collected previously and are ignored.
+            scraping_config: Sets up the scraping pipeline step.
+            processing_config: Sets up the processing pipeline step.
         """
         # ---------------------------
         #        INITIAL SETUP
         # ---------------------------
-        # Ensure we have at least one search engine
-        if not search_engines:
+        # Ensure we have at least one search engine (the list might be empty)
+        if not scraping_config.search_engines:
             logger.warning(
                 "No search engines specified, using all available search engines"
             )
-            search_engines = list(SearchEngineName)
+            scraping_config.search_engines = list(SearchEngineName)
 
         # Handle previously collected URLs
-        if previously_collected_urls:
-            self._url_collector.add_previously_collected_urls(
-                urls=previously_collected_urls
-            )
+        if (pcurls := scraping_config.previously_collected_urls):
+            self._url_collector.add_previously_collected_urls(urls=pcurls)
 
         # Setup the async framework
+        deepness = scraping_config.deepness
         n_terms_max = 1 + (
             deepness.enrichment.additional_terms if deepness.enrichment else 0
         )
@@ -619,7 +600,7 @@ class Orchestrator(ABC):
             n_srch_wkrs=n_srch_wkrs,
             n_cntx_wkrs=n_cntx_wkrs,
             n_proc_wkrs=n_proc_wkrs,
-            prompts=prompts,
+            processing_config=processing_config,
         )
 
         # Check setup of async framework
@@ -642,13 +623,7 @@ class Orchestrator(ABC):
         srch_queue = self._queues["srch"]
         await self._add_srch_items(
             queue=srch_queue,
-            search_term=search_term,
-            search_engines=search_engines,
-            language=language,
-            location=location,
-            deepness=deepness,
-            marketplaces=marketplaces,
-            excluded_urls=excluded_urls,
+            scraping_config=scraping_config,
         )
 
         # -----------------------------
