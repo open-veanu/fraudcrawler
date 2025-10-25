@@ -17,11 +17,9 @@ from fraudcrawler.settings import (
     DEFAULT_N_PROC_WKRS,
 )
 from fraudcrawler.base.base import (
-    Deepness,
     Host,
     Language,
     Location,
-    Prompt,
     ProductItem,
     HttpxAsyncClient,
 )
@@ -581,7 +579,7 @@ class Orchestrator(ABC):
             scraping_config.search_engines = list(SearchEngineName)
 
         # Handle previously collected URLs
-        if (pcurls := scraping_config.previously_collected_urls):
+        if pcurls := scraping_config.previously_collected_urls:
             self._url_collector.add_previously_collected_urls(urls=pcurls)
 
         # Setup the async framework
