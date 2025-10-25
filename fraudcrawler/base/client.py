@@ -155,7 +155,7 @@ class FraudCrawlerClient(Orchestrator):
                 ),
                 processing_config=ProcessingConfig(
                     prompts=prompts,
-                )
+                ),
             )
         )
 
