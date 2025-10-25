@@ -268,7 +268,6 @@ class Orchestrator(ABC):
         Args:
             queue_in: The input queue containing the product details.
             queue_out: The output queue to put the processed product details.
-            prompts: The list of prompts to use for classification.
             processing_config: Sets up the processing pipeline step.
         """
 
