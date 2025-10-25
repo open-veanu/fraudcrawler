@@ -1,8 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List
 
-from fraudcrawler import (
-    SearchEngineName,
+from fraudcrawler.scraping.search import SearchEngineName
+from fraudcrawler.base.base import (
     Language,
     Location,
     Deepness,
