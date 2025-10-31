@@ -19,7 +19,9 @@ from fraudcrawler.base.base import (
     ProductItem,
 )
 from fraudcrawler.base.orchestrator import Orchestrator
+from fraudcrawler.scraping.config import ScrapingConfig
 from fraudcrawler.scraping.search import SearchEngineName
+from fraudcrawler.processing.config import ProcessingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -141,15 +143,19 @@ class FraudCrawlerClient(Orchestrator):
 
         asyncio.run(
             _run(
-                search_term=search_term,
-                search_engines=nrm_search_engines,
-                language=language,
-                location=location,
-                deepness=deepness,
-                prompts=prompts,
-                marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
-                previously_collected_urls=previously_collected_urls,
+                scraping_config=ScrapingConfig(
+                    search_term=search_term,
+                    search_engines=nrm_search_engines,
+                    language=language,
+                    location=location,
+                    deepness=deepness,
+                    marketplaces=marketplaces,
+                    excluded_urls=excluded_urls,
+                    previously_collected_urls=previously_collected_urls,
+                ),
+                processing_config=ProcessingConfig(
+                    prompts=prompts,
+                ),
             )
         )
 

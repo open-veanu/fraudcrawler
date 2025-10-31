@@ -45,6 +45,7 @@ class Setup(BaseSettings):
     dataforseo_pwd: str
     zyteapi_key: str
     openaiapi_key: str
+    pypy_token: str
 
     class Config:
         env_file = ".env"
