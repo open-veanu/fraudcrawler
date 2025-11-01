@@ -13,17 +13,28 @@ def main():
     client = FraudCrawlerClient()
 
     # Setup the search
-    search_term = "Borax"
+    search_term = "Nitrobenzin"
     language = Language(name="German")
     location = Location(name="Switzerland")
-    deepness = Deepness(num_results=150)
+    deepness = Deepness(num_results=100)
     prompts = [
         Prompt(
             name="relevance",
-            context="This organization is interested in checking for illegal products regarding health and safety.",
+            context="This organization is interested products sold in an online shop regarding health. The organization monitors "
+                    "health, radiation, environmental health risks and ensures food and chemical safety, among other tasks. "
+                    "They only want to know about relevant sold products for their health context, such as but not limited to:"
+                    "- medicines, supplements, cosmetics"
+                    "- medical devices"
+                    "- chemicals, fertilizers"
+                    "- food and beverages"
+                    "- medical and radiation protection"
+                    "they are only interested in products sold in a shop, not in pure information pages",
             system_prompt=(
                 "You are a helpful and intelligent assistant. Your task is to classify any given product "
                 "as either relevant (1) or not relevant (0), strictly based on the context and product details provided by the user. "
+                "Products should be classified as relevant (1) if they are explicitly sold. A description of a product is "
+                "not enough to classify it as relevant. A good indicator is if the text mentions prices, shipping costs, a quantity" 
+                " in gram, kg or another measurement unit, or descriptions of pills, liquid doses or tablets."
                 "You must consider all aspects of the given context and make a binary decision accordingly. "
                 "If the product aligns with the user's needs, classify it as 1 (relevant); otherwise, classify it as 0 (not relevant). "
                 "Respond only with the number 1 or 0."
@@ -32,16 +43,23 @@ def main():
         ),
         Prompt(
             name="seriousness",
-            context="This organization is interested in checking for illegal products regarding health and safety.",
+            context="This organization is interested in checking for products relevant to health. Any product such as "
+                    "a medicine, a supplement, a chemical, a fertilizer, a cosmetic, etc are relevant to them",
             system_prompt=(
                 "You are an intelligent and discerning assistant. Your task is to classify each item as either "
-                "a product for sale (1) or not a product for sale (0). To make this distinction, consider the following criteria: \n"
-                "    1 Product for Sale (1): Classify as 1 if the result clearly indicates an item available for purchase, typically found  "
-                "within an online shop or marketplace.\n"
-                "    2 Not a Product for Sale (0): Classify as 0 if the result is unrelated to a direct purchase of a product. This includes items such as: \n"
-                "        - Books and Videos: These may be available for sale, but if they are about or related to the searched product rather than being the "
-                "exact product itself, classify as 0.\n"
+                "relevant content (1) or not relevant content (0). To make this distinction, consider the following criteria: \n"
+                "    1. Relevant Content (1): Classify as 1 if the result clearly indicates content relevant to health, such as but not limited to:\n"
+                "        - Medicines, supplements, cosmetics"
+                "        - Chemicals, fertilizers"
+                "        - Medical devices"
+                "        - Food and beverages"
+                "        - Medical and radiation protection"
+                "    2. Not Relevant Content (0): Classify as 0 if the result is not relevant to the organization. For example: \n"
+                "        - Books: They are never relevant, classify as 0.\n"
+                "        - An article that seems describe a book is also never relevant.\n"
+                "        - Videos: Not relevant, classify as 0.\n"
                 "        - Advertisements: Promotional content that doesn't directly sell a product.\n"
+                "        - Information pages: If a page offers information about a substance or product, but doesn't sell it, classify as 0.\n"
                 "        - Companies and Services: Names and descriptions of companies or services related to the product but not the product itself.\n"
                 "        - Related Topics/Content: Any text or media that discusses or elaborates on the topic without offering a tangible product for sale.\n"
                 "Make your decision based solely on the context and details provided in the search result. Respond only with the number 1 or 0."
@@ -68,9 +86,9 @@ def main():
 
     # Data Science Settings
     ds_settings = DSsettings(
-                            dataset_creation=False,
-                            use_cached_ds_data =True,
-                            cached_filename="59ab8652_Borax_de_ch_20250502140755.csv"
+                            dataset_creation=True,
+                            use_cached_ds_data =False,
+                            cached_filename=None #59ab8652_Borax_de_ch_20250502140755_labeled.xlsx or None
                             )
 
     # Execute the pipeline

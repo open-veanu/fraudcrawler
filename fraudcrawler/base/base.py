@@ -97,7 +97,7 @@ class DSsettings(BaseModel):
 
     dataset_creation: bool = False
     use_cached_ds_data: bool =True
-    cached_filename: str
+    cached_filename: str | None = None
                             
 
 class Enrichment(BaseModel):

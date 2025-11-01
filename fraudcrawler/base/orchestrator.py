@@ -45,6 +45,7 @@ class ProductItem(BaseModel):
     filtered: bool = False
     filtered_at_stage: str | None = None
     is_relevant: int = PRODUCT_ITEM_DEFAULT_IS_RELEVANT
+    manual_label: int | None = None
 
 
 class Orchestrator(ABC):
@@ -488,33 +489,61 @@ class Orchestrator(ABC):
             async def load_cached_items(proc_queue):
                 import csv
                 from urllib.parse import urlparse
+                import pandas as pd
+                from pathlib import Path
 
-                # Assuming ds_settings and proc_queue are defined earlier
-                with open(DATA_DIR / ds_settings.cached_filename, mode='r', encoding='utf-8') as file:
-                    reader = csv.DictReader(file)
+                # Set pandas display options to show all columns
+                pd.set_option('display.max_columns', None)
+                if ds_settings.cached_filename.endswith('.xlsx'):
+                    df = pd.read_excel(DATA_DIR / ds_settings.cached_filename)
+                    print('This is the read excel file')
+                    print(df.head(4))
+                    print(df.columns)
+                else:
+                    df = pd.read_csv(DATA_DIR / ds_settings.cached_filename)
+                    
+                for _, row in df.iterrows():
+                    # Extract the domain from the URL
+                    domain = urlparse(row['url']).netloc if 'url' in row and row['url'] else ''
+        
+                    # When creating the ProductItem, convert NaN to None
+                    product_name = None if pd.isna(row['product_name']) else str(row['product_name'])
+                    product_price = None if pd.isna(row['product_price']) else str(row['product_price'])
+                    product_description = None if pd.isna(row['product_description']) else str(row['product_description'])
+                    probability = None if pd.isna(row['probability']) else float(row['probability'])
+                    manual_label = None if pd.isna(row['manual_label']) else int(row['manual_label'])
 
-                    for row in reader:
-                        # Extract the domain from the URL
-                        domain = urlparse(row['url']).netloc if 'url' in row and row['url'] else ''
+                    print('\nnew row\n')
+                    print(row['manual_label'])
+                    # Create a ProductItem
+                    product = ProductItem(
+                        search_term=row['search_term'],
+                        search_term_type=row['search_term_type'],
+                        url=row['url'],
+                        marketplace_name=row['marketplace_name'],
+                        domain=row['domain'],
 
-                        # Create a ProductItem
-                        product = ProductItem(
-                            search_term=row['search_term'],
-                            search_term_type=row['search_term_type'],
-                            url=row['url'],
-                            marketplace_name=row['marketplace_name'],
-                            domain=row['domain'],
-                            ds_settings=DSsettings(dataset_creation=row['dataset_creation'], 
-                                                   use_cached_ds_data =row['use_cached_ds_data'],
-                                                   cached_filename=row['cached_filename']),
-                            filtered=row['filtered'],
-                            filtered_at_stage=row['filtered_at_stage']
-                        )
-                        print(f"CURRENT URL: {row['url']}")
+                        # Zyte parameters
+                        product_name=product_name,
+                        product_price=product_price,
+                        product_description=product_description,
+                        #product_images=row['product_images'],
+                        probability=probability,
+                        encoded_url16=row['encoded_url16'],
 
-                        # Put the product in the processing queue
-                        await proc_queue.put(product)
-                        logger.info("Loading cached data for processing...")
+                        ds_settings=DSsettings(dataset_creation=row['dataset_creation'], 
+                                               use_cached_ds_data =row['use_cached_ds_data'],
+                                               cached_filename=ds_settings.cached_filename),
+                        filtered=row['filtered'],
+                        filtered_at_stage=row['filtered_at_stage'],
+                        manual_label=manual_label
+                    )
+                    print(f"CURRENT URL: {row['url']}")
+
+                    # Put the product in the processing queue
+                    await proc_queue.put(product)
+                    logger.info("Loading cached data for processing...")
+        
                 return proc_queue
 
         

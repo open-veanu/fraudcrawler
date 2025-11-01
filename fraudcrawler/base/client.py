@@ -111,7 +111,16 @@ class FraudCrawlerClient(Orchestrator):
                 timestamp=timestamp,
             )
         else:
-            filename = ds_settings.cached_filename.removesuffix(".csv") + "_" + datetime.today().strftime("%Y%m%d%H%M%S") + '.csv'
+            # Handle both .csv and .xlsx extensions for cached data
+            base_filename = ds_settings.cached_filename
+            if base_filename.endswith('.csv'):
+                base_filename = base_filename.removesuffix('.csv')
+            elif base_filename.endswith('.xlsx'):
+                base_filename = base_filename.removesuffix('.xlsx')
+            else:
+                logger.warning(f"Unexpected file extension in cached_filename: {base_filename}")
+            
+            filename = f"{base_filename}_{datetime.today().strftime('%Y%m%d%H%M%S')}.csv"
             filename = self._results_dir / filename
 
         self._results.append(Results(search_term=search_term, filename=filename))
