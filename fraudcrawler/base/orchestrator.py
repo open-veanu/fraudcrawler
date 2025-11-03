@@ -1,51 +1,42 @@
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-from pydantic import BaseModel, Field
-from typing import Dict, List, Set, cast
+from typing import cast, Dict, List, Self
 
-from fraudcrawler.settings import PROCESSOR_DEFAULT_MODEL, MAX_RETRIES, RETRY_DELAY
+import httpx
+import re
+
 from fraudcrawler.settings import (
-    DEFAULT_N_SERP_WKRS,
-    DEFAULT_N_ZYTE_WKRS,
+    EXACT_MATCH_PRODUCT_FIELDS,
+    EXACT_MATCH_FIELD_SEPARATOR,
+    PROCESSOR_DEFAULT_MODEL,
+    DATA_DIR
+)
+from fraudcrawler.settings import (
+    DEFAULT_N_SRCH_WKRS,
+    DEFAULT_N_CNTX_WKRS,
     DEFAULT_N_PROC_WKRS,
 )
-from fraudcrawler.settings import PRODUCT_ITEM_DEFAULT_IS_RELEVANT, DATA_DIR
-from fraudcrawler.base.base import Deepness, Host, Language, DSsettings, Location, Prompt
-from fraudcrawler import SerpApi, Enricher, ZyteApi, Processor
+from fraudcrawler.base.base import (
+    Host,
+    Language,
+    DSsettings,
+    Location,
+    ProductItem,
+    HttpxAsyncClient,
+)
+from fraudcrawler import (
+    Searcher,
+    SearchEngineName,
+    Enricher,
+    ZyteAPI,
+    URLCollector,
+    ScrapingConfig,
+    Processor,
+    ProcessingConfig,
+)
 
 logger = logging.getLogger(__name__)
-
-
-class ProductItem(BaseModel):
-    """Model representing a product item."""
-
-    # Serp/Enrich parameters
-    search_term: str
-    search_term_type: str
-    url: str
-    marketplace_name: str
-    domain: str
-
-    # Zyte parameters
-    product_name: str | None = None
-    product_price: str | None = None
-    product_description: str | None = None
-    product_images: List[str] | None = None
-    probability: float | None = None
-    encoded_url16: str | None = None
-
-    # Processor parameters are set dynamic so we must allow extra fields
-    classifications: Dict[str, int] = Field(default_factory=dict)
-
-    # Data Science Conditional Parameters
-    ds_settings: DSsettings
-
-    # Filtering parameters
-    filtered: bool = False
-    filtered_at_stage: str | None = None
-    is_relevant: int = PRODUCT_ITEM_DEFAULT_IS_RELEVANT
-    manual_label: int | None = None
 
 
 class Orchestrator(ABC):
@@ -72,13 +63,20 @@ class Orchestrator(ABC):
         zyteapi_key: str,
         openaiapi_key: str,
         openai_model: str = PROCESSOR_DEFAULT_MODEL,
-        max_retries: int = MAX_RETRIES,
-        retry_delay: int = RETRY_DELAY,
-        n_serp_wkrs: int = DEFAULT_N_SERP_WKRS,
-        n_zyte_wkrs: int = DEFAULT_N_ZYTE_WKRS,
+        n_srch_wkrs: int = DEFAULT_N_SRCH_WKRS,
+        n_cntx_wkrs: int = DEFAULT_N_CNTX_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
+        # Configure a custom httpx client.
+        # We provide a `HttpxAsyncClient` class that you can pass
+        # to retain the default values we use for `limits`, `timeout` & `follow_redirects`.
+        http_client: httpx.AsyncClient | None = None,
     ):
         """Initializes the orchestrator with the given settings.
+
+        NOTE:
+        The class:`Orchestrator` must be used as context manager as follows:
+            async with Orchestrator(...) as orchestrator:
+                await orchestrator.run()
 
         Args:
             serpapi_key: The API key for SERP API.
@@ -87,39 +85,79 @@ class Orchestrator(ABC):
             zyteapi_key: The API key for Zyte API.
             openaiapi_key: The API key for OpenAI.
             openai_model: The model to use for the processing (optional).
-            max_retries: Maximum number of retries for API calls (optional).
-            retry_delay: Delay between retries in seconds (optional).
-            n_serp_wkrs: Number of async workers for serp (optional).
-            n_zyte_wkrs: Number of async workers for zyte (optional).
+            n_srch_wkrs: Number of async workers for the search (optional).
+            n_cntx_wkrs: Number of async workers for context extraction (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
+            http_client: An httpx.AsyncClient to use for the async requests (optional).
         """
+
         default_ds_settings = DSsettings(dataset_creation=False,
                                          use_cached_ds_data=False,
                                          cached_filename="")
 
-        # Setup the variables
-        self._collected_urls_current_run: Set[str] = set()
-        self._collected_urls_previous_runs: Set[str] = set()
-
-        # Setup the clients
-        self._serpapi = SerpApi(api_key=serpapi_key, max_retries=max_retries, retry_delay=retry_delay)
-        self._enricher = Enricher(user=dataforseo_user, pwd=dataforseo_pwd)
-        self._zyteapi = ZyteApi(api_key=zyteapi_key, ds_settings=default_ds_settings, max_retries=max_retries, retry_delay=retry_delay)
-        self._processor = Processor(api_key=openaiapi_key, model=openai_model)
+        # Store the variables for setting up the clients
+        self._serpapi_key = serpapi_key
+        self._dataforseo_user = dataforseo_user
+        self._dataforseo_pwd = dataforseo_pwd
+        self._zyteapi_key = zyteapi_key
+        self._openaiapi_key = openaiapi_key
+        self._openai_model = openai_model
 
         # Setup the async framework
-        self._n_serp_wkrs = n_serp_wkrs
-        self._n_zyte_wkrs = n_zyte_wkrs
+        self._n_srch_wkrs = n_srch_wkrs
+        self._n_cntx_wkrs = n_cntx_wkrs
         self._n_proc_wkrs = n_proc_wkrs
         self._queues: Dict[str, asyncio.Queue] | None = None
         self._workers: Dict[str, List[asyncio.Task] | asyncio.Task] | None = None
 
-    async def _serp_execute(
+        # Setup the httpx client
+        self._http_client = http_client
+        self._owns_http_client = http_client is None
+
+    async def __aenter__(self) -> Self:
+        """Creates and starts an httpx.AsyncClient if not provided."""
+        if self._http_client is None:
+            logger.debug("Creating a new httpx.AsyncClient owned by the orchestrator")
+            self._http_client = HttpxAsyncClient()
+            self._owns_http_client = True
+
+        # Setup the clients
+        self._searcher = Searcher(
+            http_client=self._http_client,
+            serpapi_key=self._serpapi_key,
+            zyteapi_key=self._zyteapi_key,
+        )
+        self._enricher = Enricher(
+            http_client=self._http_client,
+            user=self._dataforseo_user,
+            pwd=self._dataforseo_pwd,
+        )
+        self._url_collector = URLCollector()
+        self._zyteapi = ZyteAPI(
+            http_client=self._http_client,
+            api_key=self._zyteapi_key,
+            ds_settings=default_ds_settings
+        )
+        self._processor = Processor(
+            http_client=self._http_client,
+            api_key=self._openaiapi_key,
+            model=self._openai_model,
+        )
+        return self
+
+    async def __aexit__(self, *args, **kwargs) -> None:
+        """Closes the httpx.AsyncClient if it was created by this orchestrator."""
+        if self._owns_http_client and self._http_client is not None:
+            logger.debug("Closing the httpx.AsyncClient owned by the orchestrator")
+            await self._http_client.aclose()
+            self._http_client = None
+
+    async def _srch_execute(
         self,
         queue_in: asyncio.Queue[dict | None],
         queue_out: asyncio.Queue[ProductItem | None],
     ) -> None:
-        """Collects the SerpApi search setups from the queue_in, executes the search, filters the results (country_code) and puts them into queue_out.
+        """Collects the search setups from the queue_in, executes the search, filters the results and puts them into queue_out.
 
         Args:
             queue_in: The input queue containing the search parameters.
@@ -132,17 +170,21 @@ class Orchestrator(ABC):
                 break
 
             try:
+                # Execute the search
                 search_term_type = item.pop("search_term_type")
-                results = await self._serpapi.apply(**item)
+                results = await self._searcher.apply(**item)
                 logger.debug(
-                    f"SERP API search for {item['search_term']} returned {len(results)} results"
+                    f"Search for {item['search_term']} returned {len(results)} results"
                 )
+
+                # Create ProductItems for each result
                 for res in results:
                     product = ProductItem(
                         search_term=item["search_term"],
                         search_term_type=search_term_type,
                         url=res.url,
-                        marketplace_name=res.marketplace_name,
+                        url_resolved=res.url,  # Set initial value, will be updated by Zyte
+                        search_engine_name=res.search_engine_name,
                         domain=res.domain,
                         ds_settings = item["ds_settings"],
                         filtered=res.filtered,
@@ -150,7 +192,7 @@ class Orchestrator(ABC):
                     )
                     await queue_out.put(product)
             except Exception as e:
-                logger.error(f"Error executing SERP API search: {e}")
+                logger.error(f"Error executing search: {e}")
             queue_in.task_done()
 
     async def _collect_url(
@@ -171,29 +213,12 @@ class Orchestrator(ABC):
                 break
 
             if not product.filtered:
-                url = product.url
-
-                if url in self._collected_urls_current_run:
-                    # deduplicate on current run
-                    product.filtered = not product.ds_settings.dataset_creation
-                    product.filtered_at_stage = (
-                        "URL collection (current run deduplication)"
-                    )
-                    logger.debug(f"URL {url} already collected in current run")
-                elif url in self._collected_urls_previous_runs:
-                    # deduplicate on previous runs coming from a db
-                    product.filtered = not product.ds_settings.dataset_creation
-                    product.filtered_at_stage = (
-                        "URL collection (previous run deduplication)"
-                    )
-                    logger.debug(f"URL {url} as already collected in previous run")
-                else:
-                    self._collected_urls_current_run.add(url)
+                product = await self._url_collector.apply(product=product)
 
             await queue_out.put(product)
             queue_in.task_done()
 
-    async def _zyte_execute(
+    async def _cntx_execute(
         self,
         queue_in: asyncio.Queue[ProductItem | None],
         queue_out: asyncio.Queue[ProductItem | None],
@@ -212,28 +237,36 @@ class Orchestrator(ABC):
                 break
 
             if not product.filtered:
+                print('LETS SEE IF NETTO SHOP SHOWS UP HERE:')
+                print(product.url)
                 try:
-                    # Update ds_settings in Zyte client from default value
-                    self._zyteapi._ds_settings = product.ds_settings
-                    # Fetch the product details from Zyte API
-                    details = await self._zyteapi.get_details(url=product.url, timestamp=timestamp)
-                    product.product_name = self._zyteapi.extract_product_name(details=details)
-                    product.product_price = self._zyteapi.extract_product_price(details=details)
-                    product.product_description = (self._zyteapi.extract_product_description(details=details))
-                    product.product_images = self._zyteapi.extract_image_urls(details=details)
-                    product.probability = self._zyteapi.extract_probability(details=details)
-                    product.encoded_url16 = self._zyteapi.extract_encoded_url16(details=details)
-                    
+                    # Fetch and enrich the product context from Zyte API
+                    details = await self._zyteapi.details(url=product.url)
+                    product = self._zyteapi.enrich_context(
+                        product=product, details=details
+                    )
+
                     # Filter the product based on the probability threshold
                     if product.ds_settings.dataset_creation or self._zyteapi.keep_product(details=details):
                         product.filtered = False
                     else:
                         product.filtered = True
-                    product.filtered_at_stage = "Zyte probability threshold"
+                        product.filtered_at_stage = (
+                            "Context (Zyte probability threshold)"
+                        )
+
+                    # Check for exact match inside the full product context
+                    product = self._check_exact_search(product=product)
+                    if (
+                        not product.filtered
+                        and product.exact_search
+                        and not product.exact_search_match
+                    ):
+                        product.filtered = True
+                        product.filtered_at_stage = "Context (exact search)"
 
                 except Exception as e:
                     logger.warning(f"Error executing Zyte API search: {e}.")
-
             await queue_out.put(product)
             queue_in.task_done()
 
@@ -241,18 +274,17 @@ class Orchestrator(ABC):
         self,
         queue_in: asyncio.Queue[ProductItem | None],
         queue_out: asyncio.Queue[ProductItem | None],
-        prompts: List[Prompt],
+        processing_config: ProcessingConfig,
     ) -> None:
         """Collects the product details from the queue_in, processes them (filtering, relevance, etc.) and puts the results into queue_out.
 
         Args:
             queue_in: The input queue containing the product details.
             queue_out: The output queue to put the processed product details.
-            prompts: The list of prompts to use for classification.
+            processing_config: Sets up the processing pipeline step.
         """
 
         # Process the products
-
         while True:
             product = await queue_in.get()
             if product is None:
@@ -262,24 +294,23 @@ class Orchestrator(ABC):
 
             if not product.filtered:
                 try:
-                    url = product.url
-                    name = product.product_name
-                    description = product.product_description
-
                     # Run all the configured prompts
-                    for prompt in prompts:
-                        logger.debug(
-                            f"Classify product {name} with prompt {prompt.name}"
-                        )
+                    for prompt in processing_config.prompts:
                         classification = await self._processor.classify(
+                            product=product,
                             prompt=prompt,
-                            url=url,
-                            name=name,
-                            description=description,
                         )
-                        product.classifications[prompt.name] = classification
+                        product.classifications[prompt.name] = int(
+                            classification.result
+                        )
+                        product.usage[prompt.name] = {
+                            "input_tokens": classification.input_tokens,
+                            "output_tokens": classification.output_tokens,
+                        }
                 except Exception as e:
-                    logger.warning(f"Error processing product: {e}.")
+                    logger.warning(
+                        f"Error processing product with url={product.url}: {e}."
+                    )
 
             await queue_out.put(product)
             queue_in.task_done()
@@ -297,55 +328,55 @@ class Orchestrator(ABC):
 
     def _setup_async_framework(
         self,
-        n_serp_wkrs: int,
-        n_zyte_wkrs: int,
+        n_srch_wkrs: int,
+        n_cntx_wkrs: int,
         n_proc_wkrs: int,
-        prompts: List[Prompt],
+        processing_config: ProcessingConfig,
         timestamp: str,
     ) -> None:
         """Sets up the necessary queues and workers for the async framework.
 
         Args:
-            n_serp_wkrs: Number of async workers for serp.
-            n_zyte_wkrs: Number of async workers for zyte.
-            n_proc_wkrs: Number of async workers for processor.
-            prompts: The list of prompts used for the classification by func:`Processor.classify`.
+            n_srch_wkrs: Number of async workers for search.
+            n_cntx_wkrs: Number of async workers for context extraction.
+            n_proc_wkrs: Number of async workers for processing.
+            processing_config: Sets up the processing pipeline step.
             timestamp: The timestamp of the run.
         """
 
         # Setup the input/output queues for the workers
-        serp_queue: asyncio.Queue[dict | None] = asyncio.Queue()
+        srch_queue: asyncio.Queue[dict | None] = asyncio.Queue()
         url_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
-        zyte_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
+        cntx_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
         proc_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
         res_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
 
-        # Setup the Serp workers
-        serp_wkrs = [
+        # Setup the Search workers
+        srch_wkrs = [
             asyncio.create_task(
-                self._serp_execute(
-                    queue_in=serp_queue,
+                self._srch_execute(
+                    queue_in=srch_queue,
                     queue_out=url_queue,
                 )
             )
-            for _ in range(n_serp_wkrs)
+            for _ in range(n_srch_wkrs)
         ]
 
         # Setup the URL collector
         url_col = asyncio.create_task(
-            self._collect_url(queue_in=url_queue, queue_out=zyte_queue)
+            self._collect_url(queue_in=url_queue, queue_out=cntx_queue)
         )
 
-        # Setup the Zyte workers
-        zyte_wkrs = [
+        # Setup the context extraction workers
+        cntx_wkrs = [
             asyncio.create_task(
-                self._zyte_execute(
-                    queue_in=zyte_queue,
+                self._cntx_execute(
+                    queue_in=cntx_queue,
                     queue_out=proc_queue,
                     timestamp=timestamp,
                 )
             )
-            for _ in range(n_zyte_wkrs)
+            for _ in range(n_cntx_wkrs)
         ]
 
         # Setup the processing workers
@@ -354,7 +385,7 @@ class Orchestrator(ABC):
                 self._proc_execute(
                     queue_in=proc_queue,
                     queue_out=res_queue,
-                    prompts=prompts,
+                    processing_config=processing_config,
                 )
             )
             for _ in range(n_proc_wkrs)
@@ -365,25 +396,26 @@ class Orchestrator(ABC):
 
         # Add the setup to the instance variables
         self._queues = {
-            "serp": serp_queue,
+            "srch": srch_queue,
             "url": url_queue,
-            "zyte": zyte_queue,
+            "cntx": cntx_queue,
             "proc": proc_queue,
             "res": res_queue,
         }
         self._workers = {
-            "serp": serp_wkrs,
+            "srch": srch_wkrs,
             "url": url_col,
-            "zyte": zyte_wkrs,
+            "cntx": cntx_wkrs,
             "proc": proc_wkrs,
             "res": res_col,
         }
 
     @staticmethod
-    async def _add_serp_items_for_search_term(
+    async def _add_search_items_for_search_term(
         queue: asyncio.Queue[dict | None],
         search_term: str,
         search_term_type: str,
+        search_engine: SearchEngineName,
         language: Language,
         location: Location,
         ds_settings: DSsettings,
@@ -395,6 +427,7 @@ class Orchestrator(ABC):
         item = {
             "search_term": search_term,
             "search_term_type": search_term_type,
+            "search_engine": search_engine,
             "language": language,
             "location": location,
             "ds_settings": ds_settings,
@@ -402,343 +435,321 @@ class Orchestrator(ABC):
             "marketplaces": marketplaces,
             "excluded_urls": excluded_urls,
         }
-        logger.debug(f'Adding item="{item}" to serp_queue')
+        logger.debug(f'Adding item="{item}" to srch_queue')
         await queue.put(item)
 
-    async def _add_serp_items(
+    async def _add_srch_items(
         self,
         queue: asyncio.Queue[dict | None],
-        search_term: str,
-        language: Language,
-        location: Location,
+        scraping_config: ScrapingConfig,
         ds_settings: DSsettings,
-        deepness: Deepness,
-        marketplaces: List[Host] | None,
-        excluded_urls: List[Host] | None,
     ) -> None:
-        """Adds all the search_term (keywords), both original keyword and enriched keywords, as serp items to the queue."""
+        """Adds all the (enriched) search_term (as srch items) to the queue.
+
+        One item consists of the following parameters:
+            - search_term: The search term for the query.
+            - search_term_type: The type of the search term (initial or enriched).
+            - search_engines: The search engines to use for the query.
+            - language: The language to use for the query.
+            - location: The location to use for the query.
+            - num_results: The number of results to return.
+            - marketplaces: The marketplaces to include in the search.
+            - excluded_urls: The URLs to exclude from the search.
+
+        For constructing such items we essentially have two loops:
+            for each search_term (initial + enriched)
+                for each search_engine
+                    add item to queue
+        """
+        search_term = scraping_config.search_term
+        search_engines = scraping_config.search_engines
+        language = scraping_config.language
+        location = scraping_config.location
+        deepness = scraping_config.deepness
         common_kwargs = {
             "queue": queue,
             "language": language,
             "location": location,
             "ds_settings": ds_settings,
-            "marketplaces": marketplaces,
-            "excluded_urls": excluded_urls,
+            "marketplaces": scraping_config.marketplaces,
+            "excluded_urls": scraping_config.excluded_urls,
         }
 
-        # Add initial items to the serp_queue
-        await self._add_serp_items_for_search_term(
-            search_term=search_term,
-            search_term_type="initial",
-            num_results=deepness.num_results,
-            **common_kwargs,  # type: ignore[arg-type]
-        )
+        # Add initial items to the queue
+        for se in search_engines:
+            await self._add_search_items_for_search_term(
+                search_term=search_term,
+                search_term_type="initial",
+                search_engine=se,
+                num_results=deepness.num_results,
+                **common_kwargs,  # type: ignore[arg-type]
+            )
 
         # Enrich the search_terms
         enrichment = deepness.enrichment
         if enrichment:
             # Call DataForSEO to get additional terms
             n_terms = enrichment.additional_terms
-            terms = await self._enricher.apply(
+            terms = await self._enricher.enrich(
                 search_term=search_term,
                 language=language,
                 location=location,
                 n_terms=n_terms,
             )
 
-            # Add the enriched search terms to the serp_queue
+            # Add the enriched search terms to the queue
             for trm in terms:
-                await self._add_serp_items_for_search_term(
-                    search_term=trm,
-                    search_term_type="enriched",
-                    num_results=enrichment.additional_urls_per_term,
-                    **common_kwargs,  # type: ignore[arg-type]
+                for se in search_engines:
+                    await self._add_search_items_for_search_term(
+                        search_term=trm,
+                        search_term_type="enriched",
+                        search_engine=se,
+                        num_results=enrichment.additional_urls_per_term,
+                        **common_kwargs,  # type: ignore[arg-type]
+                    )
+
+    @staticmethod
+    def _is_exact_search(search_term: str) -> bool:
+        """Check if the search term is an exact search (contains double quotation marks).
+
+        Args:
+            search_term: The search term to check.
+        """
+        return '"' in search_term
+
+    @staticmethod
+    def _extract_exact_search_terms(search_term: str) -> list[str]:
+        """Extract all exact search terms from within double quotation marks (empty if no quotes found).
+
+        Args:
+            search_term: The search term that may contain double quotation marks.
+        """
+        # Find all double-quoted strings
+        double_quote_matches = re.findall(r'"([^"]*)"', search_term)
+        return double_quote_matches
+
+    @staticmethod
+    def _check_exact_search_terms_match(
+        product: ProductItem,
+        exact_search_terms: list[str],
+    ) -> bool:
+        """Check if the product, represented by a string of selected attributes, matches ALL of the exact search terms.
+
+        Args:
+            product: The product item.
+            exact_search_terms: List of exact search terms to match against.
+        """
+        field_values = [
+            str(val)
+            for fld in EXACT_MATCH_PRODUCT_FIELDS
+            if (val := getattr(product, fld, None)) is not None
+        ]
+        product_str_lower = EXACT_MATCH_FIELD_SEPARATOR.join(field_values).lower()
+
+        return all(
+            re.search(re.escape(est.lower()), product_str_lower)
+            for est in exact_search_terms
+        )
+
+    def _check_exact_search(self, product: ProductItem) -> ProductItem:
+        """Checks if the search term requests an exact search and if yes, checks for conformity."""
+        # Check for exact search and apply regex matching
+        exact_search = self._is_exact_search(product.search_term)
+        product.exact_search = exact_search
+
+        # Only set exact_search_match if this was an exact search (contains quotes)
+        if exact_search:
+            exact_search_terms = self._extract_exact_search_terms(product.search_term)
+            if exact_search_terms:
+                product.exact_search_match = self._check_exact_search_terms_match(
+                    product=product, exact_search_terms=exact_search_terms
                 )
+                logger.debug(
+                    f"Exact search terms {exact_search_terms} matched: {product.exact_search_match} "
+                    f"for offer with url={product.url}"
+                )
+            else:
+                logger.warning(
+                    f"is_exact_search=True but no exact search terms found in search_term='{product.search_term}' "
+                    f"for offer with url={product.url}"
+                )
+        # If exact_search is False, product.exact_search_match remains False (default value)
+        return product
 
     async def run(
         self,
-        search_term: str,
-        language: Language,
-        location: Location,
-        deepness: Deepness,
-        prompts: List[Prompt],
+        scraping_config: ScrapingConfig,
+        processing_config: ProcessingConfig,
         ds_settings: DSsettings,
         timestamp: str,
-        marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
-        previously_collected_urls: List[str] | None = None,
     ) -> None:
-        """Runs the pipeline steps: serp, enrich, zyte, process, and collect the results.
+        """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
         Args:
-            search_term: The search term for the query.
-            language: The language to use for the query.
-            location: The location to use for the query.
-            deepness: The search depth and enrichment details.
-            prompts: The list of prompt to use for classification.
+            scraping_config: Sets up the scraping pipeline step.
+            processing_config: Sets up the processing pipeline step.
             ds_settings: Data Science setting for creating and testing of benchmarks.
             timestamp: Is the time stamp of the query.
-            marketplaces: The marketplaces to include in the search.
-            excluded_urls: The URLs to exclude from the search.
-            previously_collected_urls: The urls that have been collected previously and are ignored.
         """
-        print('DSSETTINGS')
-        print(ds_settings)
-        if ds_settings.use_cached_ds_data:
+        # ---------------------------
+        #        INITIAL SETUP
+        # ---------------------------
+        # Ensure we have at least one search engine (the list might be empty)
+        if not scraping_config.search_engines:
+            logger.warning(
+                "No search engines specified, using all available search engines"
+            )
+            scraping_config.search_engines = list(SearchEngineName)
 
-            async def load_cached_items(proc_queue):
-                import csv
-                from urllib.parse import urlparse
-                import pandas as pd
-                from pathlib import Path
+        # Handle previously collected URLs
+        if pcurls := scraping_config.previously_collected_urls:
+            self._url_collector.add_previously_collected_urls(urls=pcurls)
 
-                # Set pandas display options to show all columns
-                pd.set_option('display.max_columns', None)
-                if ds_settings.cached_filename.endswith('.xlsx'):
-                    df = pd.read_excel(DATA_DIR / ds_settings.cached_filename)
-                    print('This is the read excel file')
-                    print(df.head(4))
-                    print(df.columns)
-                else:
-                    df = pd.read_csv(DATA_DIR / ds_settings.cached_filename)
-                    
-                for _, row in df.iterrows():
-                    # Extract the domain from the URL
-                    domain = urlparse(row['url']).netloc if 'url' in row and row['url'] else ''
-        
-                    # When creating the ProductItem, convert NaN to None
-                    product_name = None if pd.isna(row['product_name']) else str(row['product_name'])
-                    product_price = None if pd.isna(row['product_price']) else str(row['product_price'])
-                    product_description = None if pd.isna(row['product_description']) else str(row['product_description'])
-                    probability = None if pd.isna(row['probability']) else float(row['probability'])
-                    manual_label = None if pd.isna(row['manual_label']) else int(row['manual_label'])
+        # Setup the async framework
+        deepness = scraping_config.deepness
+        n_terms_max = 1 + (
+            deepness.enrichment.additional_terms if deepness.enrichment else 0
+        )
+        n_srch_wkrs = min(self._n_srch_wkrs, n_terms_max)
+        n_cntx_wkrs = min(self._n_cntx_wkrs, deepness.num_results)
+        n_proc_wkrs = min(self._n_proc_wkrs, deepness.num_results)
 
-                    print('\nnew row\n')
-                    print(row['manual_label'])
-                    # Create a ProductItem
-                    product = ProductItem(
-                        search_term=row['search_term'],
-                        search_term_type=row['search_term_type'],
-                        url=row['url'],
-                        marketplace_name=row['marketplace_name'],
-                        domain=row['domain'],
+        logger.debug(
+            f"setting up async framework (#workers: srch={n_srch_wkrs}, cntx={n_cntx_wkrs}, proc={n_proc_wkrs})"
+        )
+        self._setup_async_framework(
+            n_srch_wkrs=n_srch_wkrs,
+            n_cntx_wkrs=n_cntx_wkrs,
+            n_proc_wkrs=n_proc_wkrs,
+            processing_config=processing_config,
+        )
 
-                        # Zyte parameters
-                        product_name=product_name,
-                        product_price=product_price,
-                        product_description=product_description,
-                        #product_images=row['product_images'],
-                        probability=probability,
-                        encoded_url16=row['encoded_url16'],
+        # Check setup of async framework
+        if self._queues is None or self._workers is None:
+            raise ValueError(
+                "Async framework is not setup. Please call _setup_async_framework() first."
+            )
+        if not all([k in self._queues for k in ["srch", "url", "cntx", "proc", "res"]]):
+            raise ValueError(
+                "The queues of the async framework are not setup correctly."
+            )
+        if not all(
+            [k in self._workers for k in ["srch", "url", "cntx", "proc", "res"]]
+        ):
+            raise ValueError(
+                "The workers of the async framework are not setup correctly."
+            )
 
-                        ds_settings=DSsettings(dataset_creation=row['dataset_creation'], 
-                                               use_cached_ds_data =row['use_cached_ds_data'],
-                                               cached_filename=ds_settings.cached_filename),
-                        filtered=row['filtered'],
-                        filtered_at_stage=row['filtered_at_stage'],
-                        manual_label=manual_label
-                    )
-                    print(f"CURRENT URL: {row['url']}")
+        # Add the search items to the srch_queue
+        srch_queue = self._queues["srch"]
+        await self._add_srch_items(
+            queue=srch_queue,
+            scraping_config=scraping_config,
+            ds_settings=ds_settings,
+        )
 
-                    # Put the product in the processing queue
-                    await proc_queue.put(product)
-                    logger.info("Loading cached data for processing...")
-        
-                return proc_queue
+        # -----------------------------
+        #  ORCHESTRATE SEARCH WORKERS
+        # -----------------------------
+        # Add the sentinels to the srch_queue
+        for _ in range(n_srch_wkrs):
+            await srch_queue.put(None)
 
-        
-            print(f"\nTHIS IS THE DS VALIDATION PART\n")
-            # Setup only the processor and result queues
-            proc_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
-            res_queue: asyncio.Queue[ProductItem | None] = asyncio.Queue()
+        # Wait for the srch workers to be concluded before adding the sentinels to the url_queue
+        srch_workers = self._workers["srch"]
+        try:
+            logger.debug("Waiting for srch_workers to conclude their tasks...")
+            srch_res = await asyncio.gather(*srch_workers, return_exceptions=True)
+            for i, res in enumerate(srch_res):
+                if isinstance(res, Exception):
+                    logger.error(f"Error in srch_worker {i}: {res}")
+            logger.debug("...srch_workers concluded their tasks")
+        except Exception as e:
+            logger.error(f"Gathering srch_workers failed: {e}")
+        finally:
+            await srch_queue.join()
 
-            # Load cached items from file
-            #from some_module import load_cached_items  # define this helper yourself
+        # ---------------------------
+        #  ORCHESTRATE URL COLLECTOR
+        # ---------------------------
+        # Add the sentinels to the url_queue
+        url_queue = self._queues["url"]
+        await url_queue.put(None)
 
-            proc_queue = await load_cached_items(proc_queue)
-            #cached_products = await load_cached_items(proc_queue)
-            #for item in cached_products:
-            #    await proc_queue.put(item)
+        # Wait for the url_collector to be concluded before adding the sentinels to the cntx_queue
+        url_collector = cast(asyncio.Task, self._workers["url"])
+        try:
+            logger.debug("Waiting for url_collector to conclude its tasks...")
+            await url_collector
+            logger.debug("...url_collector concluded its tasks")
+        except Exception as e:
+            logger.error(f"Gathering url_collector failed: {e}")
+        finally:
+            await url_queue.join()
 
-            print('SETUP PROCESSING WORKERS')
-            # Setup processing workers
-            proc_wkrs = [
-                asyncio.create_task(self._proc_execute(queue_in=proc_queue, queue_out=res_queue, prompts=prompts))
-                for _ in range(self._n_proc_wkrs)
-            ]
+        # -----------------------------
+        #  ORCHESTRATE CONTEXT WORKERS
+        # -----------------------------
+        # Add the sentinels to the cntx_queue
+        cntx_queue = self._queues["cntx"]
+        for _ in range(n_cntx_wkrs):
+            await cntx_queue.put(None)
 
-            # Setup result collector
-            res_col = asyncio.create_task(self._collect_results(queue_in=res_queue))
+        # Wait for the cntx_workers to be concluded before adding the sentinels to the proc_queue
+        cntx_workers = self._workers["cntx"]
+        try:
+            logger.debug("Waiting for cntx_workers to conclude their tasks...")
+            cntx_res = await asyncio.gather(*cntx_workers, return_exceptions=True)
+            for i, res in enumerate(cntx_res):
+                if isinstance(res, Exception):
+                    logger.error(f"Error in cntx_worker {i}: {res}")
+            logger.debug("...cntx_workers concluded their tasks")
+        except Exception as e:
+            logger.error(f"Gathering cntx_workers failed: {e}")
+        finally:
+            await cntx_queue.join()
 
-            # Add sentinels to proc_queue
-            for _ in proc_wkrs:
-                await proc_queue.put(None)
+        # ---------------------------
+        #  ORCHESTRATE PROC WORKERS
+        # ---------------------------
+        # Add the sentinels to the proc_queue
+        proc_queue = self._queues["proc"]
+        for _ in range(n_proc_wkrs):
+            await proc_queue.put(None)
 
-            # Wait for proc workers
-            await asyncio.gather(*proc_wkrs)
+        # Wait for the proc_workers to be concluded before adding the sentinels to the res_queue
+        proc_workers = self._workers["proc"]
+        try:
+            logger.debug("Waiting for proc_workers to conclude their tasks...")
+            proc_res = await asyncio.gather(*proc_workers, return_exceptions=True)
+            for i, res in enumerate(proc_res):
+                if isinstance(res, Exception):
+                    logger.error(f"Error in proc_worker {i}: {res}")
+            logger.debug("...proc_workers concluded their tasks")
+        except Exception as e:
+            logger.error(f"Gathering proc_workers failed: {e}")
+        finally:
             await proc_queue.join()
 
-            # Add sentinel and await result collector
-            await res_queue.put(None)
-            await res_col
+        # ---------------------------
+        #  ORCHESTRATE RES COLLECTOR
+        # ---------------------------
+        # Add the sentinels to the res_queue
+        res_queue = self._queues["res"]
+        await res_queue.put(None)
+
+        # Wait for the res_collector to be concluded
+        res_collector = cast(asyncio.Task, self._workers["res"])
+        try:
+            logger.debug("Waiting for res_collector to conclude its tasks...")
+            await res_collector
+            logger.debug("...res_collector concluded its tasks")
+        except Exception as e:
+            logger.error(f"Gathering res_collector failed: {e}")
+        finally:
             await res_queue.join()
 
-            logger.info("Cached Data Science Validation pipeline completed.")
-
-        if not ds_settings.use_cached_ds_data:
-            # ---------------------------
-            #        INITIAL SETUP
-            # ---------------------------
-            if previously_collected_urls:
-                self._collected_urls_previous_runs = set(self._collected_urls_current_run)
-
-            # Setup the async framework
-            n_terms_max = 1 + (
-                deepness.enrichment.additional_terms if deepness.enrichment else 0
-            )
-            n_serp_wkrs = min(self._n_serp_wkrs, n_terms_max)
-            n_zyte_wkrs = min(self._n_zyte_wkrs, deepness.num_results)
-            n_proc_wkrs = min(self._n_proc_wkrs, deepness.num_results)
-
-            logger.debug(
-                f"setting up async framework (#workers: serp={n_serp_wkrs}, zyte={n_zyte_wkrs}, proc={n_proc_wkrs})"
-            )
-            self._setup_async_framework(
-                n_serp_wkrs=n_serp_wkrs,
-                n_zyte_wkrs=n_zyte_wkrs,
-                n_proc_wkrs=n_proc_wkrs,
-                prompts=prompts,
-                timestamp=timestamp,
-            )
-
-            # Check setup of async framework
-            if self._queues is None or self._workers is None:
-                raise ValueError(
-                    "Async framework is not setup. Please call _setup_async_framework() first."
-                )
-            if not all([k in self._queues for k in ["serp", "url", "zyte", "proc", "res"]]):
-                raise ValueError(
-                    "The queues of the async framework are not setup correctly."
-                )
-            if not all(
-                [k in self._workers for k in ["serp", "url", "zyte", "proc", "res"]]
-            ):
-                raise ValueError(
-                    "The workers of the async framework are not setup correctly."
-                )
-
-            # Add the search items to the serp_queue
-            serp_queue = self._queues["serp"]
-            await self._add_serp_items(
-                queue=serp_queue,
-                search_term=search_term,
-                language=language,
-                location=location,
-                deepness=deepness,
-                ds_settings=ds_settings,
-                marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
-            )
-
-            # ---------------------------
-            #   ORCHESTRATE SERP WORKERS
-            # ---------------------------
-            # Add the sentinels to the serp_queue
-            for _ in range(n_serp_wkrs):
-                await serp_queue.put(None)
-
-            # Wait for the serp workers to be concluded before adding the sentinels to the url_queue
-            serp_workers = self._workers["serp"]
-            try:
-                logger.debug("Waiting for serp_workers to conclude their tasks...")
-                serp_res = await asyncio.gather(*serp_workers, return_exceptions=True)
-                for i, res in enumerate(serp_res):
-                    if isinstance(res, Exception):
-                        logger.error(f"Error in serp_worker {i}: {res}")
-                logger.debug("...serp_workers concluded their tasks")
-            except Exception as e:
-                logger.error(f"Gathering serp_workers failed: {e}")
-            finally:
-                await serp_queue.join()
-
-            # ---------------------------
-            #  ORCHESTRATE URL COLLECTOR
-            # ---------------------------
-            # Add the sentinels to the url_queue
-            url_queue = self._queues["url"]
-            await url_queue.put(None)
-
-            # Wait for the url_collector to be concluded before adding the sentinels to the zyte_queue
-            url_collector = cast(asyncio.Task, self._workers["url"])
-            try:
-                logger.debug("Waiting for url_collector to conclude its tasks...")
-                await url_collector
-                logger.debug("...url_collector concluded its tasks")
-            except Exception as e:
-                logger.error(f"Gathering url_collector failed: {e}")
-            finally:
-                await url_queue.join()
-
-            # ---------------------------
-            #  ORCHESTRATE ZYTE WORKERS
-            # ---------------------------
-            # Add the sentinels to the zyte_queue
-            zyte_queue = self._queues["zyte"]
-            for _ in range(n_zyte_wkrs):
-                await zyte_queue.put(None)
-
-            # Wait for the zyte_workers to be concluded before adding the sentinels to the proc_queue
-            zyte_workers = self._workers["zyte"]
-            try:
-                logger.debug("Waiting for zyte_workers to conclude their tasks...")
-                zyte_res = await asyncio.gather(*zyte_workers, return_exceptions=True)
-                for i, res in enumerate(zyte_res):
-                    if isinstance(res, Exception):
-                        logger.error(f"Error in zyte_worker {i}: {res}")
-                logger.debug("...zyte_workers concluded their tasks")
-            except Exception as e:
-                logger.error(f"Gathering zyte_workers failed: {e}")
-            finally:
-                await zyte_queue.join()
-
-            # ---------------------------
-            #  ORCHESTRATE PROC WORKERS
-            # ---------------------------
-            # Add the sentinels to the proc_queue
-            proc_queue = self._queues["proc"]
-            for _ in range(n_proc_wkrs):
-                await proc_queue.put(None)
-
-            # Wait for the proc_workers to be concluded before adding the sentinels to the res_queue
-            proc_workers = self._workers["proc"]
-            try:
-                logger.debug("Waiting for proc_workers to conclude their tasks...")
-                proc_res = await asyncio.gather(*proc_workers, return_exceptions=True)
-                for i, res in enumerate(proc_res):
-                    if isinstance(res, Exception):
-                        logger.error(f"Error in proc_worker {i}: {res}")
-                logger.debug("...proc_workers concluded their tasks")
-            except Exception as e:
-                logger.error(f"Gathering proc_workers failed: {e}")
-            finally:
-                await proc_queue.join()
-
-            # ---------------------------
-            #  ORCHESTRATE RES COLLECTOR
-            # ---------------------------
-            # Add the sentinels to the res_queue
-            res_queue = self._queues["res"]
-            await res_queue.put(None)
-
-            # Wait for the res_collector to be concluded
-            res_collector = cast(asyncio.Task, self._workers["res"])
-            try:
-                logger.debug("Waiting for res_collector to conclude its tasks...")
-                await res_collector
-                logger.debug("...res_collector concluded its tasks")
-            except Exception as e:
-                logger.error(f"Gathering res_collector failed: {e}")
-            finally:
-                await res_queue.join()
-
-            logger.info("Pipeline concluded; async framework is closed")
+        # ---------------------------
+        #  CLOSING PIPELINE
+        # ---------------------------
+        logger.info("Pipeline concluded; async framework is closed")

@@ -46,7 +46,7 @@ The location used in SerpAPI ('gl' parameter). `location=Location('Switzerland')
 Defines the search depth with the number of results to retrieve and optional enrichment parameters.
 
 #### `prompts: List[Prompt]`
-The list of prompts to classify a given product with (multiple) LLM calls. Each prompt object has a `name`, a `context` (used for defining the user prompt), a `system_prompt` (for defining the classification task), `allowed_classes` (a list of possible classes) and optionally `default_if_missing` (a default class if anything goes wrong).
+The list of prompts to classify a given product with (multiple) LLM calls. Each prompt object has a `name`, a `context` (used for defining the user prompt), a `system_prompt` (for defining the classification task), and `allowed_classes` (a list of possible classes).
 
 ```python
 from fraudcrawler import Language, Location, Deepness, Prompt
@@ -58,7 +58,6 @@ deepness = Deepness(num_results=50)
 prompts = [
     Prompt(
         name="relevance",
-        context="This organization is interested in medical products and drugs.",
         system_prompt=(
             "You are a helpful and intelligent assistant. Your task is to classify any given product "
             "as either relevant (1) or not relevant (0), strictly based on the context and product details provided by the user. "
@@ -136,5 +135,9 @@ client.print_available_results()
 see `CONTRIBUTING.md`
 
 ### Async Setup
+The `Orchestrator` class in `src/base/orchestrator.py` is designed to coordinate multiple services that may have interdependencies, allowing them to run in a semi-iterative manner. This means, for example, that product A can be at stage III of the pipeline while product B is still at stage I.
+
+This behavior is enabled through an asynchronous pipeline setup. The three main steps, `Search`, `Context Extraction`, and `Processing`, all utilize `httpx.AsyncClient`. It is both possible and highly recommended to manage a single AsyncClient instance per application for efficiency. We provide a `HttpxAsyncClient` class that you can pass For more details, see the [httpx documentation](https://www.python-httpx.org/api/#asyncclient).
+
 The following image provides a schematic representation of the package's async setup.
 ![Async Setup](https://github.com/open-veanu/fraudcrawler/raw/master/docs/assets/images/Fraudcrawler_Async_Setup.svg)

@@ -1,8 +1,11 @@
-from fraudcrawler.scraping.serp import SerpApi
+from fraudcrawler.scraping.search import Searcher, SearchEngineName
 from fraudcrawler.scraping.enrich import Enricher
-from fraudcrawler.scraping.zyte import ZyteApi
+from fraudcrawler.scraping.url import URLCollector
+from fraudcrawler.scraping.zyte import ZyteAPI
+from fraudcrawler.scraping.config import ScrapingConfig
 from fraudcrawler.processing.processor import Processor
-from fraudcrawler.base.orchestrator import Orchestrator, ProductItem
+from fraudcrawler.processing.config import ProcessingConfig
+from fraudcrawler.base.orchestrator import Orchestrator
 from fraudcrawler.base.client import FraudCrawlerClient
 from fraudcrawler.base.base import (
     Deepness,
@@ -12,6 +15,8 @@ from fraudcrawler.base.base import (
     DSsettings,
     Location,
     Prompt,
+    ProductItem,
+    HttpxAsyncClient,
 )
 import logging
 
@@ -27,10 +32,14 @@ import logging
 #logger = logging.getLogger(__name__)
 
 __all__ = [
-    "SerpApi",
+    "Searcher",
+    "SearchEngineName",
     "Enricher",
-    "ZyteApi",
+    "URLCollector",
+    "ZyteAPI",
+    "ScrapingConfig",
     "Processor",
+    "ProcessingConfig",
     "Orchestrator",
     "ProductItem",
     "FraudCrawlerClient",
@@ -41,4 +50,5 @@ __all__ = [
     "Deepness",
     "Enrichment",
     "Prompt",
+    "HttpxAsyncClient",
 ]

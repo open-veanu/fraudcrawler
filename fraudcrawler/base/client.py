@@ -5,13 +5,25 @@ import hashlib
 import logging
 from pathlib import Path
 from pydantic import BaseModel
-from typing import List
+from typing import List, Self
 
 import pandas as pd
 
 from fraudcrawler.settings import ROOT_DIR
-from fraudcrawler.base.base import Setup, Language, DSsettings, Location, Deepness, Host, Prompt
-from fraudcrawler.base.orchestrator import Orchestrator, ProductItem
+from fraudcrawler.base.base import (
+    Setup,
+    Language,
+    DSsettings
+    Location,
+    Deepness,
+    Host,
+    Prompt,
+    ProductItem,
+)
+from fraudcrawler.base.orchestrator import Orchestrator
+from fraudcrawler.scraping.config import ScrapingConfig
+from fraudcrawler.scraping.search import SearchEngineName
+from fraudcrawler.processing.config import ProcessingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +56,13 @@ class FraudCrawlerClient(Orchestrator):
         if not self._results_dir.exists():
             self._results_dir.mkdir(parents=True)
         self._results: List[Results] = []
+
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()  # let base set itself up
+        return self  # so `async with FraudCrawlerClient()` gives you this instance
+
+    async def __aexit__(self, *args, **kwargs) -> None:
+        await super().__aexit__(*args, **kwargs)
 
     async def _collect_results(
         self, queue_in: asyncio.Queue[ProductItem | None]
@@ -86,8 +105,10 @@ class FraudCrawlerClient(Orchestrator):
         ds_settings: DSsettings,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
+        search_engines: List[SearchEngineName | str] | None = None,
+        previously_collected_urls: List[str] | None = None,
     ) -> None:
-        """Runs the pipeline steps: serp, enrich, zyte, process, and collect the results.
+        """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
         Args:
             search_term: The search term for the query.
@@ -96,9 +117,12 @@ class FraudCrawlerClient(Orchestrator):
             deepness: The search depth and enrichment details.
             prompts: The list of prompts to use for classification.
             ds_settings: Data Science setting for creating and testing of benchmarks.
-            marketplaces: The marketplaces to include in the search.
-            excluded_urls: The URLs to exclude from the search.
+            marketplaces: The marketplaces to include in the search (optional).
+            excluded_urls: The URLs to exclude from the search (optional).
+            search_engines: The list of search engines to use for the search (optional).
+            previously_collected_urls: The urls that have been collected previously and are ignored (optional).
         """
+        # Handle results files
         timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
         run_hash = hashlib.sha256("{search_term}_{language}_{location}_{timestamp}.csv".encode()).hexdigest()[:8]
         # Filename to be saved for results depends on if data science validations 
@@ -125,17 +149,36 @@ class FraudCrawlerClient(Orchestrator):
 
         self._results.append(Results(search_term=search_term, filename=filename))
 
+        # Normalize inputs - convert strings to SearchEngineName enum values
+        nrm_search_engines = list(SearchEngineName)
+        if search_engines:
+            nrm_search_engines = [
+                SearchEngineName(se) if isinstance(se, str) else se
+                for se in search_engines
+            ]
+
+        # Run the pipeline by calling the orchestrator's run method
+        async def _run(*args, **kwargs):
+            async with self:
+                return await super(FraudCrawlerClient, self).run(*args, **kwargs)
+
         asyncio.run(
-            super().run(
-                search_term=search_term,
-                language=language,
-                location=location,
-                deepness=deepness,
-                ds_settings=ds_settings,
-                prompts=prompts,
-                timestamp=timestamp,
-                marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
+            _run(
+                scraping_config=ScrapingConfig(
+                    search_term=search_term,
+                    search_engines=nrm_search_engines,
+                    language=language,
+                    location=location,
+                    deepness=deepness,
+                    ds_settings=ds_settings,
+                    timestamp=timestamp,
+                    marketplaces=marketplaces,
+                    excluded_urls=excluded_urls,
+                    previously_collected_urls=previously_collected_urls,
+                ),
+                processing_config=ProcessingConfig(
+                    prompts=prompts,
+                ),
             )
         )
 
