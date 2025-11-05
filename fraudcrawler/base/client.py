@@ -95,46 +95,25 @@ class FraudCrawlerClient(Orchestrator):
 
     def execute(
         self,
-        search_term: str,
-        language: Language,
-        location: Location,
-        deepness: Deepness,
-        prompts: List[Prompt],
-        marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
-        search_engines: List[SearchEngineName | str] | None = None,
-        previously_collected_urls: List[str] | None = None,
+        scraping_config: ScrapingConfig,
+        processing_config: ProcessingConfig,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
         Args:
-            search_term: The search term for the query.
-            language: The language to use for the query.
-            location: The location to use for the query.
-            deepness: The search depth and enrichment details.
-            prompts: The list of prompts to use for classification.
-            marketplaces: The marketplaces to include in the search (optional).
-            excluded_urls: The URLs to exclude from the search (optional).
-            search_engines: The list of search engines to use for the search (optional).
-            previously_collected_urls: The urls that have been collected previously and are ignored (optional).
+            scraping_config: Sets up the scraping pipeline step.
+            processing_config: Sets up the processing pipeline step.
         """
+
         # Handle results files
         timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
         filename = self._results_dir / self._filename_template.format(
-            search_term=search_term,
-            language=language.code,
-            location=location.code,
+            search_term=scraping_config.search_term,
+            language=scraping_config.language.code,
+            location=scraping_config.location.code,
             timestamp=timestamp,
         )
-        self._results.append(Results(search_term=search_term, filename=filename))
-
-        # Normalize inputs - convert strings to SearchEngineName enum values
-        nrm_search_engines = list(SearchEngineName)
-        if search_engines:
-            nrm_search_engines = [
-                SearchEngineName(se) if isinstance(se, str) else se
-                for se in search_engines
-            ]
+        self._results.append(Results(search_term=scraping_config.search_term, filename=filename))
 
         # Run the pipeline by calling the orchestrator's run method
         async def _run(*args, **kwargs):
@@ -143,19 +122,8 @@ class FraudCrawlerClient(Orchestrator):
 
         asyncio.run(
             _run(
-                scraping_config=ScrapingConfig(
-                    search_term=search_term,
-                    search_engines=nrm_search_engines,
-                    language=language,
-                    location=location,
-                    deepness=deepness,
-                    marketplaces=marketplaces,
-                    excluded_urls=excluded_urls,
-                    previously_collected_urls=previously_collected_urls,
-                ),
-                processing_config=ProcessingConfig(
-                    prompts=prompts,
-                ),
+                scraping_config=scraping_config,
+                processing_config=processing_config,
             )
         )
 

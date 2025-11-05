@@ -1,21 +1,55 @@
 import logging
 
-from fraudcrawler import FraudCrawlerClient, Language, Location, Deepness, Prompt
+from fraudcrawler import (
+    FraudCrawlerClient,
+    SearchEngineName,
+    Language,
+    Location,
+    Deepness,
+    Prompt,
+    ScrapingConfig,
+    ProcessingConfig,
+)
 
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
 LOG_LVL = "INFO"
 DATE_FMT = "%Y-%m-%d %H:%M:%S"
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
-
-def search(search_term: str):
-    # Setup the client
-    client = FraudCrawlerClient()
-
+def get_scraping_config(search_term: str) -> ScrapingConfig:
     # Setup the search
     language = Language(name="German")
     location = Location(name="Switzerland")
     deepness = Deepness(num_results=10)
+
+    # # Optional: Add tern ENRICHEMENT
+    # from fraudcrawler import Enrichment
+
+    # deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
+
+    # Optional: Add MARKETPLACES and EXCLUDED_URLS
+    from fraudcrawler import Host
+
+    # marketplaces = [
+    #     Host(name="International", domains="zavamed.com,apomeds.com"),
+    #     # Host(name="National", domains="netdoktor.ch, nobelpharma.ch")
+    # ]
+    excluded_urls = [
+        Host(name="Digitec", domains="digitec.ch"),
+        Host(name="Brack", domains="brack.ch"),
+    ]
+    return ScrapingConfig(
+        search_term=search_term,
+        search_engines=list(SearchEngineName),
+        language=language,
+        location=location,
+        deepness=deepness,
+        # marketplaces=marketplaces,
+        excluded_urls=excluded_urls,
+    )
+
+
+def get_processing_config() -> ProcessingConfig:
     prompts = [
         Prompt(
             name="availability",
@@ -49,32 +83,21 @@ def search(search_term: str):
         #     allowed_classes=[0, 1],
         # ),
     ]
-    # # Optional: Add tern ENRICHEMENT
-    # from fraudcrawler import Enrichment
+    return ProcessingConfig(prompts=prompts)
 
-    # deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
 
-    # Optional: Add MARKETPLACES and EXCLUDED_URLS
-    from fraudcrawler import Host
+def main(search_term: str):
+    # Setup the client
+    client = FraudCrawlerClient()
 
-    # marketplaces = [
-    #     Host(name="International", domains="zavamed.com,apomeds.com"),
-    #     # Host(name="National", domains="netdoktor.ch, nobelpharma.ch")
-    # ]
-    excluded_urls = [
-        Host(name="Digitec", domains="digitec.ch"),
-        Host(name="Brack", domains="brack.ch"),
-    ]
+    # Get configs
+    scraping_config = get_scraping_config(search_term=search_term)
+    processing_config = get_processing_config()
 
     # Execute the pipeline
     client.execute(
-        search_term=search_term,
-        language=language,
-        location=location,
-        deepness=deepness,
-        prompts=prompts,
-        # marketplaces=marketplaces,
-        excluded_urls=excluded_urls,
+        scraping_config=scraping_config,
+        processing_config=processing_config,
     )
 
     # Show results
@@ -97,4 +120,4 @@ def search(search_term: str):
 
 
 if __name__ == "__main__":
-    search(search_term="Kaffeebohnen")
+    main(search_term="Kaffeebohnen")
