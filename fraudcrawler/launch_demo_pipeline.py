@@ -16,7 +16,7 @@ LOG_LVL = "INFO"
 DATE_FMT = "%Y-%m-%d %H:%M:%S"
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
-def get_scraping_config(search_term: str) -> ScrapingConfig:
+def _get_scraping_config(search_term: str) -> ScrapingConfig:
     # Setup the search
     language = Language(name="German")
     location = Location(name="Switzerland")
@@ -49,7 +49,7 @@ def get_scraping_config(search_term: str) -> ScrapingConfig:
     )
 
 
-def get_processing_config() -> ProcessingConfig:
+def _get_processing_config() -> ProcessingConfig:
     prompts = [
         Prompt(
             name="availability",
@@ -91,8 +91,8 @@ def main(search_term: str):
     client = FraudCrawlerClient()
 
     # Get configs
-    scraping_config = get_scraping_config(search_term=search_term)
-    processing_config = get_processing_config()
+    scraping_config = _get_scraping_config(search_term=search_term)
+    processing_config = _get_processing_config()
 
     # Execute the pipeline
     client.execute(
