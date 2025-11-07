@@ -1,5 +1,7 @@
+from collections import defaultdict
 import pytest
 import pytest_asyncio
+from typing import Any, Dict
 
 from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_MODEL,

@@ -1,4 +1,7 @@
+from abc import ABC, abstractmethod
+from copy import deepcopy
 import logging
+from typing import Any, Dict, Sequence
 
 import httpx
 from openai import AsyncOpenAI
@@ -7,14 +10,113 @@ from tenacity import RetryCallState
 from fraudcrawler.base.base import ProductItem, Prompt, ClassificationResult
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.settings import (
-    PROCESSOR_PRODUCT_DETAILS_TEMPLATE,
-    PROCESSOR_USER_PROMPT_TEMPLATE,
     PROCESSOR_DEFAULT_IF_MISSING,
     PROCESSOR_EMPTY_TOKEN_COUNT,
 )
 
 
 logger = logging.getLogger(__name__)
+
+
+class Node(ABC):
+    """Defines an node inside a processing workflow."""
+
+    def __init__(
+            self,
+            name: str,
+        ):
+        """Base class of a processing node.
+        
+        Args:
+            name: Name of the node (unique identifier)
+        """
+        self.name = name
+
+    @abstractmethod
+    async def _run(
+            self,
+            product_item: ProductItem,
+            user_input: Dict[str, Any] | None = None,
+            data: Dict[str, Any] | None = None
+        ) -> Dict[str, Any]:
+        pass
+
+    async def run(
+            self,
+            product_item: ProductItem,
+            user_input: Dict[str, Any] | None = None,
+            data: Dict[str, Any] | None = None
+        ) -> Dict[str, Any]:
+        """Runs the node by including and returning string specific data in addition to the product item."""
+        logger.debug(f'Start running node {self.name}')
+        try:
+            data_out = await self._run(product_item=product_item, user_input=user_input, data=data)
+        except Exception as e:
+            raise type(e)(f'(node={self.name}) {e}') from e
+        logger.debug(f'Run of node {self.name} finished successfully.')
+        return data_out
+
+
+class OpenAIChat(Node):
+    """Open AI Chat model."""
+
+    _user_prompt_template = "Product Details:\n{product_details}\n\nRelevance:"
+    _product_details_template = "{field_name}:\n{field_value}"
+
+    def __init__(
+            self,
+            http_client: httpx.AsyncClient,
+            name: str,
+            api_key: str,
+            model: str,
+
+        ):
+        """Open AI Chat node.
+
+        Args:
+            name: Name of the node (unique identifier)
+            status: Status for orchestrating node execution.
+            http_client: An httpx.AsyncClient to use for the async requests.
+            api_key: The OpenAI API key.
+            model: The OpenAI model to use.
+        """
+        super().__init__(name=name)
+        self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
+        self._model = model
+
+    async def _run(
+            self,
+            product_item: ProductItem,
+            user_input: Dict[str, Any] | None = None,
+            data: Dict[str, Any] | None = None
+        ) -> Dict[str, Any]:
+
+
+
+class ProcessingWorkflow(ABC):
+    """Class for representing an independant processing workflow."""
+
+    def __init__(self, name: str, nodes: Sequence[Node]):
+        self._name = name
+        self._nodes = nodes
+
+    async def run(self, product_item: ProductItem, user_input: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        """Sequentially runs the nodes in the given order.
+        
+        Args:
+            product_item: product item to process.
+            user_input: additional user input data.
+        """
+        logger.info(f'Start processing workflow "{self._name}"')
+        data: Dict[str, Any] =  {}
+        try:
+            for node in self._nodes:
+                data = await node.run(product_item=product_item, user_input=user_input, data=data)
+        except Exception as e:
+            msg = f'Error while running processing workflow "{self._name}": {e}'
+            logger.error(msg)
+            raise type(e)(msg) from e
+        return data
 
 
 class Processor:
