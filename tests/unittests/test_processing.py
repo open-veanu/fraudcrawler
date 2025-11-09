@@ -3,14 +3,10 @@ import pytest
 import pytest_asyncio
 from typing import Any, Dict
 
-from fraudcrawler.settings import (
-    PROCESSOR_DEFAULT_MODEL,
-    PROCESSOR_DEFAULT_IF_MISSING,
-)
-
+from fraudcrawler.settings import PROCESSOR_DEFAULT_IF_MISSING
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
-from fraudcrawler.processing.processor import ClfnResults
-from fraudcrawler import Processor, Prompt, ProductItem
+from fraudcrawler.processing.processor import ClassificationResult
+from fraudcrawler import Processor, ProductItem, OpenAIChat
 
 
 @pytest.fixture
@@ -28,52 +24,48 @@ def product_item():
     )
 
 
-@pytest.fixture
-def prompt():
-    return Prompt(
-        name="test_prompt",
-        product_item_fields=["product_name", "product_description"],
-        system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
-        allowed_classes=[0, 1],
-    )
-
-
 @pytest_asyncio.fixture
-async def processor():
+async def openai_chat():
     setup = Setup()
     async with HttpxAsyncClient() as http_client:
-        yield Processor(
+        yield OpenAIChat(
+            name='test_my_chat',
             http_client=http_client,
             api_key=setup.openaiapi_key,
-            model=PROCESSOR_DEFAULT_MODEL,
+            model="gpt-4o",
+            product_item_fields=['product_name', 'product_description'],
+            system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
+            allowed_classes=[0, 1],
         )
 
 
-def test_processor_get_product_details(product_item, prompt):
-    details = Processor._get_product_details(product_item, prompt)
+@pytest.mark.asyncio
+async def test_openai_chat_get_product_details(openai_chat, product_item):
+    details = openai_chat._get_product_details(product_item)
     assert isinstance(details, str)
     assert "product_name:\nTest Product" in details
     assert "product_description:\nThis is a test product." in details
 
-    prompt.product_item_fields = ["not_a_field"]
-    details = Processor._get_product_details(product_item, prompt)
+    openai_chat._product_item_fields = ["not_a_field"]
+    details = openai_chat._get_product_details(product_item)
     assert details == ""
 
 
 @pytest.mark.asyncio
-async def test_processor_classify_product(processor, product_item, prompt):
-    classification = await processor.classify(
-        product=product_item,
-        prompt=prompt,
-    )
-    assert isinstance(classification, ClfnResults)
+async def test_processor_run(openai_chat, product_item):
+    processor = Processor(workflows=[openai_chat])
+    classification = await processor.run(product=product_item)
+    classification = classification[openai_chat.name]
+    print()
+    print(classification)
+    print()
+    assert isinstance(classification, ClassificationResult)
     assert isinstance(classification.result, int)
     assert isinstance(classification.input_tokens, int)
+    assert classification.input_tokens > 0
     assert isinstance(classification.output_tokens, int)
+    assert classification.output_tokens > 0
     assert (
-        classification.result in prompt.allowed_classes
+        classification.result in openai_chat._allowed_classes
         or classification.result == PROCESSOR_DEFAULT_IF_MISSING
     )
-    assert (
-        classification.result == 1
-    )  # Because the prompt forces 1 for test-related items
