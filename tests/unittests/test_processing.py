@@ -8,7 +8,8 @@ from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_IF_MISSING,
 )
 
-from fraudcrawler.base.base import Setup, ClassificationResult, HttpxAsyncClient
+from fraudcrawler.base.base import Setup, HttpxAsyncClient
+from fraudcrawler.processing.processor import ClfnResults
 from fraudcrawler import Processor, Prompt, ProductItem
 
 
@@ -65,7 +66,7 @@ async def test_processor_classify_product(processor, product_item, prompt):
         product=product_item,
         prompt=prompt,
     )
-    assert isinstance(classification, ClassificationResult)
+    assert isinstance(classification, ClfnResults)
     assert isinstance(classification.result, int)
     assert isinstance(classification.input_tokens, int)
     assert isinstance(classification.output_tokens, int)

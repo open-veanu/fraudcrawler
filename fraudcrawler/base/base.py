@@ -71,14 +71,6 @@ class Host(BaseModel):
         return [cls._normalize_domain(dom.strip()) for dom in val]
 
 
-class ClassificationResult(BaseModel):
-    """Model for classification results."""
-
-    result: int
-    input_tokens: int
-    output_tokens: int
-
-
 class Location(BaseModel):
     """Model for location details (e.g. `Location(name="Switzerland", code="ch")`)."""
 
