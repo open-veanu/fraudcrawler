@@ -11,16 +11,12 @@ import pandas as pd
 from fraudcrawler.settings import ROOT_DIR
 from fraudcrawler.base.base import (
     Setup,
-    Language,
-    Location,
-    Deepness,
-    Host,
     ProductItem,
 )
 from fraudcrawler.base.orchestrator import Orchestrator
 from fraudcrawler.scraping.arguments import ScrapingArgs
-from fraudcrawler.scraping.search import SearchEngineName
 from fraudcrawler.processing.arguments import ProcessingArgs
+from fraudcrawler.processing.processor import Workflow
 
 logger = logging.getLogger(__name__)
 
@@ -39,14 +35,14 @@ class FraudCrawlerClient(Orchestrator):
 
     _filename_template = "{search_term}_{language}_{location}_{timestamp}.csv"
 
-    def __init__(self):
+    def __init__(self, workflows: List[Workflow]):
         setup = Setup()
         super().__init__(
             serpapi_key=setup.serpapi_key,
             dataforseo_user=setup.dataforseo_user,
             dataforseo_pwd=setup.dataforseo_pwd,
             zyteapi_key=setup.zyteapi_key,
-            openaiapi_key=setup.openaiapi_key,
+            workflows=workflows,
         )
 
         self._results_dir = _RESULTS_DIR
@@ -94,25 +90,25 @@ class FraudCrawlerClient(Orchestrator):
 
     def execute(
         self,
-        scraping_config: ScrapingArgs,
-        processing_config: ProcessingArgs,
+        scrp_args: ScrapingArgs,
+        proc_args: ProcessingArgs,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
         Args:
-            scraping_config: Sets up the scraping pipeline step.
-            processing_config: Sets up the processing pipeline step.
+            scrp_args: Sets up the scraping pipeline step.
+            proc_args: Arguments for setting up the processing.
         """
 
         # Handle results files
         timestamp = datetime.today().strftime("%Y%m%d%H%M%S")
         filename = self._results_dir / self._filename_template.format(
-            search_term=scraping_config.search_term,
-            language=scraping_config.language.code,
-            location=scraping_config.location.code,
+            search_term=scrp_args.search_term,
+            language=scrp_args.language.code,
+            location=scrp_args.location.code,
             timestamp=timestamp,
         )
-        self._results.append(Results(search_term=scraping_config.search_term, filename=filename))
+        self._results.append(Results(search_term=scrp_args.search_term, filename=filename))
 
         # Run the pipeline by calling the orchestrator's run method
         async def _run(*args, **kwargs):
@@ -121,8 +117,8 @@ class FraudCrawlerClient(Orchestrator):
 
         asyncio.run(
             _run(
-                scraping_config=scraping_config,
-                processing_config=processing_config,
+                scraping_args=scrp_args,
+                processing_args=proc_args,
             )
         )
 

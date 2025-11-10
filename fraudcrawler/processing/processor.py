@@ -297,7 +297,7 @@ class Processor:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(self, proc_args: ProcessingArgs) -> Dict[str, int]:
+    async def run(self, proc_args: ProcessingArgs) -> Dict[str, ClassificationResult]:
         """Run the processing step for multiple classification workflows.
         
         Args:
