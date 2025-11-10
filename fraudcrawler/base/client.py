@@ -97,7 +97,7 @@ class FraudCrawlerClient(Orchestrator):
 
         Args:
             scrp_args: Sets up the scraping pipeline step.
-            proc_args: Arguments for setting up the processing.
+            proc_args: Arguments for setting up the processing workflows.
         """
 
         # Handle results files
@@ -117,8 +117,8 @@ class FraudCrawlerClient(Orchestrator):
 
         asyncio.run(
             _run(
-                scraping_args=scrp_args,
-                processing_args=proc_args,
+                scrp_args=scrp_args,
+                proc_args=proc_args,
             )
         )
 

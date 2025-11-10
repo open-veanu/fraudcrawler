@@ -55,6 +55,7 @@ class Orchestrator(ABC):
 
     def __init__(
         self,
+        scrp_args: ScrapingArgs,
         serpapi_key: str,
         dataforseo_user: str,
         dataforseo_pwd: str,
@@ -76,6 +77,7 @@ class Orchestrator(ABC):
                 await orchestrator.run()
 
         Args:
+            scrp_args: Arguments for setting up the scraping.
             serpapi_key: The API key for SERP API.
             dataforseo_user: The user for DataForSEO.
             dataforseo_pwd: The password for DataForSEO.
@@ -88,6 +90,7 @@ class Orchestrator(ABC):
         """
 
         # Scraping variables
+        self._scrp_args = scrp_args
         self._serpapi_key = serpapi_key
         self._dataforseo_user = dataforseo_user
         self._dataforseo_pwd = dataforseo_pwd
@@ -258,14 +261,12 @@ class Orchestrator(ABC):
         self,
         queue_in: asyncio.Queue[ProductItem | None],
         queue_out: asyncio.Queue[ProductItem | None],
-        proc_args: ProcessingArgs,
     ) -> None:
         """Collects the product details from the queue_in, processes them (filtering, relevance, etc.) and puts the results into queue_out.
 
         Args:
             queue_in: The input queue containing the product details.
             queue_out: The output queue to put the processed product details.
-            proc_args: Arguments for setting up the processing.
         """
 
         # Process the products
@@ -279,7 +280,7 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Run the configured worflows
-                    classifications = await self._processor.run(proc_args=proc_args)
+                    classifications = await self._processor.run(product=product)
 
                     # Update the product item
                     for name, classification in classifications.items():
@@ -314,7 +315,6 @@ class Orchestrator(ABC):
         n_srch_wkrs: int,
         n_cntx_wkrs: int,
         n_proc_wkrs: int,
-        proc_args: ProcessingArgs,
     ) -> None:
         """Sets up the necessary queues and workers for the async framework.
 
@@ -322,7 +322,6 @@ class Orchestrator(ABC):
             n_srch_wkrs: Number of async workers for search.
             n_cntx_wkrs: Number of async workers for context extraction.
             n_proc_wkrs: Number of async workers for processing.
-            proc_args: Arguments for setting up the processing.
         """
 
         # Setup the input/output queues for the workers
@@ -365,7 +364,6 @@ class Orchestrator(ABC):
                 self._proc_execute(
                     queue_in=proc_queue,
                     queue_out=res_queue,
-                    proc_args=proc_args,
                 )
             )
             for _ in range(n_proc_wkrs)
@@ -555,13 +553,11 @@ class Orchestrator(ABC):
     async def run(
         self,
         scrp_args: ScrapingArgs,
-        proc_args: ProcessingArgs,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
         Args:
             scrp_args: Arguments for setting up the scraping.
-            proc_args: Arguments for setting up the processing.
         """
         # ---------------------------
         #        INITIAL SETUP
@@ -593,7 +589,6 @@ class Orchestrator(ABC):
             n_srch_wkrs=n_srch_wkrs,
             n_cntx_wkrs=n_cntx_wkrs,
             n_proc_wkrs=n_proc_wkrs,
-            proc_args=proc_args,
         )
 
         # Check setup of async framework

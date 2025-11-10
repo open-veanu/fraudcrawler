@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import logging
 from pydantic import BaseModel
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import httpx
 from openai import AsyncOpenAI
@@ -40,32 +40,35 @@ class Workflow(ABC):
     def __init__(
             self,
             name: str,
+            proc_args: ProcessingArgs | None = None
         ):
         """Abstract base class for defining a classification workflow.
         
         Args:
             name: Name of the classification workflow.
+            proc_args: Arguments for setting up the processing workflows (optional).
         """
         self.name = name
+        self._proc_args = proc_args
 
     @abstractmethod
     async def _run(
             self,
-            proc_args: ProcessingArgs,
+            product: ProductItem,
         ) -> ClassificationResult:
         """Runs the classification."""
         pass
 
     async def run(
             self,
-            proc_args: ProcessingArgs,
+            product: ProductItem,
         ) -> ClassificationResult:
         """Runs the classification and writes it to the product item."""
-        url = proc_args.product.url
-        logger.info(f'Classifying product with url={url} (workflow={self.name}).')
+        url = product.url
+        logger.info(f'Running workflow="{self.name}" with url={url}.')
         
         # Run classification (error is catched in processor.run())
-        clfn = await self._run(proc_args=proc_args)
+        clfn = await self._run(product=product)
         
         logger.info(
             f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, status={clfn.status}, and total tokens used={clfn.input_tokens + clfn.output_tokens}'
@@ -82,6 +85,7 @@ class OpenAIWorkflow(Workflow):
             http_client: httpx.AsyncClient,
             api_key: str,
             model: str,
+            proc_args: ProcessingArgs | None = None
         ):
         """Open AI Chat Workflow.
 
@@ -90,9 +94,9 @@ class OpenAIWorkflow(Workflow):
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
-            system_prompt: System prompt for the AI model.
+            proc_args: Arguments for setting up the processing workflows (optional).
         """
-        super().__init__(name=name)
+        super().__init__(name=name, proc_args=proc_args)
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
 
@@ -170,6 +174,7 @@ class OpenAIChat(OpenAIWorkflow):
             product_item_fields: List[str],
             system_prompt: str,
             allowed_classes: List[int],
+            proc_args: ProcessingArgs | None = None,
         ):
         """Open AI Chat node.
 
@@ -181,12 +186,14 @@ class OpenAIChat(OpenAIWorkflow):
             product_item_fields: Product item fields used to construct the user prompt.
             system_prompt: System prompt for the AI model.
             allowed_classes: Allowed classes for model output.
+            proc_args: Arguments for setting up the processing workflows (optional).
         """
         super().__init__(
             name=name,
             http_client=http_client,
             api_key=api_key,
             model=model,
+            proc_args=proc_args,
         )
         
         if not self._product_item_fields_are_valid(product_item_fields=product_item_fields):
@@ -229,12 +236,12 @@ class OpenAIChat(OpenAIWorkflow):
 
     async def _run(
             self,
-            proc_args: ProcessingArgs,
+            product: ProductItem,
         ) -> ClassificationResult:
         """Calls the OpenAI API with the user prompt from the product."""
 
         # Form the product details from the ProductItem
-        product_details = self._get_product_details(product=proc_args.product)
+        product_details = self._get_product_details(product=product)
         if not product_details:
             raise KeyError(f"Missing product_details for product_item_fields={self._product_item_fields}.")
 
@@ -244,7 +251,7 @@ class OpenAIChat(OpenAIWorkflow):
         )
 
         # Call the OpenAI API
-        url = proc_args.product.url
+        url = product.url
         try:
             # Perform the request and retry if necessary. There is some context aware logging
             #  - `before`: before the request is made (or before retrying)
@@ -297,16 +304,16 @@ class Processor:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(self, proc_args: ProcessingArgs) -> Dict[str, ClassificationResult]:
+    async def run(self, product: ProductItem) -> Dict[str, ClassificationResult]:
         """Run the processing step for multiple classification workflows.
         
         Args:
-            proc_args: The arguments used for each processing workflow.run() call.
+            product: The product item to process.
         """
         clfns = {}
         for wf in self._workflows:
             try:
-                clfn = await wf.run(proc_args=proc_args)
+                clfn = await wf.run(product=product)
             except Exception as e:
                 logger.error(f'Error while running classification workflow="{wf.name}": {e}')
                 clfn = ClassificationResult(
