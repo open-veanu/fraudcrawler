@@ -9,7 +9,6 @@ import re
 from fraudcrawler.settings import (
     EXACT_MATCH_PRODUCT_FIELDS,
     EXACT_MATCH_FIELD_SEPARATOR,
-    PROCESSOR_DEFAULT_MODEL,
 )
 from fraudcrawler.settings import (
     DEFAULT_N_SRCH_WKRS,
@@ -29,9 +28,9 @@ from fraudcrawler import (
     Enricher,
     ZyteAPI,
     URLCollector,
-    ScrapingConfig,
+    ScrapingArgs,
     Processor,
-    ProcessingConfig,
+    ProcessingArgs,
 )
 
 logger = logging.getLogger(__name__)
@@ -261,7 +260,7 @@ class Orchestrator(ABC):
         self,
         queue_in: asyncio.Queue[ProductItem | None],
         queue_out: asyncio.Queue[ProductItem | None],
-        processing_config: ProcessingConfig,
+        processing_config: ProcessingArgs,
     ) -> None:
         """Collects the product details from the queue_in, processes them (filtering, relevance, etc.) and puts the results into queue_out.
 
@@ -318,7 +317,7 @@ class Orchestrator(ABC):
         n_srch_wkrs: int,
         n_cntx_wkrs: int,
         n_proc_wkrs: int,
-        processing_config: ProcessingConfig,
+        processing_config: ProcessingArgs,
     ) -> None:
         """Sets up the necessary queues and workers for the async framework.
 
@@ -423,7 +422,7 @@ class Orchestrator(ABC):
     async def _add_srch_items(
         self,
         queue: asyncio.Queue[dict | None],
-        scraping_config: ScrapingConfig,
+        scraping_config: ScrapingArgs,
     ) -> None:
         """Adds all the (enriched) search_term (as srch items) to the queue.
 
@@ -558,8 +557,8 @@ class Orchestrator(ABC):
 
     async def run(
         self,
-        scraping_config: ScrapingConfig,
-        processing_config: ProcessingConfig,
+        scraping_config: ScrapingArgs,
+        processing_config: ProcessingArgs,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 

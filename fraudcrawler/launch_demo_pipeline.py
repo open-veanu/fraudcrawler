@@ -6,9 +6,8 @@ from fraudcrawler import (
     Language,
     Location,
     Deepness,
-    Prompt,
-    ScrapingConfig,
-    ProcessingConfig,
+    ScrapingArgs,
+    ProcessingArgs,
 )
 
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
@@ -16,7 +15,7 @@ LOG_LVL = "INFO"
 DATE_FMT = "%Y-%m-%d %H:%M:%S"
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
-def _get_scraping_config(search_term: str) -> ScrapingConfig:
+def _get_scraping_config(search_term: str) -> ScrapingArgs:
     # Setup the search
     language = Language(name="German")
     location = Location(name="Switzerland")
@@ -38,7 +37,7 @@ def _get_scraping_config(search_term: str) -> ScrapingConfig:
         Host(name="Digitec", domains="digitec.ch"),
         Host(name="Brack", domains="brack.ch"),
     ]
-    return ScrapingConfig(
+    return ScrapingArgs(
         search_term=search_term,
         search_engines=list(SearchEngineName),
         language=language,
@@ -49,7 +48,7 @@ def _get_scraping_config(search_term: str) -> ScrapingConfig:
     )
 
 
-def _get_processing_config() -> ProcessingConfig:
+def _get_processing_config() -> ProcessingArgs:
     prompts = [
         Prompt(
             name="availability",
@@ -83,7 +82,7 @@ def _get_processing_config() -> ProcessingConfig:
         #     allowed_classes=[0, 1],
         # ),
     ]
-    return ProcessingConfig(prompts=prompts)
+    return ProcessingArgs(prompts=prompts)
 
 
 def main(search_term: str):

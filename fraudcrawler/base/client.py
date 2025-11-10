@@ -15,13 +15,12 @@ from fraudcrawler.base.base import (
     Location,
     Deepness,
     Host,
-    Prompt,
     ProductItem,
 )
 from fraudcrawler.base.orchestrator import Orchestrator
-from fraudcrawler.scraping.config import ScrapingConfig
+from fraudcrawler.scraping.arguments import ScrapingArgs
 from fraudcrawler.scraping.search import SearchEngineName
-from fraudcrawler.processing.config import ProcessingConfig
+from fraudcrawler.processing.arguments import ProcessingArgs
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +94,8 @@ class FraudCrawlerClient(Orchestrator):
 
     def execute(
         self,
-        scraping_config: ScrapingConfig,
-        processing_config: ProcessingConfig,
+        scraping_config: ScrapingArgs,
+        processing_config: ProcessingArgs,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 

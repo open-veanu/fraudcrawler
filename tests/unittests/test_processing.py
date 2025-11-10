@@ -5,12 +5,13 @@ from typing import Any, Dict
 
 from fraudcrawler.settings import PROCESSOR_DEFAULT_IF_MISSING
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
+from fraudcrawler.processing.arguments import ProcessingArgs
 from fraudcrawler.processing.processor import ClassificationResult
 from fraudcrawler import Processor, ProductItem, OpenAIChat
 
 
 @pytest.fixture
-def product_item():
+def product():
     return ProductItem(
         search_term="test product",
         search_term_type="original",
@@ -40,21 +41,25 @@ async def openai_chat():
 
 
 @pytest.mark.asyncio
-async def test_openai_chat_get_product_details(openai_chat, product_item):
-    details = openai_chat._get_product_details(product_item)
+async def test_openai_chat_get_product_details(openai_chat: OpenAIChat, product: ProductItem):
+    details = openai_chat._get_product_details(product=product)
     assert isinstance(details, str)
     assert "product_name:\nTest Product" in details
     assert "product_description:\nThis is a test product." in details
 
     openai_chat._product_item_fields = ["not_a_field"]
-    details = openai_chat._get_product_details(product_item)
+    details = openai_chat._get_product_details(product)
     assert details == ""
 
+def test_openai_chat_product_item_fields_are_valid():
+    assert  OpenAIChat._product_item_fields_are_valid(['product_name', 'product_description'])
+    assert not OpenAIChat._product_item_fields_are_valid(['not_valid_field'])
 
 @pytest.mark.asyncio
-async def test_processor_run(openai_chat, product_item):
+async def test_processor_run(openai_chat, product):
     processor = Processor(workflows=[openai_chat])
-    classification = await processor.run(product=product_item)
+    proc_args = ProcessingArgs(product=product)
+    classification = await processor.run(proc_args=proc_args)
     classification = classification[openai_chat.name]
     print()
     print(classification)

@@ -14,14 +14,11 @@ from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_IF_MISSING,
     PROCESSOR_EMPTY_TOKEN_COUNT,
 )
+from fraudcrawler.processing.arguments import ProcessingArgs
 
 
 logger = logging.getLogger(__name__)
 
-
-class WorkflowParams(BaseModel):
-    product: ProductItem
-    user_input: Dict[str, Any] | None = None
 
 class ClassificationStatus(Enum):
     SUCCESS = "success"
@@ -54,21 +51,21 @@ class Workflow(ABC):
     @abstractmethod
     async def _run(
             self,
-            parameters: WorkflowParams,
+            proc_args: ProcessingArgs,
         ) -> ClassificationResult:
         """Runs the classification."""
         pass
 
     async def run(
             self,
-            parameters: WorkflowParams,
+            proc_args: ProcessingArgs,
         ) -> ClassificationResult:
         """Runs the classification and writes it to the product item."""
-        url = parameters.product.url
+        url = proc_args.product.url
         logger.info(f'Classifying product with url={url} (workflow={self.name}).')
         
         # Run classification (error is catched in processor.run())
-        clfn = await self._run(parameters=parameters)
+        clfn = await self._run(proc_args=proc_args)
         
         logger.info(
             f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, status={clfn.status}, and total tokens used={clfn.input_tokens + clfn.output_tokens}'
@@ -191,9 +188,24 @@ class OpenAIChat(OpenAIWorkflow):
             api_key=api_key,
             model=model,
         )
+        
+        if not self._product_item_fields_are_valid(product_item_fields=product_item_fields):
+            not_valid_fields = set(product_item_fields) - set(ProductItem.model_fields.keys())
+            raise ValueError(
+                f"Invalid product_item_fields are given: {not_valid_fields}."
+            )
         self._product_item_fields = product_item_fields
         self._system_prompt = system_prompt
         self._allowed_classes = allowed_classes
+
+    @staticmethod
+    def _product_item_fields_are_valid(product_item_fields: List[str]) -> bool:
+        """Ensure all product_item_fields are valid ProductItem attributes."""
+        valid_fields = set(ProductItem.model_fields.keys())
+        for field in product_item_fields:
+            if field not in valid_fields:
+                return False
+        return True
 
     def _get_product_details(self, product: ProductItem) -> str:
         """Extracts product details based on the configuration.
@@ -217,12 +229,12 @@ class OpenAIChat(OpenAIWorkflow):
 
     async def _run(
             self,
-            parameters: WorkflowParams,
+            proc_args: ProcessingArgs,
         ) -> ClassificationResult:
         """Calls the OpenAI API with the user prompt from the product."""
 
         # Form the product details from the ProductItem
-        product_details = self._get_product_details(product=parameters.product)
+        product_details = self._get_product_details(product=proc_args.product)
         if not product_details:
             raise KeyError(f"Missing product_details for product_item_fields={self._product_item_fields}.")
 
@@ -232,7 +244,7 @@ class OpenAIChat(OpenAIWorkflow):
         )
 
         # Call the OpenAI API
-        url = parameters.product.url
+        url = proc_args.product.url
         try:
             # Perform the request and retry if necessary. There is some context aware logging
             #  - `before`: before the request is made (or before retrying)
@@ -285,17 +297,16 @@ class Processor:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(self, product: ProductItem, user_input: Dict[str, Any] | None = None) -> Dict[str, int]:
+    async def run(self, proc_args: ProcessingArgs) -> Dict[str, int]:
         """Run the processing step for multiple classification workflows.
         
         Args:
-            product: The product item to run the classification workflows for.
+            proc_args: The arguments used for each processing workflow.run() call.
         """
-        parameters = WorkflowParams(product=product, user_input=user_input)
         clfns = {}
         for wf in self._workflows:
             try:
-                clfn = await wf.run(parameters=parameters)
+                clfn = await wf.run(proc_args=proc_args)
             except Exception as e:
                 logger.error(f'Error while running classification workflow="{wf.name}": {e}')
                 clfn = ClassificationResult(

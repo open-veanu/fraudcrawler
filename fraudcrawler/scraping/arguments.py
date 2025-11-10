@@ -10,8 +10,8 @@ from fraudcrawler.base.base import (
 )
 
 
-class ScrapingConfig(BaseModel):
-    """Sets up the scraping pipeline step."""
+class ScrapingArgs(BaseModel):
+    """Sets up the arguments for the scraping pipeline step."""
 
     search_term: str = Field(description="The search term for the query.")
     search_engines: List[SearchEngineName] = Field(

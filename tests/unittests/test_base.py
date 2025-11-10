@@ -7,7 +7,6 @@ from fraudcrawler.base.base import (
     Language,
     Enrichment,
     Deepness,
-    Prompt,
     DomainUtils,
 )
 
@@ -75,39 +74,6 @@ def test_deepness():
     deepness = Deepness(num_results=20, enrichment=enrichment)
     assert deepness.num_results == 20
     assert deepness.enrichment == enrichment
-
-
-def test_prompt():
-    name = "name"
-    system_prompt = "this is the system prompt"
-    product_item_fields = ["product_name", "product_description"]
-    prompt = Prompt(
-        name=name,
-        system_prompt=system_prompt,
-        product_item_fields=product_item_fields,
-        allowed_classes=[0, 1],
-    )
-    assert prompt.name == name
-    assert prompt.product_item_fields == product_item_fields
-    assert prompt.system_prompt == system_prompt
-    assert prompt.allowed_classes == [0, 1]
-
-    with pytest.raises(ValueError):
-        Prompt(
-            name=name,
-            system_prompt=system_prompt,
-            product_item_fields=product_item_fields,
-            allowed_classes=[-1, 0, 1],
-        )
-
-    with pytest.raises(ValueError):
-        Prompt(
-            name=name,
-            system_prompt=system_prompt,
-            product_item_fields=product_item_fields,
-            allowed_classes=[0.5, 1],
-        )
-
 
 @pytest.mark.parametrize(
     "url, expected",
