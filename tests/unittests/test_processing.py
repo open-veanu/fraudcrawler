@@ -1,13 +1,12 @@
 from collections import defaultdict
 import pytest
 import pytest_asyncio
-from typing import List
+from typing import cast, List, Sequence
 
 import httpx
 
 from fraudcrawler.settings import PROCESSOR_DEFAULT_IF_MISSING
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
-from fraudcrawler.processing.arguments import ProcessingArgs
 from fraudcrawler.processing.processor import ClassificationResult, Workflow
 from fraudcrawler import Processor, ProductItem, OpenAIChat
 
@@ -17,7 +16,7 @@ class TestProcessor(Processor):
         super().__init__(http_client=http_client)
 
     @staticmethod
-    def _setup_workflows(http_client: httpx.AsyncClient) -> List[Workflow]:
+    def _setup_workflows(http_client: httpx.AsyncClient) -> Sequence[Workflow]:
         setup = Setup()
         openai_chat = OpenAIChat(
             name='test_openai_chat',
@@ -28,8 +27,8 @@ class TestProcessor(Processor):
             system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
             allowed_classes=[0, 1],
         )
-        return [openai_chat]
-
+        workflows: List[OpenAIChat] = [openai_chat]
+        return workflows
 
 @pytest.fixture
 def product():
@@ -45,15 +44,14 @@ def product():
         product_price="9.99",
     )
 
-
 @pytest_asyncio.fixture
 async def processor():
     async with HttpxAsyncClient() as http_client:
         yield TestProcessor(http_client=http_client)
 
-
 @pytest.mark.asyncio
-async def test_openai_chat_get_product_details(openai_chat: OpenAIChat, product: ProductItem):
+async def test_openai_chat_get_product_details(processor: TestProcessor, product: ProductItem):
+    openai_chat = cast(OpenAIChat, processor._workflows[0])
     details = openai_chat._get_product_details(product=product)
     assert isinstance(details, str)
     assert "product_name:\nTest Product" in details
@@ -71,9 +69,6 @@ def test_openai_chat_product_item_fields_are_valid():
 async def test_processor_run(processor: TestProcessor, product: ProductItem):
     classification = await processor.run(product=product)
     classification = classification['test_openai_chat']
-    print()
-    print(classification)
-    print()
     assert isinstance(classification, ClassificationResult)
     assert isinstance(classification.result, int)
     assert isinstance(classification.input_tokens, int)

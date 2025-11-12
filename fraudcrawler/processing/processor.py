@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import logging
 from pydantic import BaseModel
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 import httpx
 from openai import AsyncOpenAI
@@ -213,6 +213,7 @@ class OpenAIChat(OpenAIWorkflow):
             if field not in valid_fields:
                 return False
         return True
+    
 
     def _get_product_details(self, product: ProductItem) -> str:
         """Extracts product details based on the configuration.
@@ -303,16 +304,16 @@ class Processor(ABC):
         workflows =  self._setup_workflows(http_client=http_client)
         if not self._are_unique(workflows=workflows):
             raise ValueError(f'Workfow names are not unique: {[wf.name for wf in workflows]}')
-        self._workflows = workflows
+        self._workflows: Sequence[Workflow] = workflows
 
     
     @staticmethod
     @abstractmethod
-    def _setup_workflows(http_client: httpx.AsyncClient | None, *args, **kwargs) -> List[Workflow]:
+    def _setup_workflows(http_client: httpx.AsyncClient | None, *args, **kwargs) -> Sequence[Workflow]:
         pass
     
     @staticmethod
-    def _are_unique(workflows: List[Workflow]) -> bool:
+    def _are_unique(workflows: Sequence[Workflow]) -> bool:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
