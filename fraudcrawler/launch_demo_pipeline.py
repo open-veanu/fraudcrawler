@@ -51,6 +51,7 @@ def _get_scraping_args(search_term: str) -> ScrapingArgs:
 def _get_processing_args() -> ProcessingArgs:
     return {}
 
+
 def main(search_term: str):
     # Setup the client
     client = FraudCrawlerClient()

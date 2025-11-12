@@ -31,7 +31,6 @@ from fraudcrawler import (
     ScrapingArgs,
     Processor,
     ProcessingArgs,
-    Workflow,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,8 +39,11 @@ logger = logging.getLogger(__name__)
 class Orchestrator(ABC):
     """Abstract base class for orchestrating the different actors (scraping, processing).
     
+    Any subclass of :class:`Orchestrator` orchestrates the complete pipeline: search,
+    deduplication, context extraction, processing (classification), and result collection.
+    
     Note:
-    The class:`Orchestrator` must be used as context manager as follows:
+    The :class:`Orchestrator` must be used as context manager as follows:
         async with Orchestrator(...) as orchestrator:
             await orchestrator.run()
 
@@ -53,7 +55,7 @@ class Orchestrator(ABC):
         _setup_processor: Sets up Processor instance.
             This function is mainly responsible for calling `Processor._setup_workflows` with (possibly) shared http_client.
     
-    For each pipeline step class:`Orchestrator` will deploy a number of async workers to handle the tasks.
+    For each pipeline step :class:`Orchestrator` will deploy a number of async workers to handle the tasks.
     In addition it makes sure to orchestrate the canceling of the workers only after the relevant workload is done.
 
     For more information on the orchestrating pattern see README.md.
@@ -65,6 +67,8 @@ class Orchestrator(ABC):
         dataforseo_user: str,
         dataforseo_pwd: str,
         zyteapi_key: str,
+        scrp_args: ScrapingArgs,
+        proc_args: ProcessingArgs,
         n_srch_wkrs: int = DEFAULT_N_SRCH_WKRS,
         n_cntx_wkrs: int = DEFAULT_N_CNTX_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
@@ -75,13 +79,13 @@ class Orchestrator(ABC):
     ):
         """Initializes the orchestrator with the given settings.
 
-        
         Args:
-            scrp_args: Arguments for setting up the scraping.
             serpapi_key: The API key for SERP API.
             dataforseo_user: The user for DataForSEO.
             dataforseo_pwd: The password for DataForSEO.
             zyteapi_key: The API key for Zyte API.
+            scrp_args: Arguments for setting up the scraping.
+            proc_args: Arguments for running workflows.
             n_srch_wkrs: Number of async workers for the search (optional).
             n_cntx_wkrs: Number of async workers for context extraction (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
@@ -93,6 +97,10 @@ class Orchestrator(ABC):
         self._dataforseo_user = dataforseo_user
         self._dataforseo_pwd = dataforseo_pwd
         self._zyteapi_key = zyteapi_key
+
+        # Pipeline arguments
+        self._scrp_args = scrp_args
+        self._proc_args = proc_args
 
         # Setup the async framework
         self._n_srch_wkrs = n_srch_wkrs
@@ -107,7 +115,7 @@ class Orchestrator(ABC):
 
     @abstractmethod
     def _setup_processor(self, http_client: httpx.AsyncClient) -> Processor:
-        """Sets up class:`Processor` instance with shared http_client."""
+        """Sets up :class:`Processor` instance with shared http_client."""
         pass
 
     async def __aenter__(self) -> Self:
@@ -251,7 +259,7 @@ class Orchestrator(ABC):
                         product.filtered_at_stage = "Context (exact search)"
 
                 except Exception as e:
-                    logger.warning(f"Error executing Zyte API search: {e}.")
+                    logger.error(f"Error executing Zyte API search: {e}.")
             await queue_out.put(product)
             queue_in.task_done()
 
@@ -277,7 +285,7 @@ class Orchestrator(ABC):
 
             if not product.filtered:
                 try:
-                    # Run the configured worflows
+                    # Run the configured workflows
                     classifications = await self._processor.run(product=product)
 
                     # Update the product item
@@ -548,18 +556,12 @@ class Orchestrator(ABC):
         # If exact_search is False, product.exact_search_match remains False (default value)
         return product
 
-    async def run(
-        self,
-        scrp_args: ScrapingArgs,
-    ) -> None:
-        """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
-
-        Args:
-            scrp_args: Arguments for setting up the scraping.
-        """
+    async def run(self) -> None:
+        """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collecting the results."""
         # ---------------------------
         #        INITIAL SETUP
         # ---------------------------
+        scrp_args = self._scrp_args
         # Ensure we have at least one search engine (the list might be empty)
         if not scrp_args.search_engines:
             logger.warning(
