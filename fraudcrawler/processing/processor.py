@@ -176,10 +176,10 @@ class OpenAIChat(OpenAIWorkflow):
             allowed_classes: List[int],
             proc_args: ProcessingArgs | None = None,
         ):
-        """Open AI Chat node.
+        """Open AI Chat workflow.
 
         Args:
-            name: Name of the node (unique identifier)
+            name: Name of the workflow (unique identifier)
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
@@ -283,21 +283,33 @@ class OpenAIChat(OpenAIWorkflow):
         return clfn
 
 
-class Processor:
-    """Processes product items for a set of classification workflows."""
+class Processor(ABC):
+    """Abstract base class for processing product items for a set of classification workflows.
+    
+    Note:
+        Any subclass of Processor must implement the staticmethod `_setup_workflows`. This should make it 
+        more convenient to use one single http_client thoughout the Orchestrator.run() process.
+    """
 
     def __init__(
             self,
-            workflows: List[Workflow]
+            http_client: httpx.AsyncClient | None = None,
         ):
         """Initializes the Processor.
 
         Args:
-            workflows: List of classification workflows through which the processor will go.
+            http_client: An httpx.AsyncClient to use for the async requests (optional).
         """
+        workflows =  self._setup_workflows(http_client=http_client)
         if not self._are_unique(workflows=workflows):
-            raise ValueError(f'workflow names must be unique, they are {[wf.name for wf in workflows]}')
+            raise ValueError(f'Workfow names are not unique: {[wf.name for wf in workflows]}')
         self._workflows = workflows
+
+    
+    @staticmethod
+    @abstractmethod
+    def _setup_workflows(http_client: httpx.AsyncClient | None, *args, **kwargs) -> List[Workflow]:
+        pass
     
     @staticmethod
     def _are_unique(workflows: List[Workflow]) -> bool:

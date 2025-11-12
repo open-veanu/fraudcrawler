@@ -38,15 +38,21 @@ logger = logging.getLogger(__name__)
 
 
 class Orchestrator(ABC):
-    """Abstract base class for orchestrating the different actors (crawling, processing).
+    """Abstract base class for orchestrating the different actors (scraping, processing).
+    
+    Note:
+    The class:`Orchestrator` must be used as context manager as follows:
+        async with Orchestrator(...) as orchestrator:
+            await orchestrator.run()
 
     Abstract methods:
         _collect_results: Collects the results from the given queue_in.
+            This function is responsible for collecting and handling the results from the given queue_in. It might
+            save the results to a file, a database, or any other storage.
 
-    Each subclass of class:`Orchestrator` must implement the abstract method func:`_collect_results`.
-    This function is responsible for collecting and handling the results from the given queue_in. It might
-    save the results to a file, a database, or any other storage.
-
+        _setup_processor: Sets up Processor instance.
+            This function is mainly responsible for calling `Processor._setup_workflows` with (possibly) shared http_client.
+    
     For each pipeline step class:`Orchestrator` will deploy a number of async workers to handle the tasks.
     In addition it makes sure to orchestrate the canceling of the workers only after the relevant workload is done.
 
@@ -55,12 +61,10 @@ class Orchestrator(ABC):
 
     def __init__(
         self,
-        scrp_args: ScrapingArgs,
         serpapi_key: str,
         dataforseo_user: str,
         dataforseo_pwd: str,
         zyteapi_key: str,
-        workflows: List[Workflow],
         n_srch_wkrs: int = DEFAULT_N_SRCH_WKRS,
         n_cntx_wkrs: int = DEFAULT_N_CNTX_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
@@ -71,18 +75,13 @@ class Orchestrator(ABC):
     ):
         """Initializes the orchestrator with the given settings.
 
-        NOTE:
-        The class:`Orchestrator` must be used as context manager as follows:
-            async with Orchestrator(...) as orchestrator:
-                await orchestrator.run()
-
+        
         Args:
             scrp_args: Arguments for setting up the scraping.
             serpapi_key: The API key for SERP API.
             dataforseo_user: The user for DataForSEO.
             dataforseo_pwd: The password for DataForSEO.
             zyteapi_key: The API key for Zyte API.
-            workflows: Independant processing workflows.
             n_srch_wkrs: Number of async workers for the search (optional).
             n_cntx_wkrs: Number of async workers for context extraction (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
@@ -90,14 +89,10 @@ class Orchestrator(ABC):
         """
 
         # Scraping variables
-        self._scrp_args = scrp_args
         self._serpapi_key = serpapi_key
         self._dataforseo_user = dataforseo_user
         self._dataforseo_pwd = dataforseo_pwd
         self._zyteapi_key = zyteapi_key
-
-        # Processing variables
-        self._workflows = workflows
 
         # Setup the async framework
         self._n_srch_wkrs = n_srch_wkrs
@@ -109,6 +104,12 @@ class Orchestrator(ABC):
         # Setup the httpx client
         self._http_client = http_client
         self._owns_http_client = http_client is None
+
+    @staticmethod
+    @abstractmethod
+    def _setup_processor(http_client: httpx.AsyncClient) -> Processor:
+        """Sets up class:`Processor` instance with shared http_client."""
+        pass
 
     async def __aenter__(self) -> Self:
         """Creates and starts an httpx.AsyncClient if not provided."""
@@ -133,9 +134,7 @@ class Orchestrator(ABC):
             http_client=self._http_client,
             api_key=self._zyteapi_key,
         )
-        self._processor = Processor(
-            workflows=self._workflows
-        )
+        self._processor = self._setup_processor(http_client=self._http_client)
         return self
 
     async def __aexit__(self, *args, **kwargs) -> None:
@@ -718,4 +717,4 @@ class Orchestrator(ABC):
         # ---------------------------
         #  CLOSING PIPELINE
         # ---------------------------
-        logger.info("Pipeline concluded; async framework is closed")
+        logger.info("Pipeline concluded; async framework is closed") 
