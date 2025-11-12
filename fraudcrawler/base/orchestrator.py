@@ -105,9 +105,8 @@ class Orchestrator(ABC):
         self._http_client = http_client
         self._owns_http_client = http_client is None
 
-    @staticmethod
     @abstractmethod
-    def _setup_processor(http_client: httpx.AsyncClient) -> Processor:
+    def _setup_processor(self, http_client: httpx.AsyncClient) -> Processor:
         """Sets up class:`Processor` instance with shared http_client."""
         pass
 

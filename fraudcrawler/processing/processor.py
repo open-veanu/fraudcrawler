@@ -307,9 +307,8 @@ class Processor(ABC):
         self._workflows: Sequence[Workflow] = workflows
 
     
-    @staticmethod
     @abstractmethod
-    def _setup_workflows(http_client: httpx.AsyncClient | None, *args, **kwargs) -> Sequence[Workflow]:
+    def _setup_workflows(self, http_client: httpx.AsyncClient | None, *args, **kwargs) -> Sequence[Workflow]:
         pass
     
     @staticmethod

@@ -15,8 +15,7 @@ class TestProcessor(Processor):
     def __init__(self, http_client: httpx.AsyncClient):
         super().__init__(http_client=http_client)
 
-    @staticmethod
-    def _setup_workflows(http_client: httpx.AsyncClient) -> Sequence[Workflow]:
+    def _setup_workflows(self, http_client: httpx.AsyncClient) -> Sequence[Workflow]:
         setup = Setup()
         openai_chat = OpenAIChat(
             name='test_openai_chat',
@@ -27,7 +26,7 @@ class TestProcessor(Processor):
             system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
             allowed_classes=[0, 1],
         )
-        workflows: List[OpenAIChat] = [openai_chat]
+        workflows = [openai_chat]
         return workflows
 
 @pytest.fixture
