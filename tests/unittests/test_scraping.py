@@ -430,7 +430,7 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
 @pytest.mark.asyncio
 async def test_zyteapi_details(zyteapi):
     # url = "https://www.interdiscount.ch/it/product/liebherr-tp1410-136-l-bianco-0005000183"
-    url = "https://www.toppreise.ch/preisvergleich/Siebtraegermaschinen/DELONGHI-La-Specialista-Maestro-EC9885-M-p807974"
+    url = "https://www.toppreise.ch/preisvergleich/Siebtraegermaschinen/DELONGHI-La-Specialista-Maestro-Cold-Brew-EC9885-M-p807974"
     product = await zyteapi.details(url=url)
     assert product
 
