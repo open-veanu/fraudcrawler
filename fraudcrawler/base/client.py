@@ -4,7 +4,7 @@ from datetime import datetime
 import logging
 from pathlib import Path
 from pydantic import BaseModel
-from typing import List, Self, Sequence
+from typing import List, Self, Sequence, TypedDict
 
 import httpx
 import pandas as pd
@@ -45,7 +45,6 @@ _SERIOUSNESS_SYSTEM_PROMPT = (
 )
 
 
-
 class Results(BaseModel):
     """The results of the product search."""
 
@@ -57,16 +56,26 @@ class FraudCrawlerProcessor(Processor):
     """Sets up OpenAIChat workflows for a given set of system prompts."""
 
     def __init__(
-            self,
-            http_client: httpx.AsyncClient,
-            openaiapi_key: str
-        ):
-        self._openaiapi_key = openaiapi_key
+        self,
+        http_client: httpx.AsyncClient,
+        openaiapi_key: str,
+    ):
+        self._openaiapi_key = openaiapi_key  # Put this first, because super().__init__ will call the _setup_workflows()
         super().__init__(http_client=http_client)
-    
-    def _setup_workflows(self, http_client: httpx.AsyncClient) -> Sequence[Workflow]:
+
+    def _setup_workflows(
+        self, http_client: httpx.AsyncClient, *args, **kwargs
+    ) -> Sequence[Workflow]:
         """Sets up the set of workflows to be run iteratively."""
-        openai_chat_setups = [
+
+        class _OpenAIChatSetup(TypedDict):
+            name: str
+            model: str
+            product_item_fields: List[str]
+            system_prompt: str
+            allowed_classes: List[int]
+
+        openai_chat_setups: List[_OpenAIChatSetup] = [
             {
                 "name": "availability",
                 "model": "gpt-4o",
@@ -82,40 +91,44 @@ class FraudCrawlerProcessor(Processor):
                 "allowed_classes": [0, 1],
             },
         ]
-        return [OpenAIChat(http_client=http_client, api_key=self._openaiapi_key, **stps) for stps in openai_chat_setups]
+        return [
+            OpenAIChat(http_client=http_client, api_key=self._openaiapi_key, **stps)
+            for stps in openai_chat_setups
+        ]
 
 
 class FraudCrawlerClient(Orchestrator):
     """The main client for FraudCrawler product search and analysis.
 
-  This client orchestrates the complete pipeline: search, deduplication, context extraction,
-  processing (classification), and result collection. It inherits from Orchestrator and adds
-  result management and persistence functionality.
+    This client orchestrates the complete pipeline: search, deduplication, context extraction,
+    processing (classification), and result collection. It inherits from Orchestrator and adds
+    result management and persistence functionality.
 
-  Usage Patterns:
-      This class supports two usage patterns:
+    Usage Patterns:
+        This class supports two usage patterns:
 
-      1. Simple synchronous execution (recommended for scripts):
-          ```python
-          client = FraudCrawlerClient(scrp_args=scrp_args, proc_args=proc_args)
-          client.execute()
-          results_df = client.load_results()
-          ```
+        1. Simple synchronous execution (recommended for scripts):
+            ```python
+            client = FraudCrawlerClient(scrp_args=scrp_args, proc_args=proc_args)
+            client.execute()
+            results_df = client.load_results()
+            ```
 
-      2. Advanced async context manager (for custom async workflows):
-          ```python
-          client = FraudCrawlerClient(scrp_args=scrp_args, proc_args=proc_args)
-          async with client:
-              await client.run()
-          results_df = client.load_results()
-          ```
+        2. Advanced async context manager (for custom async workflows):
+            ```python
+            client = FraudCrawlerClient(scrp_args=scrp_args, proc_args=proc_args)
+            async with client:
+                await client.run()
+            results_df = client.load_results()
+            ```
     """
+
     """The main client for FraudCrawler."""
 
     _FILENAME_TEMPLATE = "{search_term}_{language}_{location}_{timestamp}.csv"
 
     def __init__(self, scrp_args: ScrapingArgs, proc_args: ProcessingArgs):
-        setup = Setup()
+        setup = Setup()  # type: ignore[call-arg]
         super().__init__(
             serpapi_key=setup.serpapi_key,
             dataforseo_user=setup.dataforseo_user,
@@ -139,11 +152,13 @@ class FraudCrawlerClient(Orchestrator):
 
     def _setup_processor(self, http_client: httpx.AsyncClient) -> Processor:
         """Sets up the Processor.
-        
+
         Note:
             FraudCrawlerProcessor's workflows consist uniquely of OpenAIChat workflows.
         """
-        return FraudCrawlerProcessor(http_client=http_client, openaiapi_key=self._openaiapi_key)
+        return FraudCrawlerProcessor(
+            http_client=http_client, openaiapi_key=self._openaiapi_key
+        )
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()  # let base set itself up
@@ -195,12 +210,15 @@ class FraudCrawlerClient(Orchestrator):
             location=scrp_args.location.code,
             timestamp=timestamp,
         )
-        self._results.append(Results(search_term=scrp_args.search_term, filename=filename))
+        self._results.append(
+            Results(search_term=scrp_args.search_term, filename=filename)
+        )
 
         # Run the pipeline by calling the orchestrator's run method
         async def _run():
             async with self:
                 return await super().run()
+
         asyncio.run(_run())
 
     def load_results(self, index: int = -1) -> pd.DataFrame:
@@ -211,7 +229,10 @@ class FraudCrawlerClient(Orchestrator):
         """
 
         results = self._results[index]
-        return pd.read_csv(results.filename)
+        if (filename := results.filename) is None:
+            raise ValueError("filename not found (is None)")
+
+        return pd.read_csv(filename)
 
     def print_available_results(self) -> None:
         """Prints the available results."""

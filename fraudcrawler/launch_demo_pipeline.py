@@ -15,6 +15,7 @@ LOG_LVL = "INFO"
 DATE_FMT = "%Y-%m-%d %H:%M:%S"
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
+
 def _get_scraping_args(search_term: str) -> ScrapingArgs:
     # Setup the search
     language = Language(name="German")
@@ -53,18 +54,15 @@ def _get_processing_args() -> ProcessingArgs:
 
 
 def main(search_term: str):
-    # Setup the client
-    client = FraudCrawlerClient()
-
     # Get configs
-    scraping_args = _get_scraping_args(search_term=search_term)
-    processing_args = _get_processing_args()
+    scrp_args = _get_scraping_args(search_term=search_term)
+    proc_args = _get_processing_args()
+
+    # Setup the client
+    client = FraudCrawlerClient(scrp_args=scrp_args, proc_args=proc_args)
 
     # Execute the pipeline
-    client.execute(
-        scrp_args=scraping_args,
-        proc_args=processing_args,
-    )
+    client.execute()
 
     # Show results
     print()

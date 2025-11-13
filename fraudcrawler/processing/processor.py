@@ -24,6 +24,7 @@ class ClassificationStatus(Enum):
     SUCCESS = "success"
     ERROR = "error"
 
+
 class ClassificationResult(BaseModel):
     """Model for classification results."""
 
@@ -35,14 +36,15 @@ class ClassificationResult(BaseModel):
 
 class Workflow(ABC):
     """Abstract base class for independent processing workflows."""
+
     _max_tokens: int = 1
 
     def __init__(
-            self,
-            name: str,
-        ):
+        self,
+        name: str,
+    ):
         """Abstract base class for defining a classification workflow.
-        
+
         Args:
             name: Name of the classification workflow.
         """
@@ -50,12 +52,10 @@ class Workflow(ABC):
 
     @abstractmethod
     async def _run(
-            self,
-            product: ProductItem,
-            proc_args: ProcessingArgs | None = None
-        ) -> ClassificationResult:
+        self, product: ProductItem, proc_args: ProcessingArgs | None = None
+    ) -> ClassificationResult:
         """Runs the classification.
-        
+
         Args:
             product: The product item to process.
             proc_args: Arguments for running workflows (optional).
@@ -63,22 +63,20 @@ class Workflow(ABC):
         pass
 
     async def run(
-            self,
-            product: ProductItem,
-            proc_args: ProcessingArgs | None = None
-        ) -> ClassificationResult:
+        self, product: ProductItem, proc_args: ProcessingArgs | None = None
+    ) -> ClassificationResult:
         """Runs the classification and writes it to the product item.
-        
+
         Args:
             product: The product item to process.
             proc_args: Arguments for running workflows (optional).
         """
         url = product.url
         logger.info(f'Running workflow="{self.name}" with url={url}.')
-        
+
         # Run classification (error is caught in processor.run())
         clfn = await self._run(product=product, proc_args=proc_args)
-        
+
         logger.info(
             f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, status={clfn.status}, and total tokens used={clfn.input_tokens + clfn.output_tokens}'
         )
@@ -89,12 +87,12 @@ class OpenAIWorkflow(Workflow):
     """Classification workflow using OpenAI API calls."""
 
     def __init__(
-            self,
-            name: str,
-            http_client: httpx.AsyncClient,
-            api_key: str,
-            model: str,
-        ):
+        self,
+        name: str,
+        http_client: httpx.AsyncClient,
+        api_key: str,
+        model: str,
+    ):
         """Open AI Chat Workflow.
 
         Args:
@@ -116,9 +114,7 @@ class OpenAIWorkflow(Workflow):
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before.")
 
-    def _log_before_sleep(
-        self, url: str, retry_state: RetryCallState
-    ) -> None:
+    def _log_before_sleep(self, url: str, retry_state: RetryCallState) -> None:
         """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
@@ -126,7 +122,7 @@ class OpenAIWorkflow(Workflow):
                 f"failed with error: {retry_state.outcome.exception()}. "
                 f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
-    
+
     async def _call_openai_api(
         self,
         system_prompt: str,
@@ -151,7 +147,9 @@ class OpenAIWorkflow(Workflow):
         try:
             content = int(content.strip())
         except Exception as e:
-            raise type(e)(f"Failed to convert OpenAI response '{content}' to integer: {e}") from e
+            raise type(e)(
+                f"Failed to convert OpenAI response '{content}' to integer: {e}"
+            ) from e
 
         return ClassificationResult(
             result=content,
@@ -160,28 +158,29 @@ class OpenAIWorkflow(Workflow):
             status=ClassificationStatus.SUCCESS,
         )
 
+
 class OpenAIChat(OpenAIWorkflow):
     """Open AI classification workflow with single API call using specific product_item fields for setting up the context.
-    
+
     Note:
         The system prompt sets the classes to be produced. They must be contained in allowed classes.
         The fields declared in product_item_fields are concatenated for creating a user prompt from
         which the classification should happen.
     """
-    
+
     _user_prompt_template = "Product Details:\n{product_details}\n\nRelevance:"
     _product_details_template = "{field_name}:\n{field_value}"
 
     def __init__(
-            self,
-            name: str,
-            http_client: httpx.AsyncClient,
-            api_key: str,
-            model: str,
-            product_item_fields: List[str],
-            system_prompt: str,
-            allowed_classes: List[int],
-        ):
+        self,
+        name: str,
+        http_client: httpx.AsyncClient,
+        api_key: str,
+        model: str,
+        product_item_fields: List[str],
+        system_prompt: str,
+        allowed_classes: List[int],
+    ):
         """Open AI Chat workflow.
 
         Args:
@@ -199,9 +198,13 @@ class OpenAIChat(OpenAIWorkflow):
             api_key=api_key,
             model=model,
         )
-        
-        if not self._product_item_fields_are_valid(product_item_fields=product_item_fields):
-            not_valid_fields = set(product_item_fields) - set(ProductItem.model_fields.keys())
+
+        if not self._product_item_fields_are_valid(
+            product_item_fields=product_item_fields
+        ):
+            not_valid_fields = set(product_item_fields) - set(
+                ProductItem.model_fields.keys()
+            )
             raise ValueError(
                 f"Invalid product_item_fields are given: {not_valid_fields}."
             )
@@ -222,7 +225,7 @@ class OpenAIChat(OpenAIWorkflow):
         """
         details = []
         for name in self._product_item_fields:
-            if (value := getattr(product, name, None)):
+            if value := getattr(product, name, None):
                 details.append(
                     self._product_details_template.format(
                         field_name=name, field_value=value
@@ -235,12 +238,10 @@ class OpenAIChat(OpenAIWorkflow):
         return "\n\n".join(details)
 
     async def _run(
-            self,
-            product: ProductItem,
-            proc_args: ProcessingArgs | None = None
-        ) -> ClassificationResult:
+        self, product: ProductItem, proc_args: ProcessingArgs | None = None
+    ) -> ClassificationResult:
         """Calls the OpenAI API with the user prompt from the product.
-        
+
         Args:
             product: The product item to process.
             proc_args: Arguments for running workflows (optional).
@@ -249,7 +250,9 @@ class OpenAIChat(OpenAIWorkflow):
         # Form the product details from the ProductItem
         product_details = self._get_product_details(product=product)
         if not product_details:
-            raise KeyError(f"Missing product_details for product_item_fields={self._product_item_fields}.")
+            raise KeyError(
+                f"Missing product_details for product_item_fields={self._product_item_fields}."
+            )
 
         # Create user prompt
         user_prompt = self._user_prompt_template.format(
@@ -279,28 +282,32 @@ class OpenAIChat(OpenAIWorkflow):
 
             # Enforce that the classification is in the allowed classes
             if clfn.result not in self._allowed_classes:
-                logger.warning(f"Classification '{clfn.result}' not in allowed classes {self._allowed_classes}")
+                logger.warning(
+                    f"Classification '{clfn.result}' not in allowed classes {self._allowed_classes}"
+                )
                 clfn.result = PROCESSOR_DEFAULT_IF_MISSING
                 clfn.status = ClassificationStatus.ERROR
 
         except Exception as e:
-            raise type(e)(f'Error classifying product at url="{url}" with workflow="{self.name}": {e}') from e
+            raise type(e)(
+                f'Error classifying product at url="{url}" with workflow="{self.name}": {e}'
+            ) from e
 
         return clfn
 
 
 class Processor(ABC):
     """Abstract base class for processing product items for a set of classification workflows.
-    
+
     Note:
-        Any subclass of Processor must implement the staticmethod `_setup_workflows`. This should make it 
+        Any subclass of Processor must implement the staticmethod `_setup_workflows`. This should make it
         more convenient to use one single http_client thoughout the Orchestrator.run() process.
     """
 
     def __init__(
-            self,
-            http_client: httpx.AsyncClient | None = None,
-        ):
+        self,
+        http_client: httpx.AsyncClient,
+    ):
         """Initializes the Processor.
 
         Args:
@@ -308,23 +315,28 @@ class Processor(ABC):
         """
         workflows = self._setup_workflows(http_client=http_client)
         if not self._are_unique(workflows=workflows):
-            raise ValueError(f'Workflow names are not unique: {[wf.name for wf in workflows]}')
+            raise ValueError(
+                f"Workflow names are not unique: {[wf.name for wf in workflows]}"
+            )
         self._workflows: Sequence[Workflow] = workflows
 
-    
     @abstractmethod
-    def _setup_workflows(self, http_client: httpx.AsyncClient | None, *args, **kwargs) -> Sequence[Workflow]:
+    def _setup_workflows(
+        self, http_client: httpx.AsyncClient, *args, **kwargs
+    ) -> Sequence[Workflow]:
         """Sets up the set of workflows to be run iteratively"""
         pass
-    
+
     @staticmethod
     def _are_unique(workflows: Sequence[Workflow]) -> bool:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(self, product: ProductItem, proc_args: ProcessingArgs | None = None) -> Dict[str, ClassificationResult]:
+    async def run(
+        self, product: ProductItem, proc_args: ProcessingArgs | None = None
+    ) -> Dict[str, ClassificationResult]:
         """Run the processing step for multiple classification workflows.
-        
+
         Args:
             product: The product item to process.
             proc_args: Arguments for running workflows (optional).
@@ -334,7 +346,9 @@ class Processor(ABC):
             try:
                 clfn = await wf.run(product=product, proc_args=proc_args)
             except Exception as e:
-                logger.error(f'Error while running classification workflow="{wf.name}": {e}')
+                logger.error(
+                    f'Error while running classification workflow="{wf.name}": {e}'
+                )
                 clfn = ClassificationResult(
                     result=PROCESSOR_DEFAULT_IF_MISSING,
                     input_tokens=PROCESSOR_EMPTY_TOKEN_COUNT,
@@ -343,4 +357,3 @@ class Processor(ABC):
                 )
             clfns[wf.name] = clfn
         return clfns
-        

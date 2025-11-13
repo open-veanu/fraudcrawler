@@ -75,6 +75,7 @@ def test_deepness():
     assert deepness.num_results == 20
     assert deepness.enrichment == enrichment
 
+
 @pytest.mark.parametrize(
     "url, expected",
     [

@@ -38,10 +38,10 @@ logger = logging.getLogger(__name__)
 
 class Orchestrator(ABC):
     """Abstract base class for orchestrating the different actors (scraping, processing).
-    
+
     Any subclass of :class:`Orchestrator` orchestrates the complete pipeline: search,
     deduplication, context extraction, processing (classification), and result collection.
-    
+
     Note:
     The :class:`Orchestrator` must be used as context manager as follows:
         async with Orchestrator(...) as orchestrator:
@@ -54,7 +54,7 @@ class Orchestrator(ABC):
 
         _setup_processor: Sets up Processor instance.
             This function is mainly responsible for calling `Processor._setup_workflows` with (possibly) shared http_client.
-    
+
     For each pipeline step :class:`Orchestrator` will deploy a number of async workers to handle the tasks.
     In addition it makes sure to orchestrate the canceling of the workers only after the relevant workload is done.
 
@@ -290,9 +290,7 @@ class Orchestrator(ABC):
 
                     # Update the product item
                     for name, classification in classifications.items():
-                        product.classifications[name] = int(
-                            classification.result
-                        )
+                        product.classifications[name] = int(classification.result)
                         product.usage[name] = {
                             "input_tokens": classification.input_tokens,
                             "output_tokens": classification.output_tokens,
@@ -718,4 +716,4 @@ class Orchestrator(ABC):
         # ---------------------------
         #  CLOSING PIPELINE
         # ---------------------------
-        logger.info("Pipeline concluded; async framework is closed") 
+        logger.info("Pipeline concluded; async framework is closed")

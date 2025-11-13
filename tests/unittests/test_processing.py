@@ -1,11 +1,9 @@
-from collections import defaultdict
 import pytest
 import pytest_asyncio
-from typing import cast, List, Sequence
+from typing import cast, Sequence
 
 import httpx
 
-from fraudcrawler.settings import PROCESSOR_DEFAULT_IF_MISSING
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
 from fraudcrawler.processing.processor import ClassificationResult, Workflow
 from fraudcrawler import Processor, ProductItem, OpenAIChat
@@ -16,18 +14,19 @@ class TestProcessor(Processor):
         super().__init__(http_client=http_client)
 
     def _setup_workflows(self, http_client: httpx.AsyncClient) -> Sequence[Workflow]:
-        setup = Setup()
+        setup = Setup()  # type: ignore[call-arg]
         openai_chat = OpenAIChat(
-            name='test_openai_chat',
+            name="test_openai_chat",
             http_client=http_client,
             api_key=setup.openaiapi_key,
             model="gpt-4o",
-            product_item_fields=['product_name', 'product_description'],
+            product_item_fields=["product_name", "product_description"],
             system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
             allowed_classes=[0, 1],
         )
         workflows = [openai_chat]
         return workflows
+
 
 @pytest.fixture
 def product():
@@ -43,13 +42,17 @@ def product():
         product_price="9.99",
     )
 
+
 @pytest_asyncio.fixture
 async def processor():
     async with HttpxAsyncClient() as http_client:
         yield TestProcessor(http_client=http_client)
 
+
 @pytest.mark.asyncio
-async def test_openai_chat_get_product_details(processor: TestProcessor, product: ProductItem):
+async def test_openai_chat_get_product_details(
+    processor: TestProcessor, product: ProductItem
+):
     openai_chat = cast(OpenAIChat, processor._workflows[0])
     details = openai_chat._get_product_details(product=product)
     assert isinstance(details, str)
@@ -60,17 +63,21 @@ async def test_openai_chat_get_product_details(processor: TestProcessor, product
     details = openai_chat._get_product_details(product)
     assert details == ""
 
+
 def test_openai_chat_product_item_fields_are_valid():
-    assert  OpenAIChat._product_item_fields_are_valid(['product_name', 'product_description'])
-    assert not OpenAIChat._product_item_fields_are_valid(['not_valid_field'])
+    assert OpenAIChat._product_item_fields_are_valid(
+        ["product_name", "product_description"]
+    )
+    assert not OpenAIChat._product_item_fields_are_valid(["not_valid_field"])
+
 
 @pytest.mark.asyncio
 async def test_processor_run(processor: TestProcessor, product: ProductItem):
-    classification = await processor.run(product=product)
-    classification = classification['test_openai_chat']
-    assert isinstance(classification, ClassificationResult)
-    assert isinstance(classification.result, int)
-    assert isinstance(classification.input_tokens, int)
-    assert classification.input_tokens > 0
-    assert isinstance(classification.output_tokens, int)
-    assert classification.output_tokens > 0
+    classifications = await processor.run(product=product)
+    clsfc = classifications["test_openai_chat"]
+    assert isinstance(clsfc, ClassificationResult)
+    assert isinstance(clsfc.result, int)
+    assert isinstance(clsfc.input_tokens, int)
+    assert clsfc.input_tokens > 0
+    assert isinstance(clsfc.output_tokens, int)
+    assert clsfc.output_tokens > 0
