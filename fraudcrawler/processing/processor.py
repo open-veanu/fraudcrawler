@@ -14,8 +14,6 @@ from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_IF_MISSING,
     PROCESSOR_EMPTY_TOKEN_COUNT,
 )
-from fraudcrawler.processing.arguments import ProcessingArgs
-
 
 logger = logging.getLogger(__name__)
 
@@ -51,31 +49,17 @@ class Workflow(ABC):
         self.name = name
 
     @abstractmethod
-    async def _run(
-        self, product: ProductItem, proc_args: ProcessingArgs | None = None
-    ) -> ClassificationResult:
-        """Runs the classification.
-
-        Args:
-            product: The product item to process.
-            proc_args: Arguments for running workflows (optional).
-        """
+    async def _run(self, product: ProductItem) -> ClassificationResult:
+        """Runs the classification."""
         pass
 
-    async def run(
-        self, product: ProductItem, proc_args: ProcessingArgs | None = None
-    ) -> ClassificationResult:
-        """Runs the classification and writes it to the product item.
-
-        Args:
-            product: The product item to process.
-            proc_args: Arguments for running workflows (optional).
-        """
+    async def run(self, product: ProductItem) -> ClassificationResult:
+        """Runs the classification and writes it to the product item."""
         url = product.url
         logger.info(f'Running workflow="{self.name}" with url={url}.')
 
         # Run classification (error is caught in processor.run())
-        clfn = await self._run(product=product, proc_args=proc_args)
+        clfn = await self._run(product=product)
 
         logger.info(
             f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, status={clfn.status}, and total tokens used={clfn.input_tokens + clfn.output_tokens}'
@@ -88,16 +72,16 @@ class OpenAIWorkflow(Workflow):
 
     def __init__(
         self,
-        name: str,
         http_client: httpx.AsyncClient,
+        name: str,
         api_key: str,
         model: str,
     ):
         """Open AI Chat Workflow.
 
         Args:
-            name: Name of the node (unique identifier)
             http_client: An httpx.AsyncClient to use for the async requests.
+            name: Name of the node (unique identifier)
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
         """
@@ -173,8 +157,8 @@ class OpenAIChat(OpenAIWorkflow):
 
     def __init__(
         self,
-        name: str,
         http_client: httpx.AsyncClient,
+        name: str,
         api_key: str,
         model: str,
         product_item_fields: List[str],
@@ -184,8 +168,8 @@ class OpenAIChat(OpenAIWorkflow):
         """Open AI Chat workflow.
 
         Args:
-            name: Name of the workflow (unique identifier)
             http_client: An httpx.AsyncClient to use for the async requests.
+            name: Name of the workflow (unique identifier)
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
             product_item_fields: Product item fields used to construct the user prompt.
@@ -193,8 +177,8 @@ class OpenAIChat(OpenAIWorkflow):
             allowed_classes: Allowed classes for model output.
         """
         super().__init__(
-            name=name,
             http_client=http_client,
+            name=name,
             api_key=api_key,
             model=model,
         )
@@ -237,15 +221,8 @@ class OpenAIChat(OpenAIWorkflow):
                 )
         return "\n\n".join(details)
 
-    async def _run(
-        self, product: ProductItem, proc_args: ProcessingArgs | None = None
-    ) -> ClassificationResult:
-        """Calls the OpenAI API with the user prompt from the product.
-
-        Args:
-            product: The product item to process.
-            proc_args: Arguments for running workflows (optional).
-        """
+    async def _run(self, product: ProductItem) -> ClassificationResult:
+        """Calls the OpenAI API with the user prompt from the product."""
 
         # Form the product details from the ProductItem
         product_details = self._get_product_details(product=product)
@@ -304,47 +281,33 @@ class Processor(ABC):
         more convenient to use one single http_client thoughout the Orchestrator.run() process.
     """
 
-    def __init__(
-        self,
-        http_client: httpx.AsyncClient,
-    ):
+    def __init__(self, workflows: Sequence[Workflow]):
         """Initializes the Processor.
 
         Args:
-            http_client: An httpx.AsyncClient to use for the async requests (optional).
+            workflows: Sequence of workflows for classification of product items.
         """
-        workflows = self._setup_workflows(http_client=http_client)
         if not self._are_unique(workflows=workflows):
             raise ValueError(
                 f"Workflow names are not unique: {[wf.name for wf in workflows]}"
             )
-        self._workflows: Sequence[Workflow] = workflows
-
-    @abstractmethod
-    def _setup_workflows(
-        self, http_client: httpx.AsyncClient, *args, **kwargs
-    ) -> Sequence[Workflow]:
-        """Sets up the set of workflows to be run iteratively"""
-        pass
+        self._workflows = workflows
 
     @staticmethod
     def _are_unique(workflows: Sequence[Workflow]) -> bool:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(
-        self, product: ProductItem, proc_args: ProcessingArgs | None = None
-    ) -> Dict[str, ClassificationResult]:
+    async def run(self, product: ProductItem) -> Dict[str, ClassificationResult]:
         """Run the processing step for multiple classification workflows.
 
         Args:
             product: The product item to process.
-            proc_args: Arguments for running workflows (optional).
         """
         clfns = {}
         for wf in self._workflows:
             try:
-                clfn = await wf.run(product=product, proc_args=proc_args)
+                clfn = await wf.run(product=product)
             except Exception as e:
                 logger.error(
                     f'Error while running classification workflow="{wf.name}": {e}'

@@ -137,7 +137,7 @@ see `CONTRIBUTING.md`
 ### Async Setup
 The `Orchestrator` class in `src/base/orchestrator.py` is designed to coordinate multiple services that may have interdependencies, allowing them to run in a semi-iterative manner. This means, for example, that product A can be at stage III of the pipeline while product B is still at stage I.
 
-This behavior is enabled through an asynchronous pipeline setup. The three main steps, `Search`, `Context Extraction`, and `Processing`, all utilize `httpx.AsyncClient`. It is both possible and highly recommended to manage a single AsyncClient instance per application for efficiency. We provide a `HttpxAsyncClient` class that you can pass For more details, see the [httpx documentation](https://www.python-httpx.org/api/#asyncclient).
+This behavior is enabled through an asynchronous pipeline setup. The three main steps, `Search`, `Context Extraction`, and `Processing`, all utilize `httpx.AsyncClient`. It is both possible and highly recommended to manage a single AsyncClient instance per application for efficiency. We provide a `HttpxAsyncClient` class that you can pass to retain the default values we use for `limits`, `timeout` & `follow_redirects`. For more details, see the [httpx documentation](https://www.python-httpx.org/api/#asyncclient).
 
 The following image provides a schematic representation of the package's async setup.
 ![Async Setup](https://github.com/open-veanu/fraudcrawler/raw/master/docs/assets/images/Fraudcrawler_Async_Setup.svg)
