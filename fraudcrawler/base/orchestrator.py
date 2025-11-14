@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-from typing import cast, Dict, List, Self
+from typing import cast, Dict, List
 
-import httpx
 import re
 
 from fraudcrawler.settings import (
@@ -28,9 +27,7 @@ from fraudcrawler import (
     Enricher,
     ZyteAPI,
     URLCollector,
-    ScrapingArgs,
     Processor,
-    ProcessingArgs,
 )
 
 logger = logging.getLogger(__name__)

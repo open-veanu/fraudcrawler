@@ -14,8 +14,6 @@ from fraudcrawler.settings import (
     PROCESSOR_DEFAULT_IF_MISSING,
     PROCESSOR_EMPTY_TOKEN_COUNT,
 )
-from fraudcrawler.processing.arguments import ProcessingArgs
-
 
 logger = logging.getLogger(__name__)
 

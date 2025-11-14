@@ -15,8 +15,6 @@ from fraudcrawler.base.base import (
     ProductItem,
 )
 from fraudcrawler.base.orchestrator import Orchestrator
-from fraudcrawler.scraping.arguments import ScrapingArgs
-from fraudcrawler.processing.arguments import ProcessingArgs
 from fraudcrawler.processing.processor import OpenAIChat, Processor, Workflow
 
 logger = logging.getLogger(__name__)
