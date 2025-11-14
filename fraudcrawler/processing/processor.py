@@ -49,15 +49,11 @@ class Workflow(ABC):
         self.name = name
 
     @abstractmethod
-    async def _run(
-        self, product: ProductItem
-    ) -> ClassificationResult:
+    async def _run(self, product: ProductItem) -> ClassificationResult:
         """Runs the classification."""
         pass
 
-    async def run(
-        self, product: ProductItem
-    ) -> ClassificationResult:
+    async def run(self, product: ProductItem) -> ClassificationResult:
         """Runs the classification and writes it to the product item."""
         url = product.url
         logger.info(f'Running workflow="{self.name}" with url={url}.')
@@ -225,9 +221,7 @@ class OpenAIChat(OpenAIWorkflow):
                 )
         return "\n\n".join(details)
 
-    async def _run(
-        self, product: ProductItem
-    ) -> ClassificationResult:
+    async def _run(self, product: ProductItem) -> ClassificationResult:
         """Calls the OpenAI API with the user prompt from the product."""
 
         # Form the product details from the ProductItem
@@ -287,10 +281,7 @@ class Processor(ABC):
         more convenient to use one single http_client thoughout the Orchestrator.run() process.
     """
 
-    def __init__(
-        self,
-        workflows: Sequence[Workflow]
-    ):
+    def __init__(self, workflows: Sequence[Workflow]):
         """Initializes the Processor.
 
         Args:
@@ -307,9 +298,7 @@ class Processor(ABC):
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(
-        self, product: ProductItem
-    ) -> Dict[str, ClassificationResult]:
+    async def run(self, product: ProductItem) -> Dict[str, ClassificationResult]:
         """Run the processing step for multiple classification workflows.
 
         Args:

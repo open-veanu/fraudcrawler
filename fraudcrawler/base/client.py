@@ -52,10 +52,10 @@ class FraudCrawlerClient(Orchestrator):
         enricher: Enricher,
         url_collector: URLCollector,
         zyteapi: ZyteAPI,
-        processor: Processor, 
+        processor: Processor,
     ):
         """Initializes FraudCrawlerClient.
-        
+
         Args:
             searcher: Client for searching step.
             enricher: Client for enrichment step.
@@ -139,9 +139,7 @@ class FraudCrawlerClient(Orchestrator):
             location=location.code,
             timestamp=timestamp,
         )
-        self._results.append(
-            Results(search_term=search_term, filename=filename)
-        )
+        self._results.append(Results(search_term=search_term, filename=filename))
 
         # Run the pipeline by calling the orchestrator's run method
         asyncio.run(

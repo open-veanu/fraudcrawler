@@ -1,5 +1,5 @@
 import logging
-from typing import List, Sequence
+from typing import Sequence
 
 from fraudcrawler.base.base import Setup
 from fraudcrawler import (
@@ -9,7 +9,6 @@ from fraudcrawler import (
     Enricher,
     URLCollector,
     ZyteAPI,
-    Processor,
     SearchEngineName,
     Language,
     Location,
@@ -54,7 +53,7 @@ def _setup_workflows(http_client: HttpxAsyncClient) -> Sequence[Workflow]:
             http_client=http_client,
             name="availability",
             api_key=SETUP.openaiapi_key,
-            model='gpt-4o',
+            model="gpt-4o",
             product_item_fields=["product_name", "html_clean"],
             system_prompt=_AVAILABILITY_SYSTEM_PROMPT,
             allowed_classes=[0, 1],
@@ -63,12 +62,13 @@ def _setup_workflows(http_client: HttpxAsyncClient) -> Sequence[Workflow]:
             http_client=http_client,
             name="seriousness",
             api_key=SETUP.openaiapi_key,
-            model='gpt-4o',
+            model="gpt-4o",
             product_item_fields=["product_name", "product_descrtiption"],
             system_prompt=_SERIOUSNESS_SYSTEM_PROMPT,
             allowed_classes=[0, 1],
         ),
     ]
+
 
 def main(search_term: str):
     # Setup the search
