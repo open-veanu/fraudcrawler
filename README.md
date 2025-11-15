@@ -1,143 +1,170 @@
-# open-veanu/fraudcrawler
-Intelligent Market Monitoring
+# fraudcrawler
 
-The pipeline for monitoring the market has the folling main steps:
-1. search for a given term using SerpAPI
-2. get product information using ZyteAPI
-3. assess relevance of the found products using an OpenAI API
+![CI Status](https://github.com/open-veanu/fraudcrawler/workflows/CI/badge.svg)
+![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![PyPI](https://img.shields.io/pypi/v/fraudcrawler.svg)
+
+Fraudcrawler is an intelligent **market monitoring** tool that searches the web for products, extracts product details, and classifies them using LLMs. It combines search APIs, web scraping, and AI to automate product discovery and relevance assessment.
+
+## Features
+
+- **Asynchronous pipeline** - Products move through search, extraction, and classification stages independently
+- **Multiple search engines** - Google Search, Google Shopping, and more...
+- **Search term enrichment** - Automatically find related terms and expand your search
+- **Product extraction** - Get structured product data via Zyte API
+- **LLM classification** - Assess product relevance using OpenAI API with custom prompts
+- **Marketplace filtering** - Focus searches on specific domains
+- **Deduplication** - Avoid reprocessing previously collected URLs
+- **CSV export** - Results saved with timestamps for easy tracking
+
+## Prerequisites
+
+- Python 3.11 or higher
+- API keys for:
+  - **SerpAPI** - Google search results
+  - **Zyte API** - Product data extraction
+  - **OpenAI API** - Product classification
+  - **DataForSEO** (optional) - Search term enrichment
 
 ## Installation
+
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install fraudcrawler
 ```
 
-## Usage
-### `.env` file
-Make sure to create an `.env` file with the necessary API keys and credentials (c.f. `.env.example` file).
-
-### Run demo pipeline
+**Using Poetry:**
 ```bash
-python -m fraudcrawler.launch_demo_pipeline
+poetry install
 ```
 
-### Customize the pipeline
-Start by initializing the client
-```python
-from fraudcrawler import FraudCrawlerClient
+## Configuration
 
-# Initialize the client
+Create a `.env` file with your API credentials (see `.env.example` for template):
+
+```bash
+SERPAPI_KEY=your_serpapi_key
+ZYTEAPI_KEY=your_zyte_key
+OPENAIAPI_KEY=your_openai_key
+DATAFORSEO_USER=your_user  # optional
+DATAFORSEO_PWD=your_pwd    # optional
+```
+
+## Usage
+
+### Quick Start
+
+```python
+from fraudcrawler import FraudCrawlerClient, Language, Location, Deepness, Prompt
+
+# Initialize client
 client = FraudCrawlerClient()
-```
 
-For setting up the search we need 5 main objects.
-
-#### `search_term: str`
-The search term for the query (similar to search terms used within major search providers).
-
-#### `language: Language`
-The language used in SerpAPI ('hl' parameter), as well as for the optional search term enrichement (e.g. finding similar and related search terms). `language=Language('German')` creates an object having a language name and a language code as: `Language(name='German', code='de')`.
-
-#### `location: Location`
-The location used in SerpAPI ('gl' parameter). `location=Location('Switzerland')` creates an object having a location name and a location code as `Location(name='Switzerland', code='ch')`.
-
-#### `deepness: Deepness`
-Defines the search depth with the number of results to retrieve and optional enrichment parameters.
-
-#### `prompts: List[Prompt]`
-The list of prompts to classify a given product with (multiple) LLM calls. Each prompt object has a `name`, a `context` (used for defining the user prompt), a `system_prompt` (for defining the classification task), and `allowed_classes` (a list of possible classes).
-
-```python
-from fraudcrawler import Language, Location, Deepness, Prompt
-# Setup the search
+# Configure search
 search_term = "sildenafil"
 language = Language(name="German")
 location = Location(name="Switzerland")
 deepness = Deepness(num_results=50)
+
+# Define classification prompt
 prompts = [
     Prompt(
         name="relevance",
-        system_prompt=(
-            "You are a helpful and intelligent assistant. Your task is to classify any given product "
-            "as either relevant (1) or not relevant (0), strictly based on the context and product details provided by the user. "
-            "You must consider all aspects of the given context and make a binary decision accordingly. "
-            "If the product aligns with the user's needs, classify it as 1 (relevant); otherwise, classify it as 0 (not relevant). "
-            "Respond only with the number 1 or 0."
-        ),
+        system_prompt="Classify products as relevant (1) or not relevant (0) based on context.",
         allowed_classes=[0, 1],
     )
 ]
+
+# Run pipeline
+client.execute(
+    search_term=search_term,
+    language=language,
+    location=location,
+    deepness=deepness,
+    prompts=prompts
+)
+
+# Load results
+df = client.load_results()
+print(df.head())
 ```
 
-(Optional) Add search term enrichement. This will find related search terms (in a given language) and search for these as well.
+For a complete working example, see `fraudcrawler/launch_demo_pipeline.py`.
+
+### Advanced Configuration
+
+**Search term enrichment** - Find and search related terms:
 ```python
 from fraudcrawler import Enrichment
+
 deepness.enrichment = Enrichment(
     additional_terms=5,
     additional_urls_per_term=10
 )
 ```
 
-(Optional) Add marketplaces where we explicitely want to look for (this will focus your search as the :site parameter for a google search)
+**Marketplace filtering** - Focus on specific domains:
 ```python
 from fraudcrawler import Host
+
 marketplaces = [
     Host(name="International", domains="zavamed.com,apomeds.com"),
-    Host(name="National", domains="netdoktor.ch, nobelpharma.ch"),
+    Host(name="National", domains="netdoktor.ch,nobelpharma.ch"),
 ]
+
+client.execute(..., marketplaces=marketplaces)
 ```
 
-(Optional) Exclude urls (where you don't want to find products)
+**Exclude domains**:
 ```python
 excluded_urls = [
     Host(name="Compendium", domains="compendium.ch"),
 ]
+
+client.execute(..., excluded_urls=excluded_urls)
 ```
 
-(Optional) Exclude previously collected urls (intends to save credits)
+**Skip previously collected URLs**:
 ```python
 previously_collected_urls = [
-    https://pharmaciedelabateliere.ch/shop/sante/douleurs-inflammations/dafalgan-cpr-eff-500-mg-16-pce/,
-    https://eiche.ch/product/schmerzmittel-52cd81d5d206a/dafalgan-brausetabletten-1336653,
+    "https://example.com/product1",
+    "https://example.com/product2",
 ]
+
+client.execute(..., previously_collected_urls=previously_collected_urls)
 ```
 
-And finally run the pipeline
-```python
-# Execute the pipeline
-client.execute(
-    search_term=search_term,
-    language=language,
-    location=location,
-    deepness=deepness,
-    prompts=prompts,
-    # marketplaces=marketplaces,    # Uncomment this for using marketplaces
-    # excluded_urls=excluded_urls   # Uncomment this for using excluded_urls
-    # previously_collected_urls=previously_collected_urls    # Uncomment this for using previously_selected_urls
-)
-```
-This creates a file with name pattern `<search_term>_<language.code>_<location.code>_<datetime[%Y%m%d%H%M%S]>.csv` inside the folder `data/results/`.
-
-Once the pipeline terminated the results can be loaded and examined as follows:
-```python
-df = client.load_results()
-print(df.head(n=10))
-```
-
-If the client has been used to run multiple pipelines, an overview of the available results (for a given instance of 
-`FraudCrawlerClient`) can be obtained with
+**View all results** from a client instance:
 ```python
 client.print_available_results()
 ```
 
-## Contributing
-see `CONTRIBUTING.md`
+## Output
 
-### Async Setup
-The `Orchestrator` class in `src/base/orchestrator.py` is designed to coordinate multiple services that may have interdependencies, allowing them to run in a semi-iterative manner. This means, for example, that product A can be at stage III of the pipeline while product B is still at stage I.
+Results are saved as CSV files in `data/results/` with the naming pattern:
 
-This behavior is enabled through an asynchronous pipeline setup. The three main steps, `Search`, `Context Extraction`, and `Processing`, all utilize `httpx.AsyncClient`. It is both possible and highly recommended to manage a single AsyncClient instance per application for efficiency. We provide a `HttpxAsyncClient` class that you can pass to retain the default values we use for `limits`, `timeout` & `follow_redirects`. For more details, see the [httpx documentation](https://www.python-httpx.org/api/#asyncclient).
+```
+<search_term>_<language_code>_<location_code>_<timestamp>.csv
+```
 
-The following image provides a schematic representation of the package's async setup.
+Example: `sildenafil_de_ch_20250115143022.csv`
+
+The CSV includes product details, URLs, and classification scores from your prompts.
+
+## Development
+
+For detailed contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Architecture
+
+Fraudcrawler uses an asynchronous pipeline where products can be at different processing stages simultaneously. Product A might be in classification while Product B is still being scraped. This is enabled by async workers for each stage (Search, Context Extraction, Processing) using `httpx.AsyncClient`.
+
 ![Async Setup](https://github.com/open-veanu/fraudcrawler/raw/master/docs/assets/images/Fraudcrawler_Async_Setup.svg)
+
+For more details on the async design, see the [httpx documentation](https://www.python-httpx.org/api/#asyncclient).
