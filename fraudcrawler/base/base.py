@@ -145,8 +145,9 @@ class ProductItem(BaseModel):
     html: str | None = None
     html_clean: str | None = None
 
-    # Processor parameters are set dynamic so we must allow extra fields
+    # Processor parameters are set dynamically
     classifications: Dict[str, int] = Field(default_factory=dict)
+    collected_infos: str | None = None
 
     # Usage parameters
     usage: Dict[str, Dict[str, int]] = Field(default_factory=dict)

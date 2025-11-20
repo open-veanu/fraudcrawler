@@ -273,13 +273,8 @@ class OpenAIChat(OpenAIWorkflow):
         return clfn
 
 
-class Processor(ABC):
-    """Abstract base class for processing product items for a set of classification workflows.
-
-    Note:
-        Any subclass of Processor must implement the staticmethod `_setup_workflows`. This should make it
-        more convenient to use one single http_client thoughout the Orchestrator.run() process.
-    """
+class Processor:
+    """Processing product items for a set of classification workflows."""
 
     def __init__(self, workflows: Sequence[Workflow]):
         """Initializes the Processor.
