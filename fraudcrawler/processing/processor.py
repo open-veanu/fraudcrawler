@@ -152,7 +152,7 @@ class OpenAIChat(OpenAIWorkflow):
         which the classification should happen.
     """
 
-    _user_prompt_template = "Product Details:\n{product_details}\n\nRelevance:"
+    _product_prompt_template = "Product Details:\n{product_details}\n\nRelevance:"
     _product_details_template = "{field_name}:\n{field_value}"
 
     def __init__(
@@ -220,9 +220,9 @@ class OpenAIChat(OpenAIWorkflow):
                     f'Field "{name}" is missing in ProductItem with url="{product.url}"'
                 )
         return "\n\n".join(details)
-
-    async def _run(self, product: ProductItem) -> ClassificationResult:
-        """Calls the OpenAI API with the user prompt from the product."""
+    
+    async def _get_product_prompt(self, product: ProductItem) -> str:
+        """Forms and returns the product related part for the user_prompt."""
 
         # Form the product details from the ProductItem
         product_details = self._get_product_details(product=product)
@@ -232,9 +232,21 @@ class OpenAIChat(OpenAIWorkflow):
             )
 
         # Create user prompt
-        user_prompt = self._user_prompt_template.format(
+        product_prompt = self._product_prompt_template.format(
             product_details=product_details,
         )
+        return product_prompt
+    
+    async def _get_user_prompt(self, product: ProductItem) -> str:
+        """Forms and returns the user_prompt."""
+        product_prompt = await self._get_product_prompt(product=product)
+        return product_prompt
+
+    async def _run(self, product: ProductItem) -> ClassificationResult:
+        """Calls the OpenAI API with the user prompt from the product."""
+
+        # Get user prompt
+        user_prompt = await self._get_user_prompt(product=product)
 
         # Call the OpenAI API
         url = product.url
@@ -271,6 +283,59 @@ class OpenAIChat(OpenAIWorkflow):
             ) from e
 
         return clfn
+
+
+class OpenAIChatUserInputs(OpenAIChat):
+    """Open AI classification workflow with single API call using specific product_item fields plus user_inputs for setting up the context.
+
+    Note:
+        The system prompt sets the classes to be produced. They must be contained in allowed classes.
+        The fields declared in product_item_fields together with the user_inputs are concatenated for 
+        creating a user prompt from which the classification should happen.
+    """
+    _user_inputs_template = "{key}: {val}"
+
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        name: str,
+        api_key: str,
+        model: str,
+        product_item_fields: List[str],
+        system_prompt: str,
+        allowed_classes: List[int],
+        user_inputs: Dict[str, str],
+    ):
+        """Open AI Chat workflow.
+
+        Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
+            name: Name of the workflow (unique identifier)
+            api_key: The OpenAI API key.
+            model: The OpenAI model to use.
+            product_item_fields: Product item fields used to construct the user prompt.
+            system_prompt: System prompt for the AI model.
+            allowed_classes: Allowed classes for model output.
+            user_inputs: Inputs from the frontend by the user.
+        """
+        super().__init__(
+            http_client=http_client,
+            name=name,
+            api_key=api_key,
+            model=model,
+            product_item_fields=product_item_fields,
+            system_prompt=system_prompt,
+            allowed_classes=allowed_classes,
+        )
+        user_inputs_strings = [self._user_inputs_template.format(key=k, val=v) for k, v in user_inputs]
+        user_inputs_joined = '\n'.join(user_inputs_strings)
+        self._user_inputs_prompt = f"User Inputs:\n{user_inputs_joined}"
+
+    async def _get_user_prompt(self, product: ProductItem) -> str:
+        """Forms the user_prompt from the product details plus user_inputs."""
+        product_prompt = await super()._get_product_prompt(product=product)
+        user_prompt = f'{self._user_inputs_prompt}\n\n{product_prompt}'
+        return user_prompt
 
 
 class Processor:
