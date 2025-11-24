@@ -327,7 +327,7 @@ class OpenAIChatUserInputs(OpenAIChat):
             system_prompt=system_prompt,
             allowed_classes=allowed_classes,
         )
-        user_inputs_strings = [self._user_inputs_template.format(key=k, val=v) for k, v in user_inputs]
+        user_inputs_strings = [self._user_inputs_template.format(key=k, val=v) for k, v in user_inputs.items()]
         user_inputs_joined = '\n'.join(user_inputs_strings)
         self._user_inputs_prompt = f"User Inputs:\n{user_inputs_joined}"
 
