@@ -3,6 +3,7 @@ from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteAPI
 from fraudcrawler.processing.processor import (
+    UserInputs,
     Workflow,
     OpenAIChat,
     OpenAIChatUserInputs,
@@ -26,6 +27,7 @@ __all__ = [
     "Enricher",
     "URLCollector",
     "ZyteAPI",
+    "UserInputs",
     "Workflow",
     "OpenAIChat",
     "OpenAIChatUserInputs",

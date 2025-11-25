@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import logging
 from pydantic import BaseModel
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, TypeAlias
 
 import httpx
 from openai import AsyncOpenAI
@@ -16,6 +16,9 @@ from fraudcrawler.settings import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+UserInputs: TypeAlias = Dict[str, List[str]]
 
 
 class ClassificationStatus(Enum):
@@ -305,7 +308,7 @@ class OpenAIChatUserInputs(OpenAIChat):
         product_item_fields: List[str],
         system_prompt: str,
         allowed_classes: List[int],
-        user_inputs: Dict[str, str],
+        user_inputs: UserInputs,
     ):
         """Open AI Chat workflow.
 
