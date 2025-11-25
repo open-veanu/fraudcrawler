@@ -43,7 +43,7 @@ async def processor():
         product_item_fields=["product_name", "product_description"],
         system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
         allowed_classes=[0, 1],
-        user_inputs={"one": '["plus", "two"]'},
+        user_inputs={"one": ["plus", "two"]},
     )
     return Processor(workflows=[openai_chat, openai_chat_user_input])
 
@@ -82,7 +82,7 @@ async def test_openai_chat_get_user_prompt(processor: Processor, product: Produc
     user_prompt = await openai_chat_user_input._get_user_prompt(product=product)
     assert isinstance(user_prompt, str)
     assert product_prompt in user_prompt
-    assert 'User Inputs:\none: ["plus", "two"]' in user_prompt
+    assert "User Inputs:\none: ['plus', 'two']" in user_prompt
 
 
 @pytest.mark.asyncio
