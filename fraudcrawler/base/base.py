@@ -147,7 +147,8 @@ class ProductItem(BaseModel):
 
     # Processor parameters are set dynamically
     classifications: Dict[str, int] = Field(default_factory=dict)
-    enrichment: str | None = None
+    insights: str | None = None
+    tmp: Dict[str, Any] = Field(default_factory=dict)
 
     # Usage parameters
     usage: Dict[str, Dict[str, int]] = Field(default_factory=dict)
