@@ -71,14 +71,6 @@ class Host(BaseModel):
         return [cls._normalize_domain(dom.strip()) for dom in val]
 
 
-class ClassificationResult(BaseModel):
-    """Model for classification results."""
-
-    result: int
-    input_tokens: int
-    output_tokens: int
-
-
 class Location(BaseModel):
     """Model for location details (e.g. `Location(name="Switzerland", code="ch")`)."""
 
@@ -153,8 +145,12 @@ class ProductItem(BaseModel):
     html: str | None = None
     html_clean: str | None = None
 
-    # Processor parameters are set dynamic so we must allow extra fields
+    # Processor parameters are set dynamically
     classifications: Dict[str, int] = Field(default_factory=dict)
+    insights: str | None = None
+
+    # Temporary storage for processor-specific intermediate data
+    tmp: Dict[str, Any] = Field(default_factory=dict)
 
     # Usage parameters
     usage: Dict[str, Dict[str, int]] = Field(default_factory=dict)
@@ -162,33 +158,6 @@ class ProductItem(BaseModel):
     # Filtering parameters
     filtered: bool = False
     filtered_at_stage: str | None = None
-
-
-class Prompt(BaseModel):
-    """Model for prompts."""
-
-    name: str
-    system_prompt: str
-    product_item_fields: List[str]
-    allowed_classes: List[int]
-
-    @field_validator("allowed_classes", mode="before")
-    def check_for_positive_value(cls, val):
-        """Check if all values are positive."""
-        if not all(isinstance(i, int) and i >= 0 for i in val):
-            raise ValueError("all values in allowed_classes must be positive integers.")
-        return val
-
-    @field_validator("product_item_fields", mode="before")
-    def validate_product_item_fields(cls, val):
-        """Ensure all product_item_fields are valid ProductItem attributes."""
-        valid_fields = set(ProductItem.model_fields.keys())
-        for field in val:
-            if field not in valid_fields:
-                raise ValueError(
-                    f"Invalid product_item_field: '{field}'. Must be one of: {sorted(valid_fields)}"
-                )
-        return val
 
 
 class HttpxAsyncClient(httpx.AsyncClient):

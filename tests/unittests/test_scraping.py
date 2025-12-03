@@ -23,28 +23,28 @@ from fraudcrawler.settings import ROOT_DIR
 
 @pytest_asyncio.fixture
 async def serpapi_google():
-    setup = Setup()
+    setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
         yield SerpAPIGoogle(http_client=httpx_client, api_key=setup.serpapi_key)
 
 
 @pytest_asyncio.fixture
 async def serpapi_google_shopping():
-    setup = Setup()
+    setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
         yield SerpAPIGoogleShopping(http_client=httpx_client, api_key=setup.serpapi_key)
 
 
 @pytest_asyncio.fixture
 async def toppreise():
-    setup = Setup()
+    setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
         yield Toppreise(http_client=httpx_client, zyteapi_key=setup.zyteapi_key)
 
 
 @pytest_asyncio.fixture
 async def searcher():
-    setup = Setup()
+    setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
         yield Searcher(
             http_client=httpx_client,
@@ -55,7 +55,7 @@ async def searcher():
 
 @pytest_asyncio.fixture
 async def enricher():
-    setup = Setup()
+    setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
         yield Enricher(
             http_client=httpx_client,
@@ -101,7 +101,7 @@ def other_urls():
 
 @pytest_asyncio.fixture
 async def zyteapi():
-    setup = Setup()
+    setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
         yield ZyteAPI(http_client=httpx_client, api_key=setup.zyteapi_key)
 
@@ -430,7 +430,7 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
 @pytest.mark.asyncio
 async def test_zyteapi_details(zyteapi):
     # url = "https://www.interdiscount.ch/it/product/liebherr-tp1410-136-l-bianco-0005000183"
-    url = "https://www.toppreise.ch/preisvergleich/Siebtraegermaschinen/DELONGHI-La-Specialista-Maestro-EC9885-M-p807974"
+    url = "https://www.toppreise.ch/preisvergleich/Siebtraegermaschinen/DELONGHI-La-Specialista-Maestro-Cold-Brew-EC9885-M-p807974"
     product = await zyteapi.details(url=url)
     assert product
 

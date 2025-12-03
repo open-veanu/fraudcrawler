@@ -1,17 +1,19 @@
 import pytest
 import pytest_asyncio
+from typing import cast
 
-from fraudcrawler.settings import (
-    PROCESSOR_DEFAULT_MODEL,
-    PROCESSOR_DEFAULT_IF_MISSING,
+from fraudcrawler.base.base import Setup, HttpxAsyncClient
+from fraudcrawler.processing.processor import ClassificationResult
+from fraudcrawler import (
+    Processor,
+    ProductItem,
+    OpenAIClassification,
+    OpenAIClassificationUserInputs,
 )
-
-from fraudcrawler.base.base import Setup, ClassificationResult, HttpxAsyncClient
-from fraudcrawler import Processor, Prompt, ProductItem
 
 
 @pytest.fixture
-def product_item():
+def product():
     return ProductItem(
         search_term="test product",
         search_term_type="original",
@@ -25,52 +27,78 @@ def product_item():
     )
 
 
-@pytest.fixture
-def prompt():
-    return Prompt(
-        name="test_prompt",
+@pytest_asyncio.fixture
+async def processor():
+    setup = Setup()  # type: ignore[call-arg]
+    http_client = HttpxAsyncClient()
+    openai_clfc = OpenAIClassification(
+        name="test_openai_clfc",
+        http_client=http_client,
+        api_key=setup.openaiapi_key,
+        model="gpt-4o",
         product_item_fields=["product_name", "product_description"],
         system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
         allowed_classes=[0, 1],
     )
+    openai_clfc_user_input = OpenAIClassificationUserInputs(
+        name="test_openai_clfc_user_input",
+        http_client=http_client,
+        api_key=setup.openaiapi_key,
+        model="gpt-4o",
+        product_item_fields=["product_name", "product_description"],
+        system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
+        allowed_classes=[0, 1],
+        user_inputs={"one": ["plus", "two"]},
+    )
+    return Processor(workflows=[openai_clfc, openai_clfc_user_input])
 
 
-@pytest_asyncio.fixture
-async def processor():
-    setup = Setup()
-    async with HttpxAsyncClient() as http_client:
-        yield Processor(
-            http_client=http_client,
-            api_key=setup.openaiapi_key,
-            model=PROCESSOR_DEFAULT_MODEL,
-        )
-
-
-def test_processor_get_product_details(product_item, prompt):
-    details = Processor._get_product_details(product_item, prompt)
+@pytest.mark.asyncio
+async def test_openai_clfc_get_product_details(
+    processor: Processor, product: ProductItem
+):
+    openai_clfc = cast(OpenAIClassification, processor._workflows[0])
+    details = openai_clfc._get_product_details(product=product)
     assert isinstance(details, str)
     assert "product_name:\nTest Product" in details
     assert "product_description:\nThis is a test product." in details
 
-    prompt.product_item_fields = ["not_a_field"]
-    details = Processor._get_product_details(product_item, prompt)
+    openai_clfc._product_item_fields = ["not_a_field"]
+    details = openai_clfc._get_product_details(product)
     assert details == ""
 
 
+def test_openai_clfc_product_item_fields_are_valid():
+    assert OpenAIClassification._product_item_fields_are_valid(
+        ["product_name", "product_description"]
+    )
+    assert not OpenAIClassification._product_item_fields_are_valid(["not_valid_field"])
+
+
 @pytest.mark.asyncio
-async def test_processor_classify_product(processor, product_item, prompt):
-    classification = await processor.classify(
-        product=product_item,
-        prompt=prompt,
+async def test_openai_clfc_get_user_prompt(processor: Processor, product: ProductItem):
+    openai_clfc = cast(OpenAIClassification, processor._workflows[0])
+    product_prompt = await openai_clfc._get_user_prompt(product=product)
+    assert isinstance(product_prompt, str)
+    assert "product_name:\nTest Product" in product_prompt
+    assert "product_description:\nThis is a test product." in product_prompt
+
+    openai_clfc_user_input = cast(
+        OpenAIClassificationUserInputs, processor._workflows[1]
     )
-    assert isinstance(classification, ClassificationResult)
-    assert isinstance(classification.result, int)
-    assert isinstance(classification.input_tokens, int)
-    assert isinstance(classification.output_tokens, int)
-    assert (
-        classification.result in prompt.allowed_classes
-        or classification.result == PROCESSOR_DEFAULT_IF_MISSING
-    )
-    assert (
-        classification.result == 1
-    )  # Because the prompt forces 1 for test-related items
+    user_prompt = await openai_clfc_user_input._get_user_prompt(product=product)
+    assert isinstance(user_prompt, str)
+    assert product_prompt in user_prompt
+    assert "User Inputs:\none: ['plus', 'two']" in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_processor_run(processor: Processor, product: ProductItem):
+    classifications = await processor.run(product=product)
+    clfc = classifications["test_openai_clfc"]
+    assert isinstance(clfc, ClassificationResult)
+    assert isinstance(clfc.result, int)
+    assert isinstance(clfc.input_tokens, int)
+    assert clfc.input_tokens > 0
+    assert isinstance(clfc.output_tokens, int)
+    assert clfc.output_tokens > 0

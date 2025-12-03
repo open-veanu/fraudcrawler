@@ -1,15 +1,13 @@
 from abc import ABC, abstractmethod
 import asyncio
 import logging
-from typing import cast, Dict, List, Self
+from typing import cast, Dict, List
 
-import httpx
 import re
 
 from fraudcrawler.settings import (
     EXACT_MATCH_PRODUCT_FIELDS,
     EXACT_MATCH_FIELD_SEPARATOR,
-    PROCESSOR_DEFAULT_MODEL,
 )
 from fraudcrawler.settings import (
     DEFAULT_N_SRCH_WKRS,
@@ -20,8 +18,8 @@ from fraudcrawler.base.base import (
     Host,
     Language,
     Location,
+    Deepness,
     ProductItem,
-    HttpxAsyncClient,
 )
 from fraudcrawler import (
     Searcher,
@@ -29,25 +27,24 @@ from fraudcrawler import (
     Enricher,
     ZyteAPI,
     URLCollector,
-    ScrapingConfig,
     Processor,
-    ProcessingConfig,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class Orchestrator(ABC):
-    """Abstract base class for orchestrating the different actors (crawling, processing).
+    """Abstract base class for orchestrating the different actors (scraping, processing).
+
+    Any subclass of :class:`Orchestrator` orchestrates the complete pipeline: search,
+    deduplication, context extraction, processing (classification), and result collection.
 
     Abstract methods:
         _collect_results: Collects the results from the given queue_in.
+            This function is responsible for collecting and handling the results from the given queue_in. It might
+            save the results to a file, a database, or any other storage.
 
-    Each subclass of class:`Orchestrator` must implement the abstract method func:`_collect_results`.
-    This function is responsible for collecting and handling the results from the given queue_in. It might
-    save the results to a file, a database, or any other storage.
-
-    For each pipeline step class:`Orchestrator` will deploy a number of async workers to handle the tasks.
+    For each pipeline step :class:`Orchestrator` will deploy a number of async workers to handle the tasks.
     In addition it makes sure to orchestrate the canceling of the workers only after the relevant workload is done.
 
     For more information on the orchestrating pattern see README.md.
@@ -55,47 +52,34 @@ class Orchestrator(ABC):
 
     def __init__(
         self,
-        serpapi_key: str,
-        dataforseo_user: str,
-        dataforseo_pwd: str,
-        zyteapi_key: str,
-        openaiapi_key: str,
-        openai_model: str = PROCESSOR_DEFAULT_MODEL,
+        searcher: Searcher,
+        enricher: Enricher,
+        url_collector: URLCollector,
+        zyteapi: ZyteAPI,
+        processor: Processor,
         n_srch_wkrs: int = DEFAULT_N_SRCH_WKRS,
         n_cntx_wkrs: int = DEFAULT_N_CNTX_WKRS,
         n_proc_wkrs: int = DEFAULT_N_PROC_WKRS,
-        # Configure a custom httpx client.
-        # We provide a `HttpxAsyncClient` class that you can pass
-        # to retain the default values we use for `limits`, `timeout` & `follow_redirects`.
-        http_client: httpx.AsyncClient | None = None,
     ):
         """Initializes the orchestrator with the given settings.
 
-        NOTE:
-        The class:`Orchestrator` must be used as context manager as follows:
-            async with Orchestrator(...) as orchestrator:
-                await orchestrator.run()
-
         Args:
-            serpapi_key: The API key for SERP API.
-            dataforseo_user: The user for DataForSEO.
-            dataforseo_pwd: The password for DataForSEO.
-            zyteapi_key: The API key for Zyte API.
-            openaiapi_key: The API key for OpenAI.
-            openai_model: The model to use for the processing (optional).
+            searcher: Client for searching step.
+            enricher: Client for enrichment step.
+            url_collector: Client for deduplication.
+            zyteapi: Client for metadata extraction.
+            processor: Client for product classification.
             n_srch_wkrs: Number of async workers for the search (optional).
             n_cntx_wkrs: Number of async workers for context extraction (optional).
             n_proc_wkrs: Number of async workers for the processor (optional).
-            http_client: An httpx.AsyncClient to use for the async requests (optional).
         """
 
-        # Store the variables for setting up the clients
-        self._serpapi_key = serpapi_key
-        self._dataforseo_user = dataforseo_user
-        self._dataforseo_pwd = dataforseo_pwd
-        self._zyteapi_key = zyteapi_key
-        self._openaiapi_key = openaiapi_key
-        self._openai_model = openai_model
+        # Pipeline clients
+        self._searcher = searcher
+        self._enricher = enricher
+        self._url_collector = url_collector
+        self._zyteapi = zyteapi
+        self._processor = processor
 
         # Setup the async framework
         self._n_srch_wkrs = n_srch_wkrs
@@ -103,47 +87,6 @@ class Orchestrator(ABC):
         self._n_proc_wkrs = n_proc_wkrs
         self._queues: Dict[str, asyncio.Queue] | None = None
         self._workers: Dict[str, List[asyncio.Task] | asyncio.Task] | None = None
-
-        # Setup the httpx client
-        self._http_client = http_client
-        self._owns_http_client = http_client is None
-
-    async def __aenter__(self) -> Self:
-        """Creates and starts an httpx.AsyncClient if not provided."""
-        if self._http_client is None:
-            logger.debug("Creating a new httpx.AsyncClient owned by the orchestrator")
-            self._http_client = HttpxAsyncClient()
-            self._owns_http_client = True
-
-        # Setup the clients
-        self._searcher = Searcher(
-            http_client=self._http_client,
-            serpapi_key=self._serpapi_key,
-            zyteapi_key=self._zyteapi_key,
-        )
-        self._enricher = Enricher(
-            http_client=self._http_client,
-            user=self._dataforseo_user,
-            pwd=self._dataforseo_pwd,
-        )
-        self._url_collector = URLCollector()
-        self._zyteapi = ZyteAPI(
-            http_client=self._http_client,
-            api_key=self._zyteapi_key,
-        )
-        self._processor = Processor(
-            http_client=self._http_client,
-            api_key=self._openaiapi_key,
-            model=self._openai_model,
-        )
-        return self
-
-    async def __aexit__(self, *args, **kwargs) -> None:
-        """Closes the httpx.AsyncClient if it was created by this orchestrator."""
-        if self._owns_http_client and self._http_client is not None:
-            logger.debug("Closing the httpx.AsyncClient owned by the orchestrator")
-            await self._http_client.aclose()
-            self._http_client = None
 
     async def _srch_execute(
         self,
@@ -253,7 +196,7 @@ class Orchestrator(ABC):
                         product.filtered_at_stage = "Context (exact search)"
 
                 except Exception as e:
-                    logger.warning(f"Error executing Zyte API search: {e}.")
+                    logger.error(f"Error executing Zyte API search: {e}.")
             await queue_out.put(product)
             queue_in.task_done()
 
@@ -261,14 +204,12 @@ class Orchestrator(ABC):
         self,
         queue_in: asyncio.Queue[ProductItem | None],
         queue_out: asyncio.Queue[ProductItem | None],
-        processing_config: ProcessingConfig,
     ) -> None:
         """Collects the product details from the queue_in, processes them (filtering, relevance, etc.) and puts the results into queue_out.
 
         Args:
             queue_in: The input queue containing the product details.
             queue_out: The output queue to put the processed product details.
-            processing_config: Sets up the processing pipeline step.
         """
 
         # Process the products
@@ -281,16 +222,13 @@ class Orchestrator(ABC):
 
             if not product.filtered:
                 try:
-                    # Run all the configured prompts
-                    for prompt in processing_config.prompts:
-                        classification = await self._processor.classify(
-                            product=product,
-                            prompt=prompt,
-                        )
-                        product.classifications[prompt.name] = int(
-                            classification.result
-                        )
-                        product.usage[prompt.name] = {
+                    # Run the configured workflows
+                    classifications = await self._processor.run(product=product)
+
+                    # Update the product item
+                    for name, classification in classifications.items():
+                        product.classifications[name] = int(classification.result)
+                        product.usage[name] = {
                             "input_tokens": classification.input_tokens,
                             "output_tokens": classification.output_tokens,
                         }
@@ -318,7 +256,6 @@ class Orchestrator(ABC):
         n_srch_wkrs: int,
         n_cntx_wkrs: int,
         n_proc_wkrs: int,
-        processing_config: ProcessingConfig,
     ) -> None:
         """Sets up the necessary queues and workers for the async framework.
 
@@ -326,7 +263,6 @@ class Orchestrator(ABC):
             n_srch_wkrs: Number of async workers for search.
             n_cntx_wkrs: Number of async workers for context extraction.
             n_proc_wkrs: Number of async workers for processing.
-            processing_config: Sets up the processing pipeline step.
         """
 
         # Setup the input/output queues for the workers
@@ -369,7 +305,6 @@ class Orchestrator(ABC):
                 self._proc_execute(
                     queue_in=proc_queue,
                     queue_out=res_queue,
-                    processing_config=processing_config,
                 )
             )
             for _ in range(n_proc_wkrs)
@@ -423,7 +358,13 @@ class Orchestrator(ABC):
     async def _add_srch_items(
         self,
         queue: asyncio.Queue[dict | None],
-        scraping_config: ScrapingConfig,
+        search_term: str,
+        search_engines: List[SearchEngineName],
+        language: Language,
+        location: Location,
+        deepness: Deepness,
+        marketplaces: List[Host] | None,
+        excluded_urls: List[Host] | None,
     ) -> None:
         """Adds all the (enriched) search_term (as srch items) to the queue.
 
@@ -442,17 +383,12 @@ class Orchestrator(ABC):
                 for each search_engine
                     add item to queue
         """
-        search_term = scraping_config.search_term
-        search_engines = scraping_config.search_engines
-        language = scraping_config.language
-        location = scraping_config.location
-        deepness = scraping_config.deepness
         common_kwargs = {
             "queue": queue,
             "language": language,
             "location": location,
-            "marketplaces": scraping_config.marketplaces,
-            "excluded_urls": scraping_config.excluded_urls,
+            "marketplaces": marketplaces,
+            "excluded_urls": excluded_urls,
         }
 
         # Add initial items to the queue
@@ -558,31 +494,42 @@ class Orchestrator(ABC):
 
     async def run(
         self,
-        scraping_config: ScrapingConfig,
-        processing_config: ProcessingConfig,
+        search_term: str,
+        search_engines: List[SearchEngineName],
+        language: Language,
+        location: Location,
+        deepness: Deepness,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+        previously_collected_urls: List[str] | None = None,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
         Args:
-            scraping_config: Sets up the scraping pipeline step.
-            processing_config: Sets up the processing pipeline step.
+            search_term: The search term for the query.
+            search_engines: The list of search engines to use for the search query.
+            language: The language to use for the query.
+            location: The location to use for the query.
+            deepness: The search depth and enrichment details.
+            marketplaces: The marketplaces to include in the search.
+            excluded_urls: The URLs to exclude from the search.
+            previously_collected_urls: The urls that have been collected previously and are ignored.
         """
         # ---------------------------
         #        INITIAL SETUP
         # ---------------------------
         # Ensure we have at least one search engine (the list might be empty)
-        if not scraping_config.search_engines:
+        if not search_engines:
             logger.warning(
                 "No search engines specified, using all available search engines"
             )
-            scraping_config.search_engines = list(SearchEngineName)
+            search_engines = list(SearchEngineName)
 
         # Handle previously collected URLs
-        if pcurls := scraping_config.previously_collected_urls:
+        if pcurls := previously_collected_urls:
             self._url_collector.add_previously_collected_urls(urls=pcurls)
 
         # Setup the async framework
-        deepness = scraping_config.deepness
         n_terms_max = 1 + (
             deepness.enrichment.additional_terms if deepness.enrichment else 0
         )
@@ -597,7 +544,6 @@ class Orchestrator(ABC):
             n_srch_wkrs=n_srch_wkrs,
             n_cntx_wkrs=n_cntx_wkrs,
             n_proc_wkrs=n_proc_wkrs,
-            processing_config=processing_config,
         )
 
         # Check setup of async framework
@@ -620,7 +566,13 @@ class Orchestrator(ABC):
         srch_queue = self._queues["srch"]
         await self._add_srch_items(
             queue=srch_queue,
-            scraping_config=scraping_config,
+            search_term=search_term,
+            search_engines=search_engines,
+            language=language,
+            location=location,
+            deepness=deepness,
+            marketplaces=marketplaces,
+            excluded_urls=excluded_urls,
         )
 
         # -----------------------------

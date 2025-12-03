@@ -1,90 +1,111 @@
+from abc import ABC, abstractmethod
+from enum import Enum
 import logging
+from pydantic import BaseModel
+from typing import Dict, List, Sequence, TypeAlias
 
 import httpx
 from openai import AsyncOpenAI
 from tenacity import RetryCallState
 
-from fraudcrawler.base.base import ProductItem, Prompt, ClassificationResult
+from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.settings import (
-    PROCESSOR_PRODUCT_DETAILS_TEMPLATE,
-    PROCESSOR_USER_PROMPT_TEMPLATE,
     PROCESSOR_DEFAULT_IF_MISSING,
     PROCESSOR_EMPTY_TOKEN_COUNT,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
-class Processor:
-    """Processes product data for classification based on a prompt configuration."""
+UserInputs: TypeAlias = Dict[str, List[str]]
+
+
+class ClassificationStatus(Enum):
+    SUCCESS = "success"
+    ERROR = "error"
+
+
+class ClassificationResult(BaseModel):
+    """Model for classification results."""
+
+    result: int
+    input_tokens: int
+    output_tokens: int
+    status: ClassificationStatus
+
+
+class Workflow(ABC):
+    """Abstract base class for independent processing workflows."""
+
+    _max_tokens: int = 1
+
+    def __init__(
+        self,
+        name: str,
+    ):
+        """Abstract base class for defining a classification workflow.
+
+        Args:
+            name: Name of the classification workflow.
+        """
+        self.name = name
+
+    @abstractmethod
+    async def _run(self, product: ProductItem) -> ClassificationResult:
+        """Runs the classification."""
+        pass
+
+    async def run(self, product: ProductItem) -> ClassificationResult:
+        """Runs the classification and writes it to the product item."""
+        url = product.url
+        logger.info(f'Running workflow="{self.name}" with url={url}.')
+
+        # Run classification (error is caught in processor.run())
+        clfn = await self._run(product=product)
+
+        logger.info(
+            f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, status={clfn.status}, and total tokens used={clfn.input_tokens + clfn.output_tokens}'
+        )
+        return clfn
+
+
+class OpenAIWorkflow(Workflow):
+    """Classification workflow using OpenAI API calls."""
 
     def __init__(
         self,
         http_client: httpx.AsyncClient,
+        name: str,
         api_key: str,
         model: str,
-        default_if_missing: int = PROCESSOR_DEFAULT_IF_MISSING,
-        empty_token_count: int = PROCESSOR_EMPTY_TOKEN_COUNT,
     ):
-        """Initializes the Processor.
+        """Open AI Workflow.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
+            name: Name of the node (unique identifier)
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
-            default_if_missing: The default classification to return if error occurs.
-            empty_token_count: The default value to return as tokensif the classification is empty.
         """
+        super().__init__(name=name)
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
-        self._error_response = ClassificationResult(
-            result=default_if_missing,
-            input_tokens=empty_token_count,
-            output_tokens=empty_token_count,
-        )
 
-    @staticmethod
-    def _get_product_details(product: ProductItem, prompt: Prompt) -> str:
-        """Extracts product details based on the prompt configuration.
-
-        Args:
-            product: The product item to extract details from.
-            prompt: The prompt configuration containing field names.
-        """
-        details = []
-        for field in prompt.product_item_fields:
-            if value := getattr(product, field, None):
-                details.append(
-                    PROCESSOR_PRODUCT_DETAILS_TEMPLATE.format(
-                        field_name=field, field_value=value
-                    )
-                )
-            else:
-                logger.warning(
-                    f'Field "{field}" is missing in ProductItem with url="{product.url}"'
-                )
-        return "\n\n".join(details)
-
-    @staticmethod
-    def _log_before(url: str, prompt: Prompt, retry_state: RetryCallState) -> None:
+    def _log_before(self, url: str, retry_state: RetryCallState) -> None:
         """Context aware logging before the request is made."""
         if retry_state:
             logger.debug(
-                f"Classifying product with url={url} using prompt={prompt.name} (Attempt {retry_state.attempt_number})."
+                f"Classifying product with url={url} with workflow={self.name} (Attempt {retry_state.attempt_number})."
             )
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before.")
 
-    @staticmethod
-    def _log_before_sleep(
-        url: str, prompt: Prompt, retry_state: RetryCallState
-    ) -> None:
+    def _log_before_sleep(self, url: str, retry_state: RetryCallState) -> None:
         """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
-                f"Attempt {retry_state.attempt_number} of classifying product with url={url} using prompt={prompt.name} "
+                f"Attempt {retry_state.attempt_number} of classifying product with url={url} with workflow={self.name} "
                 f"failed with error: {retry_state.outcome.exception()}. "
                 f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
@@ -113,87 +134,259 @@ class Processor:
         try:
             content = int(content.strip())
         except Exception as e:
-            msg = f"Failed to convert OpenAI response '{content}' to integer: {e}"
-            logger.error(msg)
-            raise ValueError(msg)
+            raise type(e)(
+                f"Failed to convert OpenAI response '{content}' to integer: {e}"
+            ) from e
 
-        # For tracking consumption we alre return the tokens used
-        classification = ClassificationResult(
+        return ClassificationResult(
             result=content,
             input_tokens=response.usage.prompt_tokens,
             output_tokens=response.usage.completion_tokens,
+            status=ClassificationStatus.SUCCESS,
         )
 
-        return classification
 
-    async def classify(
+class OpenAIClassification(OpenAIWorkflow):
+    """Open AI classification workflow with single API call using specific product_item fields for setting up the context.
+
+    Note:
+        The system prompt sets the classes to be produced. They must be contained in allowed classes.
+        The fields declared in product_item_fields are concatenated for creating a user prompt from
+        which the classification should happen.
+    """
+
+    _product_prompt_template = "Product Details:\n{product_details}\n\nRelevance:"
+    _product_details_template = "{field_name}:\n{field_value}"
+
+    def __init__(
         self,
-        product: ProductItem,
-        prompt: Prompt,
-    ) -> ClassificationResult:
-        """A generic classification method that classifies a product based on a prompt object and returns
-          the classification, input tokens, and output tokens.
+        http_client: httpx.AsyncClient,
+        name: str,
+        api_key: str,
+        model: str,
+        product_item_fields: List[str],
+        system_prompt: str,
+        allowed_classes: List[int],
+    ):
+        """Open AI classification workflow.
 
         Args:
-            product: The product item to classify.
-            prompt: The prompt to use for classification.
-
-        Note:
-            This method returns `PROCESSOR_DEFAULT_IF_MISSING` if:
-                - product_details is empty
-                - an error occurs during the API call
-                - if the response isn't in allowed_classes.
+            http_client: An httpx.AsyncClient to use for the async requests.
+            name: Name of the workflow (unique identifier)
+            api_key: The OpenAI API key.
+            model: The OpenAI model to use.
+            product_item_fields: Product item fields used to construct the user prompt.
+            system_prompt: System prompt for the AI model.
+            allowed_classes: Allowed classes for model output (must be positive).
         """
-        url = product.url
-
-        # Form the product details from the ProductItem
-        product_details = self._get_product_details(product=product, prompt=prompt)
-        if not product_details:
-            logger.warning("Missing required product_details for classification.")
-            return self._error_response
-
-        # Prepare the user prompt
-        user_prompt = PROCESSOR_USER_PROMPT_TEMPLATE.format(
-            product_details=product_details,
+        super().__init__(
+            http_client=http_client,
+            name=name,
+            api_key=api_key,
+            model=model,
         )
 
-        # Call the OpenAI API
-        try:
-            logger.debug(
-                f"Classifying product with url={url}, using prompt={prompt.name}."
+        if not self._product_item_fields_are_valid(
+            product_item_fields=product_item_fields
+        ):
+            not_valid_fields = set(product_item_fields) - set(
+                ProductItem.model_fields.keys()
             )
+            raise ValueError(
+                f"Invalid product_item_fields are given: {not_valid_fields}."
+            )
+        self._product_item_fields = product_item_fields
+        self._system_prompt = system_prompt
+
+        if not all(ac >= 0 for ac in allowed_classes):
+            raise ValueError("Values of allowed_classes must be >= 0")
+        self._allowed_classes = allowed_classes
+
+    @staticmethod
+    def _product_item_fields_are_valid(product_item_fields: List[str]) -> bool:
+        """Ensure all product_item_fields are valid ProductItem attributes."""
+        return set(product_item_fields).issubset(ProductItem.model_fields.keys())
+
+    def _get_product_details(self, product: ProductItem) -> str:
+        """Extracts product details based on the configuration.
+
+        Args:
+            product: The product item to extract details from.
+        """
+        details = []
+        for name in self._product_item_fields:
+            if value := getattr(product, name, None):
+                details.append(
+                    self._product_details_template.format(
+                        field_name=name, field_value=value
+                    )
+                )
+            else:
+                logger.warning(
+                    f'Field "{name}" is missing in ProductItem with url="{product.url}"'
+                )
+        return "\n\n".join(details)
+
+    async def _get_product_prompt(self, product: ProductItem) -> str:
+        """Forms and returns the product related part for the user_prompt."""
+
+        # Form the product details from the ProductItem
+        product_details = self._get_product_details(product=product)
+        if not product_details:
+            raise ValueError(
+                f"Missing product_details for product_item_fields={self._product_item_fields}."
+            )
+
+        # Create user prompt
+        product_prompt = self._product_prompt_template.format(
+            product_details=product_details,
+        )
+        return product_prompt
+
+    async def _get_user_prompt(self, product: ProductItem) -> str:
+        """Forms and returns the user_prompt."""
+        product_prompt = await self._get_product_prompt(product=product)
+        return product_prompt
+
+    async def _run(self, product: ProductItem) -> ClassificationResult:
+        """Calls the OpenAI API with the user prompt from the product."""
+
+        # Get user prompt
+        user_prompt = await self._get_user_prompt(product=product)
+
+        # Call the OpenAI API
+        url = product.url
+        try:
             # Perform the request and retry if necessary. There is some context aware logging
             #  - `before`: before the request is made (or before retrying)
             #  - `before_sleep`: if the request fails before sleeping
             retry = get_async_retry()
             retry.before = lambda retry_state: self._log_before(
-                url=url, prompt=prompt, retry_state=retry_state
+                url=url, retry_state=retry_state
             )
             retry.before_sleep = lambda retry_state: self._log_before_sleep(
-                url=url, prompt=prompt, retry_state=retry_state
+                url=url, retry_state=retry_state
             )
             async for attempt in retry:
                 with attempt:
-                    classification = await self._call_openai_api(
-                        system_prompt=prompt.system_prompt,
+                    clfn = await self._call_openai_api(
+                        system_prompt=self._system_prompt,
                         user_prompt=user_prompt,
-                        max_tokens=1,
+                        max_tokens=self._max_tokens,
                     )
 
             # Enforce that the classification is in the allowed classes
-            if classification.result not in prompt.allowed_classes:
+            if clfn.result not in self._allowed_classes:
                 logger.warning(
-                    f"Classification '{classification.result}' not in allowed classes {prompt.allowed_classes}"
+                    f"Classification '{clfn.result}' not in allowed classes {self._allowed_classes}"
                 )
-                return self._error_response
-
-            logger.info(
-                f'Classification for url="{url}" (prompt={prompt.name}): {classification.result} and total tokens used: {classification.input_tokens + classification.output_tokens}'
-            )
-            return classification
+                clfn.result = PROCESSOR_DEFAULT_IF_MISSING
+                clfn.status = ClassificationStatus.ERROR
 
         except Exception as e:
-            logger.error(
-                f'Error classifying product at url="{url}" with prompt "{prompt.name}": {e}'
+            raise type(e)(
+                f'Error classifying product at url="{url}" with workflow="{self.name}": {e}'
+            ) from e
+
+        return clfn
+
+
+class OpenAIClassificationUserInputs(OpenAIClassification):
+    """Open AI classification workflow with single API call using specific product_item fields plus user_inputs for setting up the context.
+
+    Note:
+        The system prompt sets the classes to be produced. They must be contained in allowed classes.
+        The fields declared in product_item_fields together with the user_inputs are concatenated for
+        creating a user prompt from which the classification should happen.
+    """
+
+    _user_inputs_template = "{key}: {val}"
+
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        name: str,
+        api_key: str,
+        model: str,
+        product_item_fields: List[str],
+        system_prompt: str,
+        allowed_classes: List[int],
+        user_inputs: UserInputs,
+    ):
+        """Open AI classification workflow from user input.
+
+        Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
+            name: Name of the workflow (unique identifier)
+            api_key: The OpenAI API key.
+            model: The OpenAI model to use.
+            product_item_fields: Product item fields used to construct the user prompt.
+            system_prompt: System prompt for the AI model.
+            allowed_classes: Allowed classes for model output.
+            user_inputs: Inputs from the frontend by the user.
+        """
+        super().__init__(
+            http_client=http_client,
+            name=name,
+            api_key=api_key,
+            model=model,
+            product_item_fields=product_item_fields,
+            system_prompt=system_prompt,
+            allowed_classes=allowed_classes,
+        )
+        user_inputs_strings = [
+            self._user_inputs_template.format(key=k, val=v)
+            for k, v in user_inputs.items()
+        ]
+        user_inputs_joined = "\n".join(user_inputs_strings)
+        self._user_inputs_prompt = f"User Inputs:\n{user_inputs_joined}"
+
+    async def _get_user_prompt(self, product: ProductItem) -> str:
+        """Forms the user_prompt from the product details plus user_inputs."""
+        product_prompt = await super()._get_product_prompt(product=product)
+        user_prompt = f"{self._user_inputs_prompt}\n\n{product_prompt}"
+        return user_prompt
+
+
+class Processor:
+    """Processing product items for a set of classification workflows."""
+
+    def __init__(self, workflows: Sequence[Workflow]):
+        """Initializes the Processor.
+
+        Args:
+            workflows: Sequence of workflows for classification of product items.
+        """
+        if not self._are_unique(workflows=workflows):
+            raise ValueError(
+                f"Workflow names are not unique: {[wf.name for wf in workflows]}"
             )
-            return self._error_response
+        self._workflows = workflows
+
+    @staticmethod
+    def _are_unique(workflows: Sequence[Workflow]) -> bool:
+        """Tests if the workflows have unique names."""
+        return len(workflows) == len(set([wf.name for wf in workflows]))
+
+    async def run(self, product: ProductItem) -> Dict[str, ClassificationResult]:
+        """Run the processing step for multiple classification workflows.
+
+        Args:
+            product: The product item to process.
+        """
+        clfns = {}
+        for wf in self._workflows:
+            try:
+                clfn = await wf.run(product=product)
+            except Exception as e:
+                logger.error(
+                    f'Error while running classification workflow="{wf.name}": {e}'
+                )
+                clfn = ClassificationResult(
+                    result=PROCESSOR_DEFAULT_IF_MISSING,
+                    input_tokens=PROCESSOR_EMPTY_TOKEN_COUNT,
+                    output_tokens=PROCESSOR_EMPTY_TOKEN_COUNT,
+                    status=ClassificationStatus.ERROR,
+                )
+            clfns[wf.name] = clfn
+        return clfns
