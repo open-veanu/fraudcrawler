@@ -5,6 +5,8 @@ from fraudcrawler.scraping.zyte import ZyteAPI
 from fraudcrawler.processing.processor import (
     UserInputs,
     Workflow,
+    ClassificationResult,
+    OpenAIClassificationResult,
     OpenAIClassification,
     OpenAIClassificationUserInputs,
     Processor,
@@ -29,6 +31,8 @@ __all__ = [
     "ZyteAPI",
     "UserInputs",
     "Workflow",
+    "ClassificationResult",
+    "OpenAIClassificationResult",
     "OpenAIClassification",
     "OpenAIClassificationUserInputs",
     "Processor",
