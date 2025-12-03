@@ -132,7 +132,7 @@ class OpenAIWorkflow(Workflow):
         url = product.url
         logger.info(f'Running workflow="{self.name}" with url={url}.')
 
-        # Run classification (error is caught in processor.run())
+        # Run classification (errors are propagated to caller in processor.run())
         clfn = await self._run(product=product)
 
         logger.info(
