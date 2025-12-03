@@ -152,9 +152,11 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
     print(df.head(n=n_head))
     print()
 
+
 async def main(search_term: str):
     async with HttpxAsyncClient() as http_client:
         await run(http_client=http_client, search_term=search_term)
 
+
 if __name__ == "__main__":
-    asyncio.run(main(search_term='Kaffeebohnen'))
+    asyncio.run(main(search_term="Kaffeebohnen"))

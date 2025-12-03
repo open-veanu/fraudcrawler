@@ -4,7 +4,12 @@ from typing import cast
 
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
 from fraudcrawler.processing.processor import ClassificationResult
-from fraudcrawler import Processor, ProductItem, OpenAIClassification, OpenAIClassificationUserInputs
+from fraudcrawler import (
+    Processor,
+    ProductItem,
+    OpenAIClassification,
+    OpenAIClassificationUserInputs,
+)
 
 
 @pytest.fixture
@@ -78,7 +83,9 @@ async def test_openai_clfc_get_user_prompt(processor: Processor, product: Produc
     assert "product_name:\nTest Product" in product_prompt
     assert "product_description:\nThis is a test product." in product_prompt
 
-    openai_clfc_user_input = cast(OpenAIClassificationUserInputs, processor._workflows[1])
+    openai_clfc_user_input = cast(
+        OpenAIClassificationUserInputs, processor._workflows[1]
+    )
     user_prompt = await openai_clfc_user_input._get_user_prompt(product=product)
     assert isinstance(user_prompt, str)
     assert product_prompt in user_prompt

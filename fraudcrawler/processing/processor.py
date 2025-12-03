@@ -199,7 +199,7 @@ class OpenAIClassification(OpenAIWorkflow):
         self._system_prompt = system_prompt
 
         if not all(ac >= 0 for ac in allowed_classes):
-            raise ValueError(f"Allowed classes must be >= 0")
+            raise ValueError("Values of allowed_classes must be >= 0")
         self._allowed_classes = allowed_classes
 
     @staticmethod
