@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from enum import Enum
 import logging
 from pydantic import BaseModel
-from typing import Any, Dict, List, Sequence, TypeAlias
+from typing import Dict, List, Sequence, TypeAlias
 
 import httpx
 from openai import AsyncOpenAI
@@ -122,7 +121,7 @@ class OpenAIWorkflow(Workflow):
             input_tokens=response.usage.prompt_tokens,
             output_tokens=response.usage.completion_tokens,
         )
-    
+
     @abstractmethod
     async def _run(self, product: ProductItem) -> OpenAIClassificationResult:
         """Runs the OpenAI classification workflow."""
@@ -273,7 +272,9 @@ class OpenAIClassification(OpenAIWorkflow):
 
             # Enforce that the classification is in the allowed classes
             if clfn.result not in self._allowed_classes:
-                raise ValueError(f"classification result={clfn.result} not in allowed_classes={self._allowed_classes}")
+                raise ValueError(
+                    f"classification result={clfn.result} not in allowed_classes={self._allowed_classes}"
+                )
 
         except Exception as e:
             raise type(e)(
@@ -371,9 +372,7 @@ class Processor:
             try:
                 clfn = await wf.run(product=product)
             except Exception as e:
-                raise type(e)(
-                    f'Error while running workflow="{wf.name}": {e}'
-                ) from e
+                raise type(e)(f'Error while running workflow="{wf.name}": {e}') from e
 
             if isinstance(clfn, ClassificationResult):
                 clfns[wf.name] = clfn

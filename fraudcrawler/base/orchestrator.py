@@ -28,7 +28,6 @@ from fraudcrawler import (
     ZyteAPI,
     URLCollector,
     Processor,
-    ClassificationResult,
     OpenAIClassificationResult,
 )
 
@@ -230,7 +229,7 @@ class Orchestrator(ABC):
                     # Update the product item
                     for name, clfn in clfns.items():
                         product.classifications[name] = int(clfn.result)
-                        
+
                         if isinstance(clfn, OpenAIClassificationResult):
                             product.usage[name] = {
                                 "input_tokens": clfn.input_tokens,
