@@ -39,11 +39,6 @@ class Orchestrator(ABC):
     Any subclass of :class:`Orchestrator` orchestrates the complete pipeline: search,
     deduplication, context extraction, processing (classification), and result collection.
 
-    Note:
-    The :class:`Orchestrator` must be used as context manager as follows:
-        async with Orchestrator(...) as orchestrator:
-            await orchestrator.run()
-
     Abstract methods:
         _collect_results: Collects the results from the given queue_in.
             This function is responsible for collecting and handling the results from the given queue_in. It might
@@ -516,7 +511,6 @@ class Orchestrator(ABC):
             language: The language to use for the query.
             location: The location to use for the query.
             deepness: The search depth and enrichment details.
-            prompts: The list of prompt to use for classification.
             marketplaces: The marketplaces to include in the search.
             excluded_urls: The URLs to exclude from the search.
             previously_collected_urls: The urls that have been collected previously and are ignored.
