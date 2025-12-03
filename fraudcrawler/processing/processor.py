@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 import logging
 from pydantic import BaseModel
-from typing import Dict, List, Sequence, TypeAlias
+from typing import Any, Dict, List, Sequence, TypeAlias
 
 import httpx
 from openai import AsyncOpenAI
@@ -10,10 +10,6 @@ from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.settings import (
-    PROCESSOR_DEFAULT_IF_MISSING,
-    PROCESSOR_EMPTY_TOKEN_COUNT,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +17,14 @@ logger = logging.getLogger(__name__)
 UserInputs: TypeAlias = Dict[str, List[str]]
 
 
-class ClassificationStatus(Enum):
-    SUCCESS = "success"
-    ERROR = "error"
-
-
 class ClassificationResult(BaseModel):
     """Model for classification results."""
-
     result: int
+
+
+class OpenAIClassificationResult(ClassificationResult):
     input_tokens: int
     output_tokens: int
-    status: ClassificationStatus
 
 
 class Workflow(ABC):
@@ -52,22 +44,9 @@ class Workflow(ABC):
         self.name = name
 
     @abstractmethod
-    async def _run(self, product: ProductItem) -> ClassificationResult:
-        """Runs the classification."""
+    async def run(self, product: ProductItem) -> ClassificationResult | None:
+        """Runs the workflow."""
         pass
-
-    async def run(self, product: ProductItem) -> ClassificationResult:
-        """Runs the classification and writes it to the product item."""
-        url = product.url
-        logger.info(f'Running workflow="{self.name}" with url={url}.')
-
-        # Run classification (error is caught in processor.run())
-        clfn = await self._run(product=product)
-
-        logger.info(
-            f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, status={clfn.status}, and total tokens used={clfn.input_tokens + clfn.output_tokens}'
-        )
-        return clfn
 
 
 class OpenAIWorkflow(Workflow):
@@ -115,7 +94,7 @@ class OpenAIWorkflow(Workflow):
         system_prompt: str,
         user_prompt: str,
         **kwargs,
-    ) -> ClassificationResult:
+    ) -> OpenAIClassificationResult:
         """Calls the OpenAI API with the given user prompt."""
         response = await self._client.chat.completions.create(
             model=self._model,
@@ -138,12 +117,29 @@ class OpenAIWorkflow(Workflow):
                 f"Failed to convert OpenAI response '{content}' to integer: {e}"
             ) from e
 
-        return ClassificationResult(
+        return OpenAIClassificationResult(
             result=content,
             input_tokens=response.usage.prompt_tokens,
             output_tokens=response.usage.completion_tokens,
-            status=ClassificationStatus.SUCCESS,
         )
+    
+    @abstractmethod
+    async def _run(self, product: ProductItem) -> OpenAIClassificationResult:
+        """Runs the OpenAI classification workflow."""
+        pass
+
+    async def run(self, product: ProductItem) -> OpenAIClassificationResult:
+        """Runs and logs the OpenAI classification workflow."""
+        url = product.url
+        logger.info(f'Running workflow="{self.name}" with url={url}.')
+
+        # Run classification (error is caught in processor.run())
+        clfn = await self._run(product=product)
+
+        logger.info(
+            f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, and total tokens used={clfn.input_tokens + clfn.output_tokens}'
+        )
+        return clfn
 
 
 class OpenAIClassification(OpenAIWorkflow):
@@ -248,7 +244,7 @@ class OpenAIClassification(OpenAIWorkflow):
         product_prompt = await self._get_product_prompt(product=product)
         return product_prompt
 
-    async def _run(self, product: ProductItem) -> ClassificationResult:
+    async def _run(self, product: ProductItem) -> OpenAIClassificationResult:
         """Calls the OpenAI API with the user prompt from the product."""
 
         # Get user prompt
@@ -277,11 +273,7 @@ class OpenAIClassification(OpenAIWorkflow):
 
             # Enforce that the classification is in the allowed classes
             if clfn.result not in self._allowed_classes:
-                logger.warning(
-                    f"Classification '{clfn.result}' not in allowed classes {self._allowed_classes}"
-                )
-                clfn.result = PROCESSOR_DEFAULT_IF_MISSING
-                clfn.status = ClassificationStatus.ERROR
+                raise ValueError(f"classification result={clfn.result} not in allowed_classes={self._allowed_classes}")
 
         except Exception as e:
             raise type(e)(
@@ -369,7 +361,7 @@ class Processor:
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
     async def run(self, product: ProductItem) -> Dict[str, ClassificationResult]:
-        """Run the processing step for multiple classification workflows.
+        """Run the processing step for multiple workflows and return all classification results.
 
         Args:
             product: The product item to process.
@@ -379,14 +371,10 @@ class Processor:
             try:
                 clfn = await wf.run(product=product)
             except Exception as e:
-                logger.error(
-                    f'Error while running classification workflow="{wf.name}": {e}'
-                )
-                clfn = ClassificationResult(
-                    result=PROCESSOR_DEFAULT_IF_MISSING,
-                    input_tokens=PROCESSOR_EMPTY_TOKEN_COUNT,
-                    output_tokens=PROCESSOR_EMPTY_TOKEN_COUNT,
-                    status=ClassificationStatus.ERROR,
-                )
-            clfns[wf.name] = clfn
+                raise type(e)(
+                    f'Error while running workflow="{wf.name}": {e}'
+                ) from e
+
+            if isinstance(clfn, ClassificationResult):
+                clfns[wf.name] = clfn
         return clfns

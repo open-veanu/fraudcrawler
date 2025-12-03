@@ -28,6 +28,8 @@ from fraudcrawler import (
     ZyteAPI,
     URLCollector,
     Processor,
+    ClassificationResult,
+    OpenAIClassificationResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -223,15 +225,17 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Run the configured workflows
-                    classifications = await self._processor.run(product=product)
+                    clfns = await self._processor.run(product=product)
 
                     # Update the product item
-                    for name, classification in classifications.items():
-                        product.classifications[name] = int(classification.result)
-                        product.usage[name] = {
-                            "input_tokens": classification.input_tokens,
-                            "output_tokens": classification.output_tokens,
-                        }
+                    for name, clfn in clfns.items():
+                        product.classifications[name] = int(clfn.result)
+                        
+                        if isinstance(clfn, OpenAIClassificationResult):
+                            product.usage[name] = {
+                                "input_tokens": clfn.input_tokens,
+                                "output_tokens": clfn.output_tokens,
+                            }
                 except Exception as e:
                     logger.warning(
                         f"Error processing product with url={product.url}: {e}."
