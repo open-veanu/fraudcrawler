@@ -55,10 +55,10 @@ DATAFORSEO_PWD=your_pwd    # optional
 ## Usage
 
 ### Basic Configuration
-For a complete working example, see `fraudcrawler/launch_demo_pipeline.py`. After setting up the necessary paramters you can launch and analyse the results with:
+For a complete working example, see `fraudcrawler/launch_demo_pipeline.py`. After setting up the necessary parameters you can launch and analyse the results with:
 ```python
 # Run pipeline
-client.execute(
+await client.run(
     search_term=search_term,
     search_engines=search_engines,
     language=language,
@@ -93,7 +93,7 @@ marketplaces = [
     Host(name="National", domains="netdoktor.ch,nobelpharma.ch"),
 ]
 
-client.execute(..., marketplaces=marketplaces)
+await client.run(..., marketplaces=marketplaces)
 ```
 
 **Exclude domains** - Exclude specific domains from your results:
@@ -102,7 +102,7 @@ excluded_urls = [
     Host(name="Compendium", domains="compendium.ch"),
 ]
 
-client.execute(..., excluded_urls=excluded_urls)
+await client.run(..., excluded_urls=excluded_urls)
 ```
 
 **Skip previously collected URLs**:
@@ -112,7 +112,7 @@ previously_collected_urls = [
     "https://example.com/product2",
 ]
 
-client.execute(..., previously_collected_urls=previously_collected_urls)
+await client.run(..., previously_collected_urls=previously_collected_urls)
 ```
 
 **View all results** from a client instance:
