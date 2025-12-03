@@ -96,18 +96,13 @@ class FraudCrawlerClient(Orchestrator):
 
         # Convert the list of products to a DataFrame
         df = pd.json_normalize(products)
-        cols = [c.split(".")[-1] for c in df.columns]
-        if len(cols) != len(set(cols)):
-            logger.error("Duplicate columns after json_normalize.")
-        else:
-            df.columns = cols
 
         # Save the DataFrame to a CSV file
         filename = self._results[-1].filename
         df.to_csv(filename, index=False, quoting=csv.QUOTE_ALL)
         logger.info(f"Results saved to {filename}")
 
-    def execute(
+    async def run(
         self,
         search_term: str,
         search_engines: List[SearchEngineName],
@@ -142,17 +137,15 @@ class FraudCrawlerClient(Orchestrator):
         self._results.append(Results(search_term=search_term, filename=filename))
 
         # Run the pipeline by calling the orchestrator's run method
-        asyncio.run(
-            super().run(
-                search_term=search_term,
-                search_engines=search_engines,
-                language=language,
-                location=location,
-                deepness=deepness,
-                marketplaces=marketplaces,
-                excluded_urls=excluded_urls,
-                previously_collected_urls=previously_collected_urls,
-            )
+        await super().run(
+            search_term=search_term,
+            search_engines=search_engines,
+            language=language,
+            location=location,
+            deepness=deepness,
+            marketplaces=marketplaces,
+            excluded_urls=excluded_urls,
+            previously_collected_urls=previously_collected_urls,
         )
 
     def load_results(self, index: int = -1) -> pd.DataFrame:

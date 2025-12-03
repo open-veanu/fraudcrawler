@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Sequence
 
@@ -70,7 +71,7 @@ def _setup_workflows(http_client: HttpxAsyncClient) -> Sequence[Workflow]:
     ]
 
 
-def main(search_term: str):
+async def run(http_client: HttpxAsyncClient, search_term: str):
     # Setup the search
     search_engines = list(SearchEngineName)
     language = Language(name="German")
@@ -95,7 +96,6 @@ def main(search_term: str):
     ]
 
     # Setup clients
-    http_client = HttpxAsyncClient()
     searcher = Searcher(
         http_client=http_client,
         serpapi_key=SETUP.serpapi_key,
@@ -124,7 +124,7 @@ def main(search_term: str):
     )
 
     # Execute the pipeline
-    client.execute(
+    await client.run(
         search_term=search_term,
         search_engines=search_engines,
         language=language,
@@ -152,6 +152,9 @@ def main(search_term: str):
     print(df.head(n=n_head))
     print()
 
+async def main(search_term: str):
+    async with HttpxAsyncClient() as http_client:
+        await run(http_client=http_client, search_term=search_term)
 
 if __name__ == "__main__":
-    main(search_term="Kaffeebohnen")
+    asyncio.run(main(search_term='Kaffeebohnen'))
