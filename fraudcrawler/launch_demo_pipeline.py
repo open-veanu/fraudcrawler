@@ -15,7 +15,7 @@ from fraudcrawler import (
     Deepness,
     Processor,
     Workflow,
-    OpenAIChat,
+    OpenAIClassification,
 )
 
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
@@ -49,7 +49,7 @@ def _setup_workflows(http_client: HttpxAsyncClient) -> Sequence[Workflow]:
         "Make your decision based solely on the context and details provided in the search result. Respond only with the number 1 or 0."
     )
     return [
-        OpenAIChat(
+        OpenAIClassification(
             http_client=http_client,
             name="availability",
             api_key=SETUP.openaiapi_key,
@@ -58,7 +58,7 @@ def _setup_workflows(http_client: HttpxAsyncClient) -> Sequence[Workflow]:
             system_prompt=_AVAILABILITY_SYSTEM_PROMPT,
             allowed_classes=[0, 1],
         ),
-        OpenAIChat(
+        OpenAIClassification(
             http_client=http_client,
             name="seriousness",
             api_key=SETUP.openaiapi_key,
@@ -77,7 +77,7 @@ def main(search_term: str):
     location = Location(name="Switzerland")
     deepness = Deepness(num_results=10)
 
-    # # Optional: Add tern ENRICHEMENT
+    # # Optional: Add term enrichment
     # from fraudcrawler import Enrichment
 
     # deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)

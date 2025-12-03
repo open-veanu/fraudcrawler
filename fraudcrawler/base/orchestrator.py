@@ -49,9 +49,6 @@ class Orchestrator(ABC):
             This function is responsible for collecting and handling the results from the given queue_in. It might
             save the results to a file, a database, or any other storage.
 
-        _setup_processor: Sets up Processor instance.
-            This function is mainly responsible for calling `Processor._setup_workflows` with (possibly) shared http_client.
-
     For each pipeline step :class:`Orchestrator` will deploy a number of async workers to handle the tasks.
     In addition it makes sure to orchestrate the canceling of the workers only after the relevant workload is done.
 

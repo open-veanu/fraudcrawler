@@ -80,7 +80,7 @@ class OpenAIWorkflow(Workflow):
         api_key: str,
         model: str,
     ):
-        """Open AI Chat Workflow.
+        """Open AI Workflow.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
@@ -146,7 +146,7 @@ class OpenAIWorkflow(Workflow):
         )
 
 
-class OpenAIChat(OpenAIWorkflow):
+class OpenAIClassification(OpenAIWorkflow):
     """Open AI classification workflow with single API call using specific product_item fields for setting up the context.
 
     Note:
@@ -168,7 +168,7 @@ class OpenAIChat(OpenAIWorkflow):
         system_prompt: str,
         allowed_classes: List[int],
     ):
-        """Open AI Chat workflow.
+        """Open AI classification workflow.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
@@ -177,7 +177,7 @@ class OpenAIChat(OpenAIWorkflow):
             model: The OpenAI model to use.
             product_item_fields: Product item fields used to construct the user prompt.
             system_prompt: System prompt for the AI model.
-            allowed_classes: Allowed classes for model output.
+            allowed_classes: Allowed classes for model output (must be positive).
         """
         super().__init__(
             http_client=http_client,
@@ -197,6 +197,9 @@ class OpenAIChat(OpenAIWorkflow):
             )
         self._product_item_fields = product_item_fields
         self._system_prompt = system_prompt
+
+        if not all(ac >= 0 for ac in allowed_classes):
+            raise ValueError(f"Allowed classes must be >= 0")
         self._allowed_classes = allowed_classes
 
     @staticmethod
@@ -230,7 +233,7 @@ class OpenAIChat(OpenAIWorkflow):
         # Form the product details from the ProductItem
         product_details = self._get_product_details(product=product)
         if not product_details:
-            raise KeyError(
+            raise ValueError(
                 f"Missing product_details for product_item_fields={self._product_item_fields}."
             )
 
@@ -288,7 +291,7 @@ class OpenAIChat(OpenAIWorkflow):
         return clfn
 
 
-class OpenAIChatUserInputs(OpenAIChat):
+class OpenAIClassificationUserInputs(OpenAIClassification):
     """Open AI classification workflow with single API call using specific product_item fields plus user_inputs for setting up the context.
 
     Note:
@@ -310,7 +313,7 @@ class OpenAIChatUserInputs(OpenAIChat):
         allowed_classes: List[int],
         user_inputs: UserInputs,
     ):
-        """Open AI Chat workflow.
+        """Open AI classification workflow from user input.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.

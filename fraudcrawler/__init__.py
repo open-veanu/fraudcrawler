@@ -5,8 +5,8 @@ from fraudcrawler.scraping.zyte import ZyteAPI
 from fraudcrawler.processing.processor import (
     UserInputs,
     Workflow,
-    OpenAIChat,
-    OpenAIChatUserInputs,
+    OpenAIClassification,
+    OpenAIClassificationUserInputs,
     Processor,
 )
 from fraudcrawler.base.orchestrator import Orchestrator
@@ -29,8 +29,8 @@ __all__ = [
     "ZyteAPI",
     "UserInputs",
     "Workflow",
-    "OpenAIChat",
-    "OpenAIChatUserInputs",
+    "OpenAIClassification",
+    "OpenAIClassificationUserInputs",
     "Processor",
     "Orchestrator",
     "ProductItem",

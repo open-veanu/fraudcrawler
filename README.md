@@ -54,44 +54,23 @@ DATAFORSEO_PWD=your_pwd    # optional
 
 ## Usage
 
-### Quick Start
-
+### Basic Configuration
+For a complete working example, see `fraudcrawler/launch_demo_pipeline.py`. After setting up the necessary paramters you can launch and analyse the results with:
 ```python
-from fraudcrawler import FraudCrawlerClient, Language, Location, Deepness, Prompt
-
-# Initialize client
-client = FraudCrawlerClient()
-
-# Configure search
-search_term = "sildenafil"
-language = Language(name="German")
-location = Location(name="Switzerland")
-deepness = Deepness(num_results=50)
-
-# Define classification prompt
-prompts = [
-    Prompt(
-        name="relevance",
-        system_prompt="Classify products as relevant (1) or not relevant (0) based on context.",
-        allowed_classes=[0, 1],
-    )
-]
-
 # Run pipeline
 client.execute(
     search_term=search_term,
+    search_engines=search_engines,
     language=language,
     location=location,
     deepness=deepness,
-    prompts=prompts
+    excluded_urls=excluded_urls,
 )
 
 # Load results
 df = client.load_results()
 print(df.head())
 ```
-
-For a complete working example, see `fraudcrawler/launch_demo_pipeline.py`.
 
 ### Advanced Configuration
 
@@ -117,7 +96,7 @@ marketplaces = [
 client.execute(..., marketplaces=marketplaces)
 ```
 
-**Exclude domains**:
+**Exclude domains** - Exclude specific domains from your results:
 ```python
 excluded_urls = [
     Host(name="Compendium", domains="compendium.ch"),
@@ -151,7 +130,7 @@ Results are saved as CSV files in `data/results/` with the naming pattern:
 
 Example: `sildenafil_de_ch_20250115143022.csv`
 
-The CSV includes product details, URLs, and classification scores from your prompts.
+The CSV includes product details, URLs, and classification scores from your workflows.
 
 ## Development
 
