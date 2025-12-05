@@ -1,52 +1,27 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
+import base64
 import logging
-from pydantic import BaseModel
-from typing import Any, Dict, List, Sequence, TypeAlias
+from typing import Any, List, Literal
 
 import httpx
 from openai import AsyncOpenAI
+from openai.types.responses import ResponseInputImageParam, ResponseInputParam
 from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.processing.base import (
+    ClassificationResult,
+    UserInputs,
+    Workflow,
+)
 
 logger = logging.getLogger(__name__)
-
-
-UserInputs: TypeAlias = Dict[str, List[str]]
-
-
-class ClassificationResult(BaseModel):
-    """Model for classification results."""
-
-    result: int
 
 
 class OpenAIClassificationResult(ClassificationResult):
     input_tokens: int
     output_tokens: int
-
-
-class Workflow(ABC):
-    """Abstract base class for independent processing workflows."""
-
-    _max_tokens: int = 1
-
-    def __init__(
-        self,
-        name: str,
-    ):
-        """Abstract base class for defining a classification workflow.
-
-        Args:
-            name: Name of the classification workflow.
-        """
-        self.name = name
-
-    @abstractmethod
-    async def run(self, product: ProductItem) -> Any:
-        """Runs the workflow."""
-        pass
 
 
 class OpenAIWorkflow(Workflow):
@@ -68,6 +43,7 @@ class OpenAIWorkflow(Workflow):
             model: The OpenAI model to use.
         """
         super().__init__(name=name)
+        self._http_client = http_client
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
 
@@ -89,13 +65,13 @@ class OpenAIWorkflow(Workflow):
                 f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
 
-    async def _call_openai_api(
+    async def _chat_classification(
         self,
         system_prompt: str,
         user_prompt: str,
         **kwargs,
     ) -> OpenAIClassificationResult:
-        """Calls the OpenAI API with the given user prompt."""
+        """Calls the OpenAI Chat enpoint for a classification."""
         response = await self._client.chat.completions.create(
             model=self._model,
             messages=[
@@ -122,13 +98,66 @@ class OpenAIWorkflow(Workflow):
             input_tokens=response.usage.prompt_tokens,
             output_tokens=response.usage.completion_tokens,
         )
+    
+    async def _image_analysis(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        url: str,
+        detail: Literal["low", "high", "auto"] = "high",
+        **kwargs,
+    ) -> str:
+        """Analyses an image (given by its url) based on the given input_text."""
+        # Read images as bytes
+        logger.debug(f'read image bytes from url="{url}"')
+        resp = await self._http_client.get(url)
+        resp.raise_for_status()
+        image = resp.content
+
+        # Encode as base64 
+        b64 = base64.b64encode(image).decode("utf-8")
+        data_url = f"data:image/jpeg;base64,{b64}"
+
+        # Prepare openai parameters
+        image_param: ResponseInputImageParam = {
+            "type": "input_image",
+            "image_url": data_url,
+            "detail": detail,
+        }
+        input_param: ResponseInputParam = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": user_prompt},
+                    image_param,
+                ],
+            }
+        ]
+
+        # Extract information from image
+        response = await self._client.responses.create(
+            model=self._model,
+            input=input_param,
+            **kwargs,
+        )
+
+        if not response or not (output_text := response.output_text):
+            raise ValueError(
+                f'Error calling OpenAI API or empty response="{response}".'
+            )
+
+        return output_text
 
     @abstractmethod
-    async def _run(self, product: ProductItem) -> OpenAIClassificationResult:
+    async def _run(self, product: ProductItem) -> Any:
         """Runs the OpenAI classification workflow."""
         pass
 
-    async def run(self, product: ProductItem) -> OpenAIClassificationResult:
+    async def run(self, product: ProductItem) -> Any:
         """Runs and logs the OpenAI classification workflow."""
         url = product.url
         logger.info(f'Running workflow="{self.name}" with url={url}.')
@@ -265,7 +294,7 @@ class OpenAIClassification(OpenAIWorkflow):
             )
             async for attempt in retry:
                 with attempt:
-                    clfn = await self._call_openai_api(
+                    clfn = await self._chat_classification(
                         system_prompt=self._system_prompt,
                         user_prompt=user_prompt,
                         max_tokens=self._max_tokens,
@@ -340,40 +369,3 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
         product_prompt = await super()._get_product_prompt(product=product)
         user_prompt = f"{self._user_inputs_prompt}\n\n{product_prompt}"
         return user_prompt
-
-
-class Processor:
-    """Processing product items for a set of classification workflows."""
-
-    def __init__(self, workflows: Sequence[Workflow]):
-        """Initializes the Processor.
-
-        Args:
-            workflows: Sequence of workflows for classification of product items.
-        """
-        if not self._are_unique(workflows=workflows):
-            raise ValueError(
-                f"Workflow names are not unique: {[wf.name for wf in workflows]}"
-            )
-        self._workflows = workflows
-
-    @staticmethod
-    def _are_unique(workflows: Sequence[Workflow]) -> bool:
-        """Tests if the workflows have unique names."""
-        return len(workflows) == len(set([wf.name for wf in workflows]))
-
-    async def run(self, product: ProductItem) -> Dict[str, Any]:
-        """Run the processing step for multiple workflows and return all results together with workflow.name.
-
-        Args:
-            product: The product item to process.
-        """
-        results = {}
-        for wf in self._workflows:
-            try:
-                res = await wf.run(product=product)
-            except Exception as e:
-                raise type(e)(f'Error while running workflow="{wf.name}": {e}') from e
-
-            results[wf.name] = res
-        return results

@@ -2,14 +2,17 @@ from fraudcrawler.scraping.search import Searcher, SearchEngineName
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteAPI
-from fraudcrawler.processing.processor import (
+from fraudcrawler.processing.base import (
     UserInputs,
     Workflow,
     ClassificationResult,
+    Processor,
+)
+from fraudcrawler.processing.openai import (
     OpenAIClassificationResult,
+    OpenAIWorkflow,
     OpenAIClassification,
     OpenAIClassificationUserInputs,
-    Processor,
 )
 from fraudcrawler.base.orchestrator import Orchestrator
 from fraudcrawler.base.client import FraudCrawlerClient
@@ -33,6 +36,7 @@ __all__ = [
     "Workflow",
     "ClassificationResult",
     "OpenAIClassificationResult",
+    "OpenAIWorkflow",
     "OpenAIClassification",
     "OpenAIClassificationUserInputs",
     "Processor",

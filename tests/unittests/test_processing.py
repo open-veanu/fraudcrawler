@@ -3,7 +3,7 @@ import pytest_asyncio
 from typing import cast
 
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
-from fraudcrawler.processing.processor import ClassificationResult
+from fraudcrawler.processing.base import ClassificationResult
 from fraudcrawler import (
     Processor,
     ProductItem,

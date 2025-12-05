@@ -21,7 +21,7 @@ from fraudcrawler.scraping.search import Searcher, SearchEngineName
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteAPI
-from fraudcrawler.processing.processor import Processor
+from fraudcrawler.processing.base import Processor
 
 
 logger = logging.getLogger(__name__)
