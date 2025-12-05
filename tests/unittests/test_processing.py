@@ -95,8 +95,8 @@ async def test_openai_clfc_get_user_prompt(processor: Processor, product: Produc
 
 @pytest.mark.asyncio
 async def test_processor_run(processor: Processor, product: ProductItem):
-    classifications = await processor.run(product=product)
-    clfc = cast(OpenAIClassificationResult, classifications["test_openai_clfc"])
+    results = await processor.run(product=product)
+    clfc = cast(OpenAIClassificationResult, results["test_openai_clfc"])
     assert isinstance(clfc, ClassificationResult)
     assert isinstance(clfc.result, int)
     assert isinstance(clfc.input_tokens, int)

@@ -28,6 +28,7 @@ from fraudcrawler import (
     ZyteAPI,
     URLCollector,
     Processor,
+    ClassificationResult,
     OpenAIClassificationResult,
 )
 
@@ -224,19 +225,33 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Run the configured workflows
-                    clfns = await self._processor.run(product=product)
+                    results = await self._processor.run(product=product)
 
                     # Update the product item
-                    for name, clfn in clfns.items():
-                        product.classifications[name] = int(clfn.result)
+                    for name, res in results.items():
+                        if isinstance(res, ClassificationResult):
+                            logger.debug(
+                                f'result with name="{name}" added to product.classifications'
+                            )
+                            product.classifications[name] = int(res.result)
 
-                        if isinstance(clfn, OpenAIClassificationResult):
-                            product.usage[name] = {
-                                "input_tokens": clfn.input_tokens,
-                                "output_tokens": clfn.output_tokens,
-                            }
+                            if isinstance(res, OpenAIClassificationResult):
+                                product.usage[name] = {
+                                    "input_tokens": res.input_tokens,
+                                    "output_tokens": res.output_tokens,
+                                }
+                        elif res is not None:
+                            logger.debug(
+                                f'result with name="{name}" added to product.tmp'
+                            )
+                            product.tmp[name] = res
+                        else:
+                            logger.warning(
+                                f'result with name="{name}" is ignored because its value is: {res}'
+                            )
+
                 except Exception as e:
-                    logger.warning(
+                    logger.error(
                         f"Error processing product with url={product.url}: {e}."
                     )
 

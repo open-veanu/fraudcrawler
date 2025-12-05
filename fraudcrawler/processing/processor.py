@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import logging
 from pydantic import BaseModel
-from typing import Dict, List, Sequence, TypeAlias
+from typing import Any, Dict, List, Sequence, TypeAlias
 
 import httpx
 from openai import AsyncOpenAI
@@ -18,6 +18,7 @@ UserInputs: TypeAlias = Dict[str, List[str]]
 
 class ClassificationResult(BaseModel):
     """Model for classification results."""
+
     result: int
 
 
@@ -43,7 +44,7 @@ class Workflow(ABC):
         self.name = name
 
     @abstractmethod
-    async def run(self, product: ProductItem) -> ClassificationResult | None:
+    async def run(self, product: ProductItem) -> Any:
         """Runs the workflow."""
         pass
 
@@ -361,19 +362,18 @@ class Processor:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(self, product: ProductItem) -> Dict[str, ClassificationResult]:
-        """Run the processing step for multiple workflows and return all classification results.
+    async def run(self, product: ProductItem) -> Dict[str, Any]:
+        """Run the processing step for multiple workflows and return all results together with workflow.name.
 
         Args:
             product: The product item to process.
         """
-        clfns = {}
+        results = {}
         for wf in self._workflows:
             try:
-                clfn = await wf.run(product=product)
+                res = await wf.run(product=product)
             except Exception as e:
                 raise type(e)(f'Error while running workflow="{wf.name}": {e}') from e
 
-            if isinstance(clfn, ClassificationResult):
-                clfns[wf.name] = clfn
-        return clfns
+            results[wf.name] = res
+        return results
