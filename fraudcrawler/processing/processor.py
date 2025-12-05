@@ -18,6 +18,7 @@ UserInputs: TypeAlias = Dict[str, List[str]]
 
 class ClassificationResult(BaseModel):
     """Model for classification results."""
+
     result: int
 
 

@@ -230,7 +230,9 @@ class Orchestrator(ABC):
                     # Update the product item
                     for name, res in results.items():
                         if isinstance(res, ClassificationResult):
-                            logger.debug(f'result with name="{name}" added to product.classifications')
+                            logger.debug(
+                                f'result with name="{name}" added to product.classifications'
+                            )
                             product.classifications[name] = int(res.result)
 
                             if isinstance(res, OpenAIClassificationResult):
@@ -239,10 +241,14 @@ class Orchestrator(ABC):
                                     "output_tokens": res.output_tokens,
                                 }
                         elif res is not None:
-                            logger.debug(f'result with name="{name}" added to product.tmp')
+                            logger.debug(
+                                f'result with name="{name}" added to product.tmp'
+                            )
                             product.tmp[name] = res
                         else:
-                            logger.warning(f'result with name="{name}" is ignored because its value is: {res}')
+                            logger.warning(
+                                f'result with name="{name}" is ignored because its value is: {res}'
+                            )
 
                 except Exception as e:
                     logger.error(
