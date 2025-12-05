@@ -238,12 +238,14 @@ class Orchestrator(ABC):
                                     "input_tokens": res.input_tokens,
                                     "output_tokens": res.output_tokens,
                                 }
-                        else:
+                        elif res is not None:
                             logger.debug(f'result with name="{name}" added to product.tmp')
                             product.tmp[name] = res
+                        else:
+                            logger.warning(f'result with name="{name}" is ignored because its value is: {res}')
 
                 except Exception as e:
-                    logger.warning(
+                    logger.error(
                         f"Error processing product with url={product.url}: {e}."
                     )
 
