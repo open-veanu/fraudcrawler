@@ -1,5 +1,4 @@
 from abc import abstractmethod
-import base64
 import logging
 from typing import Any, List, Literal
 
@@ -98,30 +97,42 @@ class OpenAIWorkflow(Workflow):
             input_tokens=response.usage.prompt_tokens,
             output_tokens=response.usage.completion_tokens,
         )
-    
+
     async def _image_analysis(
         self,
+        image_url: str,
         system_prompt: str,
         user_prompt: str,
-        url: str,
         detail: Literal["low", "high", "auto"] = "high",
         **kwargs,
     ) -> str:
-        """Analyses an image (given by its url) based on the given input_text."""
-        # Read images as bytes
-        logger.debug(f'read image bytes from url="{url}"')
-        resp = await self._http_client.get(url)
-        resp.raise_for_status()
-        image = resp.content
+        """Analyses a base64 encoded image based on the given input_text.
 
-        # Encode as base64 
-        b64 = base64.b64encode(image).decode("utf-8")
-        data_url = f"data:image/jpeg;base64,{b64}"
+        Args:
+            image_url: Raw base64 encoded image with the data URI scheme.
+            system_prompt: System prompt for the AI model.
+            user_prompt: User prompt for the AI model.
+            detail: The detail level of the image to use (optional).
 
+        Note:
+            Having the url of a jpeg image (for example), the image_url is optained as:
+            ```python
+            import requests
+
+            # Read images as bytes
+            resp = requests.get(url)
+            resp.raise_for_status()
+            image = resp.content
+
+            # Encode as base64
+            b64 = base64.b64encode(image).decode("utf-8")
+            data_url = f"data:image/jpeg;base64,{b64}"
+            ```
+        """
         # Prepare openai parameters
         image_param: ResponseInputImageParam = {
             "type": "input_image",
-            "image_url": data_url,
+            "image_url": image_url,
             "detail": detail,
         }
         input_param: ResponseInputParam = [
@@ -135,7 +146,7 @@ class OpenAIWorkflow(Workflow):
                     {"type": "input_text", "text": user_prompt},
                     image_param,
                 ],
-            }
+            },
         ]
 
         # Extract information from image

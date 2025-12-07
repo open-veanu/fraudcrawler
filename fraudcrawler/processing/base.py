@@ -39,7 +39,6 @@ class Workflow(ABC):
         pass
 
 
-
 class Processor:
     """Processing product items for a set of classification workflows."""
 
