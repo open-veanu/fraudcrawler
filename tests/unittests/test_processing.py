@@ -1,9 +1,11 @@
+import base64
 import pytest
 import pytest_asyncio
 from typing import cast
 
+from fraudcrawler.settings import ROOT_DIR
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
-from fraudcrawler.processing.processor import ClassificationResult
+from fraudcrawler.processing.base import ClassificationResult
 from fraudcrawler import (
     Processor,
     ProductItem,
@@ -91,6 +93,26 @@ async def test_openai_clfc_get_user_prompt(processor: Processor, product: Produc
     assert isinstance(user_prompt, str)
     assert product_prompt in user_prompt
     assert "User Inputs:\none: ['plus', 'two']" in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_openai_image_analysis(processor: Processor):
+    with open(ROOT_DIR / "tests" / "files" / "image.jpg", "rb") as f:
+        content = f.read()
+
+    b64 = base64.b64encode(content).decode("utf-8")
+    image_url = f"data:image/jpeg;base64,{b64}"
+
+    openai_clfc = cast(OpenAIClassification, processor._workflows[0])
+    output_text = await openai_clfc._image_analysis(
+        image_url=image_url,
+        system_prompt="You are a expert image text extractor",
+        user_prompt="Extract the text of the following image",
+        detail="high",
+    )
+    assert isinstance(output_text, str)
+    assert "CASO Design" in output_text
+    assert "791" in output_text
 
 
 @pytest.mark.asyncio
