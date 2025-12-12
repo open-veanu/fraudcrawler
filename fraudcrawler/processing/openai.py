@@ -193,6 +193,7 @@ class OpenAIClassification(OpenAIWorkflow):
 
     _product_prompt_template = "Product Details:\n{product_details}\n\nRelevance:"
     _product_details_template = "{field_name}:\n{field_value}"
+    _max_tokens: int = 1
 
     def __init__(
         self,

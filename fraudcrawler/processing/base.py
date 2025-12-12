@@ -20,8 +20,6 @@ class ClassificationResult(BaseModel):
 class Workflow(ABC):
     """Abstract base class for independent processing workflows."""
 
-    _max_tokens: int = 1
-
     def __init__(
         self,
         name: str,
