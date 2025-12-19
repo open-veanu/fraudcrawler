@@ -170,8 +170,11 @@ class ZyteAPI(DomainUtils):
         if isinstance(encoded, str):
             decoded_bytes = b64decode(encoded)
 
-            # Convert bytes to string (assuming UTF-8 encoding)
-            decoded_string = decoded_bytes.decode("utf-8")
+            # Convert bytes to string
+            try:
+                decoded_string = decoded_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                decoded_string = decoded_bytes.decode("iso-8859-1")
             return decoded_string
         return None
 
