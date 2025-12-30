@@ -1,6 +1,5 @@
-from abc import abstractmethod
 import logging
-from typing import Any, List, Literal
+from typing import List, Literal
 
 import httpx
 from openai import AsyncOpenAI
@@ -304,7 +303,7 @@ class OpenAIClassification(OpenAIWorkflow):
             raise type(e)(
                 f'Error classifying product at url="{url}" with workflow="{self.name}": {e}'
             ) from e
-        
+
         logger.debug(
             f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, tokens used={clfn.input_tokens + clfn.output_tokens}'
         )
