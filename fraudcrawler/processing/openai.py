@@ -17,11 +17,6 @@ from fraudcrawler.processing.base import (
 logger = logging.getLogger(__name__)
 
 
-class OpenAIClassificationResult(ClassificationResult):
-    input_tokens: int
-    output_tokens: int
-
-
 class OpenAIWorkflow(Workflow):
     """(Abstract) Workflow using OpenAI API calls."""
 
@@ -68,7 +63,7 @@ class OpenAIWorkflow(Workflow):
         system_prompt: str,
         user_prompt: str,
         **kwargs,
-    ) -> OpenAIClassificationResult:
+    ) -> ClassificationResult:
         """Calls the OpenAI Chat enpoint for a classification."""
         response = await self._client.chat.completions.create(
             model=self._model,
@@ -91,7 +86,7 @@ class OpenAIWorkflow(Workflow):
                 f"Failed to convert OpenAI response '{content}' to integer: {e}"
             ) from e
 
-        return OpenAIClassificationResult(
+        return ClassificationResult(
             result=content,
             input_tokens=response.usage.prompt_tokens,
             output_tokens=response.usage.completion_tokens,
@@ -266,7 +261,7 @@ class OpenAIClassification(OpenAIWorkflow):
         product_prompt = await self._get_product_prompt(product=product)
         return product_prompt
 
-    async def run(self, product: ProductItem) -> OpenAIClassificationResult:
+    async def run(self, product: ProductItem) -> ClassificationResult:
         """Calls the OpenAI API with the user prompt from the product."""
 
         # Get user prompt

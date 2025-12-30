@@ -29,7 +29,7 @@ from fraudcrawler import (
     URLCollector,
     Processor,
     ClassificationResult,
-    OpenAIClassificationResult,
+    TmpResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -229,26 +229,43 @@ class Orchestrator(ABC):
 
                     # Update the product item
                     for name, res in results.items():
+                        inp_tok = out_tok = 0
                         if isinstance(res, ClassificationResult):
                             logger.debug(
                                 f'result from workflow="{name}" added to product.classifications'
                             )
                             product.classifications[name] = int(res.result)
+                            inp_tok = res.input_tokens
+                            out_tok = res.output_tokens
 
-                            if isinstance(res, OpenAIClassificationResult):
-                                product.usage[name] = {
-                                    "input_tokens": res.input_tokens,
-                                    "output_tokens": res.output_tokens,
-                                }
-                        elif res is not None:
+                        elif isinstance(res, TmpResult):
                             logger.debug(
                                 f'result from workflow="{name}" added to product.tmp'
                             )
                             product.tmp[name] = res
-                        else:
+                            inp_tok = res.input_tokens
+                            out_tok = res.output_tokens
+
+                        elif res is None:
                             logger.debug(
-                                f'result from workflow="{name}" is ignored because its value is None'
+                                f'result from workflow="{name}" is `None` and therefore not stored'
                             )
+
+                        else:
+                            logger.warning(
+                                f'result from workflow="{name}" return type={type(res)} is not allowed; '
+                                f"must either be of type `ClassificationResult`, "
+                                f"`TmpResult`, or `None`; not type={type(res)}"
+                            )
+
+                        if inp_tok > 0 or out_tok > 0:
+                            logger.debug(
+                                f'result from workflow="{name}" used input_tokens={inp_tok}, output_tokens={out_tok}'
+                            )
+                            product.usage[name] = {
+                                "input_tokens": inp_tok,
+                                "output_tokens": out_tok,
+                            }
 
                 except Exception as e:
                     logger.error(

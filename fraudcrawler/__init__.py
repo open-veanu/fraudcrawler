@@ -6,10 +6,10 @@ from fraudcrawler.processing.base import (
     UserInputs,
     Workflow,
     ClassificationResult,
+    TmpResult,
     Processor,
 )
 from fraudcrawler.processing.openai import (
-    OpenAIClassificationResult,
     OpenAIWorkflow,
     OpenAIClassification,
     OpenAIClassificationUserInputs,
@@ -35,7 +35,7 @@ __all__ = [
     "UserInputs",
     "Workflow",
     "ClassificationResult",
-    "OpenAIClassificationResult",
+    "TmpResult",
     "OpenAIWorkflow",
     "OpenAIClassification",
     "OpenAIClassificationUserInputs",

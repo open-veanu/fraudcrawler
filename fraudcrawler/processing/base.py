@@ -15,6 +15,19 @@ class ClassificationResult(BaseModel):
     """Model for classification results."""
 
     result: int
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+class TmpResult(BaseModel):
+    """Model for tmp results."""
+
+    result: Any
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+WorkflowResult: TypeAlias = ClassificationResult | TmpResult | None
 
 
 class Workflow(ABC):
@@ -32,7 +45,7 @@ class Workflow(ABC):
         self.name = name
 
     @abstractmethod
-    async def run(self, product: ProductItem) -> Any:
+    async def run(self, product: ProductItem) -> WorkflowResult:
         """Runs the workflow."""
         pass
 
@@ -57,7 +70,7 @@ class Processor:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(self, product: ProductItem) -> Dict[str, Any]:
+    async def run(self, product: ProductItem) -> Dict[str, WorkflowResult]:
         """Run the processing step for multiple workflows and return all results together with workflow.name.
 
         Args:
