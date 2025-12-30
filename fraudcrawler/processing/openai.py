@@ -10,6 +10,7 @@ from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.processing.base import (
     ClassificationResult,
+    TmpResult,
     UserInputs,
     Workflow,
 )
@@ -99,7 +100,7 @@ class OpenAIWorkflow(Workflow):
         user_prompt: str,
         detail: Literal["low", "high", "auto"] = "high",
         **kwargs,
-    ) -> str:
+    ) -> TmpResult:
         """Analyses a base64 encoded image based on the given input_text.
 
         Args:
@@ -155,7 +156,11 @@ class OpenAIWorkflow(Workflow):
                 f'Error calling OpenAI API or empty response="{response}".'
             )
 
-        return output_text
+        return TmpResult(
+            result=output_text,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
 
 
 class OpenAIClassification(OpenAIWorkflow):
