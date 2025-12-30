@@ -42,7 +42,9 @@ class Workflow(ABC):
         self.name = name
 
     @abstractmethod
-    async def run(self, product: ProductItem) -> ClassificationResult | TmpResult | None:
+    async def run(
+        self, product: ProductItem
+    ) -> ClassificationResult | TmpResult | None:
         """Runs the workflow."""
         pass
 
@@ -67,7 +69,9 @@ class Processor:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(self, product: ProductItem) -> Dict[str, ClassificationResult | TmpResult | None]:
+    async def run(
+        self, product: ProductItem
+    ) -> Dict[str, ClassificationResult | TmpResult | None]:
         """Run the processing step for multiple workflows and return all results together with workflow.name.
 
         Args:

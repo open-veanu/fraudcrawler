@@ -237,7 +237,7 @@ class Orchestrator(ABC):
                             product.classifications[name] = int(res.result)
                             inp_tok = res.input_tokens
                             out_tok = res.output_tokens
- 
+
                         elif isinstance(res, TmpResult):
                             logger.debug(
                                 f'result from workflow="{name}" added to product.tmp'
@@ -245,7 +245,7 @@ class Orchestrator(ABC):
                             product.tmp[name] = res
                             inp_tok = res.input_tokens
                             out_tok = res.output_tokens
-                        
+
                         elif res is None:
                             logger.debug(
                                 f'result from workflow="{name}" is `None` and therefore not stored'
@@ -253,11 +253,11 @@ class Orchestrator(ABC):
 
                         else:
                             logger.warning(
-                                f'result from workflow="{name}" return type={type(res)} is not allowed; '\
-                                f'must either be of type `ClassificationResult`, '\
-                                f'`TmpResult`, or `None`; not type={type(res)}'
+                                f'result from workflow="{name}" return type={type(res)} is not allowed; '
+                                f"must either be of type `ClassificationResult`, "
+                                f"`TmpResult`, or `None`; not type={type(res)}"
                             )
-                        
+
                         if inp_tok > 0 or out_tok > 0:
                             logger.debug(
                                 f'result from workflow="{name}" used input_tokens={inp_tok}, output_tokens={out_tok}'

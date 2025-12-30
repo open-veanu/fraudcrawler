@@ -17,7 +17,6 @@ from fraudcrawler.processing.base import (
 logger = logging.getLogger(__name__)
 
 
-
 class OpenAIWorkflow(Workflow):
     """(Abstract) Workflow using OpenAI API calls."""
 
