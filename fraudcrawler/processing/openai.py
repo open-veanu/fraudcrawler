@@ -158,8 +158,8 @@ class OpenAIWorkflow(Workflow):
 
         return TmpResult(
             result=output_text,
-            input_tokens=response.usage.prompt_tokens,
-            output_tokens=response.usage.completion_tokens,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
         )
 
 

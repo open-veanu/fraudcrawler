@@ -113,6 +113,8 @@ async def test_openai_image_analysis(processor: Processor):
     assert isinstance(output.result, str)
     assert "CASO Design" in output.result
     assert "791" in output.result
+    assert output.input_tokens > 0
+    assert output.output_tokens > 0
 
 
 @pytest.mark.asyncio
