@@ -9,7 +9,6 @@ from fraudcrawler.processing.base import ClassificationResult
 from fraudcrawler import (
     Processor,
     ProductItem,
-    OpenAIClassificationResult,
     OpenAIClassification,
     OpenAIClassificationUserInputs,
 )
@@ -118,8 +117,7 @@ async def test_openai_image_analysis(processor: Processor):
 @pytest.mark.asyncio
 async def test_processor_run(processor: Processor, product: ProductItem):
     results = await processor.run(product=product)
-    clfc = cast(OpenAIClassificationResult, results["test_openai_clfc"])
-    assert isinstance(clfc, ClassificationResult)
+    clfc = cast(ClassificationResult, results["test_openai_clfc"])
     assert isinstance(clfc.result, int)
     assert isinstance(clfc.input_tokens, int)
     assert clfc.input_tokens > 0
