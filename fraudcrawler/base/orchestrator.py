@@ -231,7 +231,7 @@ class Orchestrator(ABC):
                     for name, res in results.items():
                         if isinstance(res, ClassificationResult):
                             logger.debug(
-                                f'result with name="{name}" added to product.classifications'
+                                f'result from workflow="{name}" added to product.classifications'
                             )
                             product.classifications[name] = int(res.result)
 
@@ -242,12 +242,12 @@ class Orchestrator(ABC):
                                 }
                         elif res is not None:
                             logger.debug(
-                                f'result with name="{name}" added to product.tmp'
+                                f'result from workflow="{name}" added to product.tmp'
                             )
                             product.tmp[name] = res
                         else:
-                            logger.warning(
-                                f'result with name="{name}" is ignored because its value is: {res}'
+                            logger.debug(
+                                f'result from workflow="{name}" is ignored because its value is None'
                             )
 
                 except Exception as e:
