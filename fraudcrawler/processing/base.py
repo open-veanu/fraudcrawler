@@ -66,6 +66,7 @@ class Processor:
         results = {}
         for wf in self._workflows:
             try:
+                logger.info(f'Running workflow="{wf.name}" with url={product.url}.')
                 res = await wf.run(product=product)
             except Exception as e:
                 raise type(e)(f'Error while running workflow="{wf.name}": {e}') from e

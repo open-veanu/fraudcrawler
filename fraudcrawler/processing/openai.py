@@ -24,7 +24,7 @@ class OpenAIClassificationResult(ClassificationResult):
 
 
 class OpenAIWorkflow(Workflow):
-    """Classification workflow using OpenAI API calls."""
+    """(Abstract) Workflow using OpenAI API calls."""
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ class OpenAIWorkflow(Workflow):
         api_key: str,
         model: str,
     ):
-        """Open AI Workflow.
+        """(Abstract) OpenAI Workflow.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
@@ -163,24 +163,6 @@ class OpenAIWorkflow(Workflow):
 
         return output_text
 
-    @abstractmethod
-    async def _run(self, product: ProductItem) -> Any:
-        """Runs the OpenAI classification workflow."""
-        pass
-
-    async def run(self, product: ProductItem) -> Any:
-        """Runs and logs the OpenAI classification workflow."""
-        url = product.url
-        logger.info(f'Running workflow="{self.name}" with url={url}.')
-
-        # Run classification (errors are propagated to caller in processor.run())
-        clfn = await self._run(product=product)
-
-        logger.info(
-            f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, and total tokens used={clfn.input_tokens + clfn.output_tokens}'
-        )
-        return clfn
-
 
 class OpenAIClassification(OpenAIWorkflow):
     """Open AI classification workflow with single API call using specific product_item fields for setting up the context.
@@ -285,7 +267,7 @@ class OpenAIClassification(OpenAIWorkflow):
         product_prompt = await self._get_product_prompt(product=product)
         return product_prompt
 
-    async def _run(self, product: ProductItem) -> OpenAIClassificationResult:
+    async def run(self, product: ProductItem) -> OpenAIClassificationResult:
         """Calls the OpenAI API with the user prompt from the product."""
 
         # Get user prompt
@@ -322,7 +304,10 @@ class OpenAIClassification(OpenAIWorkflow):
             raise type(e)(
                 f'Error classifying product at url="{url}" with workflow="{self.name}": {e}'
             ) from e
-
+        
+        logger.debug(
+            f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, tokens used={clfn.input_tokens + clfn.output_tokens}'
+        )
         return clfn
 
 
