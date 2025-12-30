@@ -5,7 +5,7 @@ from typing import cast
 
 from fraudcrawler.settings import ROOT_DIR
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
-from fraudcrawler.processing.base import ClassificationResult
+from fraudcrawler.processing.base import ClassificationResult, TmpResult
 from fraudcrawler import (
     Processor,
     ProductItem,
@@ -103,15 +103,16 @@ async def test_openai_image_analysis(processor: Processor):
     image_url = f"data:image/jpeg;base64,{b64}"
 
     openai_clfc = cast(OpenAIClassification, processor._workflows[0])
-    output_text = await openai_clfc._image_analysis(
+    output = await openai_clfc._image_analysis(
         image_url=image_url,
         system_prompt="You are a expert image text extractor",
         user_prompt="Extract the text of the following image",
         detail="high",
     )
-    assert isinstance(output_text, str)
-    assert "CASO Design" in output_text
-    assert "791" in output_text
+    assert isinstance(output, TmpResult)
+    assert isinstance(output.result, str)
+    assert "CASO Design" in output.result
+    assert "791" in output.result
 
 
 @pytest.mark.asyncio
