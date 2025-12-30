@@ -27,6 +27,9 @@ class TmpResult(BaseModel):
     output_tokens: int = 0
 
 
+WorkflowResult: TypeAlias = ClassificationResult | TmpResult | None
+
+
 class Workflow(ABC):
     """Abstract base class for independent processing workflows."""
 
@@ -44,7 +47,7 @@ class Workflow(ABC):
     @abstractmethod
     async def run(
         self, product: ProductItem
-    ) -> ClassificationResult | TmpResult | None:
+    ) -> WorkflowResult:
         """Runs the workflow."""
         pass
 
@@ -71,7 +74,7 @@ class Processor:
 
     async def run(
         self, product: ProductItem
-    ) -> Dict[str, ClassificationResult | TmpResult | None]:
+    ) -> Dict[str, WorkflowResult]:
         """Run the processing step for multiple workflows and return all results together with workflow.name.
 
         Args:
