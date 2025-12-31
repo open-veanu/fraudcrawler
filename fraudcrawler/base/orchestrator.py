@@ -246,7 +246,7 @@ class Orchestrator(ABC):
                             product.tmp[name] = res
                             inp_tok = res.input_tokens
                             out_tok = res.output_tokens
-                        
+
                         elif isinstance(res, InsightsResult):
                             logger.debug(
                                 f'result from workflow="{name}" added to product.insights'
