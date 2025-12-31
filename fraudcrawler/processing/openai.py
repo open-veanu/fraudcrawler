@@ -78,7 +78,7 @@ class OpenAIWorkflow(Workflow):
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
-        context = Context(endpoint="chat.completions", url=product_url)
+        context = Context(endpoint="chat.completions.create", url=product_url)
         retry.before = lambda retry_state: self._log_before(
             context=context, retry_state=retry_state
         )
@@ -172,7 +172,7 @@ class OpenAIWorkflow(Workflow):
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
-        context = Context(endpoint="responses", url=product_url)
+        context = Context(endpoint="responses.create", url=product_url)
         retry.before = lambda retry_state: self._log_before(
             context=context, retry_state=retry_state
         )
