@@ -253,7 +253,7 @@ class Orchestrator(ABC):
                             )
                             if product.insights is None:
                                 product.insights = {}
-                            product.insights[res.key] = res.value
+                            product.insights[name] = res.value
 
                         elif res is None:
                             logger.debug(
