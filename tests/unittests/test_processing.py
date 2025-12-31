@@ -95,7 +95,20 @@ async def test_openai_clfc_get_user_prompt(processor: Processor, product: Produc
 
 
 @pytest.mark.asyncio
-async def test_openai_image_analysis(processor: Processor):
+async def test_openai_classification_run(processor: Processor, product: ProductItem):
+    openai_clfc = cast(OpenAIClassification, processor._workflows[0])
+    clfc = await openai_clfc.run(product=product)
+
+    assert isinstance(clfc, ClassificationResult)
+    assert isinstance(clfc.result, int)
+    assert isinstance(clfc.input_tokens, int)
+    assert clfc.input_tokens > 0
+    assert isinstance(clfc.output_tokens, int)
+    assert clfc.output_tokens > 0
+
+
+@pytest.mark.asyncio
+async def test_openai_image_analysis(processor: Processor, product: ProductItem):
     with open(ROOT_DIR / "tests" / "files" / "image.jpg", "rb") as f:
         content = f.read()
 
@@ -104,6 +117,7 @@ async def test_openai_image_analysis(processor: Processor):
 
     openai_clfc = cast(OpenAIClassification, processor._workflows[0])
     output = await openai_clfc._image_analysis(
+        product_url=product.url,
         image_url=image_url,
         system_prompt="You are a expert image text extractor",
         user_prompt="Extract the text of the following image",

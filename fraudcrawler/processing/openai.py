@@ -1,4 +1,5 @@
 import logging
+from pydantic import BaseModel
 from typing import List, Literal
 
 import httpx
@@ -16,6 +17,11 @@ from fraudcrawler.processing.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class Context(BaseModel):
+    endpoint: str
+    url: str
 
 
 class OpenAIWorkflow(Workflow):
@@ -41,39 +47,55 @@ class OpenAIWorkflow(Workflow):
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
 
-    def _log_before(self, url: str, retry_state: RetryCallState) -> None:
+    def _log_before(self, context: Context, retry_state: RetryCallState) -> None:
         """Context aware logging before the request is made."""
         if retry_state:
             logger.debug(
-                f"Classifying product with url={url} with workflow={self.name} (Attempt {retry_state.attempt_number})."
+                f"Workflow={self.name} calls endpoint={context.endpoint} for product with url={context.url} (Attempt {retry_state.attempt_number})."
             )
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before.")
 
-    def _log_before_sleep(self, url: str, retry_state: RetryCallState) -> None:
+    def _log_before_sleep(self, context: Context, retry_state: RetryCallState) -> None:
         """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
-                f"Attempt {retry_state.attempt_number} of classifying product with url={url} with workflow={self.name} "
+                f"Attempt {retry_state.attempt_number} of workflow={self.name} "
+                f"calling endpoint={context.endpoint} for product with url={context.url} "
                 f"failed with error: {retry_state.outcome.exception()}. "
                 f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
 
     async def _chat_classification(
         self,
+        product_url: str, 
         system_prompt: str,
         user_prompt: str,
         **kwargs,
     ) -> ClassificationResult:
         """Calls the OpenAI Chat enpoint for a classification."""
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            **kwargs,
+        # Perform the request and retry if necessary. There is some context aware logging
+        #  - `before`: before the request is made (or before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        context = Context(endpoint='chat.completions', url=product_url)
+        retry.before = lambda retry_state: self._log_before(
+            context=context, retry_state=retry_state
         )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            context=context, retry_state=retry_state
+        )
+        async for attempt in retry:
+            with attempt:
+                response = await self._client.chat.completions.create(
+                    model=self._model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    **kwargs,
+                )
+        
         if not response or not (content := response.choices[0].message.content):
             raise ValueError(
                 f'Error calling OpenAI API or empty response="{response}".'
@@ -95,6 +117,7 @@ class OpenAIWorkflow(Workflow):
 
     async def _image_analysis(
         self,
+        product_url: str,
         image_url: str,
         system_prompt: str,
         user_prompt: str,
@@ -145,11 +168,24 @@ class OpenAIWorkflow(Workflow):
         ]
 
         # Extract information from image
-        response = await self._client.responses.create(
-            model=self._model,
-            input=input_param,
-            **kwargs,
+        # Perform the request and retry if necessary. There is some context aware logging
+        #  - `before`: before the request is made (or before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        context = Context(endpoint='responses', url=product_url)
+        retry.before = lambda retry_state: self._log_before(
+            context=context, retry_state=retry_state
         )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            context=context, retry_state=retry_state
+        )
+        async for attempt in retry:
+            with attempt:
+                response = await self._client.responses.create(
+                    model=self._model,
+                    input=input_param,
+                    **kwargs,
+                )
 
         if not response or not (output_text := response.output_text):
             raise ValueError(
@@ -275,23 +311,12 @@ class OpenAIClassification(OpenAIWorkflow):
         # Call the OpenAI API
         url = product.url
         try:
-            # Perform the request and retry if necessary. There is some context aware logging
-            #  - `before`: before the request is made (or before retrying)
-            #  - `before_sleep`: if the request fails before sleeping
-            retry = get_async_retry()
-            retry.before = lambda retry_state: self._log_before(
-                url=url, retry_state=retry_state
+            clfn = await self._chat_classification(
+                product_url=url,
+                system_prompt=self._system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=self._max_tokens,
             )
-            retry.before_sleep = lambda retry_state: self._log_before_sleep(
-                url=url, retry_state=retry_state
-            )
-            async for attempt in retry:
-                with attempt:
-                    clfn = await self._chat_classification(
-                        system_prompt=self._system_prompt,
-                        user_prompt=user_prompt,
-                        max_tokens=self._max_tokens,
-                    )
 
             # Enforce that the classification is in the allowed classes
             if clfn.result not in self._allowed_classes:
