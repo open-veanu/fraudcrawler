@@ -68,7 +68,7 @@ class OpenAIWorkflow(Workflow):
 
     async def _chat_classification(
         self,
-        product_url: str, 
+        product_url: str,
         system_prompt: str,
         user_prompt: str,
         **kwargs,
@@ -78,7 +78,7 @@ class OpenAIWorkflow(Workflow):
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
-        context = Context(endpoint='chat.completions', url=product_url)
+        context = Context(endpoint="chat.completions", url=product_url)
         retry.before = lambda retry_state: self._log_before(
             context=context, retry_state=retry_state
         )
@@ -95,7 +95,7 @@ class OpenAIWorkflow(Workflow):
                     ],
                     **kwargs,
                 )
-        
+
         if not response or not (content := response.choices[0].message.content):
             raise ValueError(
                 f'Error calling OpenAI API or empty response="{response}".'
@@ -172,7 +172,7 @@ class OpenAIWorkflow(Workflow):
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
-        context = Context(endpoint='responses', url=product_url)
+        context = Context(endpoint="responses", url=product_url)
         retry.before = lambda retry_state: self._log_before(
             context=context, retry_state=retry_state
         )
