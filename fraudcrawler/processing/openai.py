@@ -1,27 +1,24 @@
 import logging
 from pydantic import BaseModel
-from typing import List, Literal
+from typing import Dict, List, Literal, TypeAlias
 
 import httpx
 from openai import AsyncOpenAI
-from openai.types.responses import ResponseInputImageParam, ResponseInputParam
+from openai.types.chat import ChatCompletion, ParsedChatCompletion
+from openai.types.responses import Response, ResponseInputImageParam, ResponseInputParam
 from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.processing.base import (
     ClassificationResult,
-    TmpResult,
     UserInputs,
     Workflow,
 )
 
 logger = logging.getLogger(__name__)
 
-
-class Context(BaseModel):
-    endpoint: str
-    url: str
+Context: TypeAlias = Dict[str, str]
 
 
 class OpenAIWorkflow(Workflow):
@@ -47,43 +44,54 @@ class OpenAIWorkflow(Workflow):
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
 
-    def _log_before(self, context: Context, retry_state: RetryCallState) -> None:
+    def _log_before(
+        self, endpoint: str, context: Context, retry_state: RetryCallState
+    ) -> None:
         """Context aware logging before the request is made."""
         if retry_state:
             logger.debug(
-                f"Workflow={self.name} calls endpoint={context.endpoint} for product with url={context.url} (Attempt {retry_state.attempt_number})."
+                f"Workflow={self.name} calls endpoint={endpoint} within context={context} (Attempt {retry_state.attempt_number})."
             )
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before.")
 
-    def _log_before_sleep(self, context: Context, retry_state: RetryCallState) -> None:
+    def _log_before_sleep(
+        self, endpoint: str, context: Context, retry_state: RetryCallState
+    ) -> None:
         """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
                 f"Attempt {retry_state.attempt_number} of workflow={self.name} "
-                f"calling endpoint={context.endpoint} for product with url={context.url} "
+                f"calling endpoint={endpoint} within context={context} "
                 f"failed with error: {retry_state.outcome.exception()}. "
                 f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
 
-    async def _chat_classification(
+    async def _chat_completions_create(
         self,
-        product_url: str,
         system_prompt: str,
         user_prompt: str,
+        context: Context,
         **kwargs,
-    ) -> ClassificationResult:
-        """Calls the OpenAI Chat enpoint for a classification."""
+    ) -> ChatCompletion:
+        """Calls the OpenAI chat.completions.create endpoint.
+
+        Args:
+            context: Logging context for retry logs.
+            system_prompt: System prompt for the AI model.
+            user_prompt: User prompt for the AI model.
+        """
+        endpoint = "chat.completions.create"
+
         # Perform the request and retry if necessary. There is some context aware logging
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
-        context = Context(endpoint="chat.completions.create", url=product_url)
         retry.before = lambda retry_state: self._log_before(
-            context=context, retry_state=retry_state
+            endpoint=endpoint, context=context, retry_state=retry_state
         )
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            context=context, retry_state=retry_state
+            endpoint=endpoint, context=context, retry_state=retry_state
         )
         async for attempt in retry:
             with attempt:
@@ -95,42 +103,64 @@ class OpenAIWorkflow(Workflow):
                     ],
                     **kwargs,
                 )
+        return response
 
-        if not response or not (content := response.choices[0].message.content):
-            raise ValueError(
-                f'Error calling OpenAI API or empty response="{response}".'
-            )
-
-        # Convert the content to an integer
-        try:
-            content = int(content.strip())
-        except Exception as e:
-            raise type(e)(
-                f"Failed to convert OpenAI response '{content}' to integer: {e}"
-            ) from e
-
-        return ClassificationResult(
-            result=content,
-            input_tokens=response.usage.prompt_tokens,
-            output_tokens=response.usage.completion_tokens,
-        )
-
-    async def _image_analysis(
+    async def _chat_completions_parse(
         self,
-        product_url: str,
+        system_prompt: str,
+        user_prompt: str,
+        response_format: type[BaseModel],
+        context: Context,
+        **kwargs,
+    ) -> ParsedChatCompletion:
+        """Calls the OpenAI chat.completions.parse endpoint.
+
+        Args:
+            system_prompt: System prompt for the AI model.
+            user_prompt: User prompt for the AI model.
+            response_format: The model into which the response should be parsed.
+            context: Logging context for retry logs.
+        """
+        endpoint = "chat.completions.parse"
+
+        # Perform the request and retry if necessary. There is some context aware logging
+        #  - `before`: before the request is made (or before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_before(
+            endpoint=endpoint, context=context, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            endpoint=endpoint, context=context, retry_state=retry_state
+        )
+        async for attempt in retry:
+            with attempt:
+                response = await self._client.chat.completions.parse(
+                    model=self._model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    response_format=response_format,  # type: ignore[call-arg]
+                    **kwargs,
+                )
+        return response
+
+    async def _responses_create(
+        self,
         image_url: str,
         system_prompt: str,
         user_prompt: str,
-        detail: Literal["low", "high", "auto"] = "high",
+        context: Context,
         **kwargs,
-    ) -> TmpResult:
-        """Analyses a base64 encoded image based on the given input_text.
+    ) -> Response:
+        """Analyses a base64 encoded image.
 
         Args:
             image_url: Raw base64 encoded image with the data URI scheme.
             system_prompt: System prompt for the AI model.
             user_prompt: User prompt for the AI model.
-            detail: The detail level of the image to use (optional).
+            context: Logging context for retry logs.
 
         Note:
             Having the url of a jpeg image (for example), the image_url is optained as:
@@ -146,7 +176,12 @@ class OpenAIWorkflow(Workflow):
             b64 = base64.b64encode(image).decode("utf-8")
             data_url = f"data:image/jpeg;base64,{b64}"
             ```
+
+            The extracted text can be obtained by `response.output_text`
         """
+        endpoint = "response.create"
+        detail: Literal["low", "high", "auto"] = "high"
+
         # Prepare openai parameters
         image_param: ResponseInputImageParam = {
             "type": "input_image",
@@ -172,12 +207,11 @@ class OpenAIWorkflow(Workflow):
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
-        context = Context(endpoint="responses.create", url=product_url)
         retry.before = lambda retry_state: self._log_before(
-            context=context, retry_state=retry_state
+            endpoint=endpoint, context=context, retry_state=retry_state
         )
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            context=context, retry_state=retry_state
+            endpoint=endpoint, context=context, retry_state=retry_state
         )
         async for attempt in retry:
             with attempt:
@@ -186,17 +220,7 @@ class OpenAIWorkflow(Workflow):
                     input=input_param,
                     **kwargs,
                 )
-
-        if not response or not (output_text := response.output_text):
-            raise ValueError(
-                f'Error calling OpenAI API or empty response="{response}".'
-            )
-
-        return TmpResult(
-            result=output_text,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-        )
+        return response
 
 
 class OpenAIClassification(OpenAIWorkflow):
@@ -302,6 +326,39 @@ class OpenAIClassification(OpenAIWorkflow):
         product_prompt = await self._get_product_prompt(product=product)
         return product_prompt
 
+    async def _chat_classification(
+        self,
+        product: ProductItem,
+        system_prompt: str,
+        user_prompt: str,
+        **kwargs,
+    ) -> ClassificationResult:
+        """Calls the OpenAI Chat enpoint for a classification."""
+        context = {"product.url": product.url}
+        response = await self._chat_completions_create(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            context=context,
+            **kwargs,
+        )
+
+        if (
+            not response
+            or not (content := response.choices[0].message.content)
+            or not (usage := response.usage)
+        ):
+            raise ValueError(
+                f'Error calling OpenAI API: response="{response}, content={content}, usage={usage}".'
+            )
+
+        # Convert to ClassificationResult object
+        result = int(content.strip())
+        return ClassificationResult(
+            result=result,
+            input_tokens=usage.prompt_tokens,
+            output_tokens=usage.completion_tokens,
+        )
+
     async def run(self, product: ProductItem) -> ClassificationResult:
         """Calls the OpenAI API with the user prompt from the product."""
 
@@ -309,10 +366,9 @@ class OpenAIClassification(OpenAIWorkflow):
         user_prompt = await self._get_user_prompt(product=product)
 
         # Call the OpenAI API
-        url = product.url
         try:
             clfn = await self._chat_classification(
-                product_url=url,
+                product=product,
                 system_prompt=self._system_prompt,
                 user_prompt=user_prompt,
                 max_tokens=self._max_tokens,
@@ -326,11 +382,11 @@ class OpenAIClassification(OpenAIWorkflow):
 
         except Exception as e:
             raise type(e)(
-                f'Error classifying product at url="{url}" with workflow="{self.name}": {e}'
+                f'Error classifying product at url="{product.url}" with workflow="{self.name}": {e}'
             ) from e
 
         logger.debug(
-            f'Classification for url="{url}" (workflow={self.name}): result={clfn.result}, tokens used={clfn.input_tokens + clfn.output_tokens}'
+            f'Classification for url="{product.url}" (workflow={self.name}): result={clfn.result}, tokens used={clfn.input_tokens + clfn.output_tokens}'
         )
         return clfn
 
