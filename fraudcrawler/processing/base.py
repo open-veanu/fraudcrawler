@@ -29,6 +29,7 @@ class TmpResult(BaseModel):
 
 class InsightsResult(BaseModel):
     """Model for insights results."""
+
     value: str
 
 
