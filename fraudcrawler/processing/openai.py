@@ -12,7 +12,6 @@ from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.processing.base import (
     ClassificationResult,
-    TmpResult,
     UserInputs,
     Workflow,
 )

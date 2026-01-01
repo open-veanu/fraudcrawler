@@ -6,7 +6,7 @@ from typing import cast
 
 from fraudcrawler.settings import ROOT_DIR
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
-from fraudcrawler.processing.base import ClassificationResult, TmpResult
+from fraudcrawler.processing.base import ClassificationResult
 from fraudcrawler import (
     Processor,
     ProductItem,
