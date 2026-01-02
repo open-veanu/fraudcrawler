@@ -1,8 +1,9 @@
 import base64
+import json
 from pydantic import BaseModel
 import pytest
 import pytest_asyncio
-from typing import cast
+from typing import cast, List
 
 from fraudcrawler.settings import ROOT_DIR
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
@@ -128,7 +129,7 @@ async def test_openai_chat_responses_parse(processor: Processor):
 
 
 @pytest.mark.asyncio
-async def test_openai_responses_create(processor: Processor, product: ProductItem):
+async def test_openai_responses_create(processor: Processor):
     with open(ROOT_DIR / "tests" / "files" / "image.jpg", "rb") as f:
         content = f.read()
 
@@ -146,6 +147,36 @@ async def test_openai_responses_create(processor: Processor, product: ProductIte
     assert isinstance(output_text, str)
     assert "CASO Design" in output_text
     assert "791" in output_text
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_parse(processor: Processor, product: ProductItem):
+    class ImageText(BaseModel):
+        manufacturer_product_name: str
+        manufacturer_product_number: str
+        colored_arrow_scale_texts: List[str]
+        efficiency_class_indicator_arrow_text: str
+
+    with open(ROOT_DIR / "tests" / "files" / "image.jpg", "rb") as f:
+        content = f.read()
+
+    b64 = base64.b64encode(content).decode("utf-8")
+    image_url = f"data:image/jpeg;base64,{b64}"
+
+    openai_clfc = cast(OpenAIClassification, processor._workflows[0])
+    response = await openai_clfc._responses_parse(
+        image_url=image_url,
+        system_prompt="You are a expert image text extractor.",
+        user_prompt="Extract the text of the following image",
+        text_format=ImageText,
+        context={"test": "me!"},
+    )
+    output_text = response.output_text
+    output = ImageText(**json.loads(output_text))
+    assert output.manufacturer_product_name == "CASO Design"
+    assert output.manufacturer_product_number == "791"
+    assert set(output.colored_arrow_scale_texts) == {"A", "B", "C", "D", "E", "F", "G"}
+    assert output.efficiency_class_indicator_arrow_text == "F"
 
 
 @pytest.mark.asyncio
