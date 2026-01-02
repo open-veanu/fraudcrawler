@@ -453,9 +453,7 @@ class OpenAIClassification(OpenAIWorkflow):
                 )
 
         except Exception as e:
-            raise type(e)(
-                f'Error classifying product at url="{product.url}" with workflow="{self.name}": {e}'
-            ) from e
+            raise Exception(f'Error classifying product at url="{product.url}" with workflow="{self.name}": {e}')
 
         logger.debug(
             f'Classification for url="{product.url}" (workflow={self.name}): result={clfn.result}, tokens used={clfn.input_tokens + clfn.output_tokens}'
