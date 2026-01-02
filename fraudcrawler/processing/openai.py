@@ -5,7 +5,12 @@ from typing import Dict, List, Literal, TypeAlias
 import httpx
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ParsedChatCompletion
-from openai.types.responses import Response, ResponseInputImageParam, ResponseInputParam
+from openai.types.responses import (
+    Response,
+    ParsedResponse,
+    ResponseInputImageParam,
+    ResponseInputParam,
+)
 from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
@@ -146,6 +151,34 @@ class OpenAIWorkflow(Workflow):
                 )
         return response
 
+    @staticmethod
+    def _get_input_param(
+        image_url: str,
+        system_prompt: str,
+        user_prompt: str,
+        detail: Literal["low", "high", "auto"],
+    ) -> ResponseInputParam:
+        # Prepare openai parameters
+        image_param: ResponseInputImageParam = {
+            "type": "input_image",
+            "image_url": image_url,
+            "detail": detail,
+        }
+        input_param: ResponseInputParam = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": user_prompt},
+                    image_param,
+                ],
+            },
+        ]
+        return input_param
+
     async def _responses_create(
         self,
         image_url: str,
@@ -179,28 +212,15 @@ class OpenAIWorkflow(Workflow):
 
             The extracted text can be obtained by `response.output_text`
         """
+        # Prepare variables
         endpoint = "response.create"
         detail: Literal["low", "high", "auto"] = "high"
-
-        # Prepare openai parameters
-        image_param: ResponseInputImageParam = {
-            "type": "input_image",
-            "image_url": image_url,
-            "detail": detail,
-        }
-        input_param: ResponseInputParam = [
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": user_prompt},
-                    image_param,
-                ],
-            },
-        ]
+        input_param = self._get_input_param(
+            image_url=image_url,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            detail=detail,
+        )
 
         # Extract information from image
         # Perform the request and retry if necessary. There is some context aware logging
@@ -218,6 +238,58 @@ class OpenAIWorkflow(Workflow):
                 response = await self._client.responses.create(
                     model=self._model,
                     input=input_param,
+                    **kwargs,
+                )
+        return response
+
+    async def _responses_parse(
+        self,
+        image_url: str,
+        system_prompt: str,
+        user_prompt: str,
+        text_format: type[BaseModel],
+        context: Context,
+        **kwargs,
+    ) -> ParsedResponse:
+        """Analyses a base64 encoded image and parses the output_text into response_format.
+
+        Args:
+            image_url: Raw base64 encoded image with the data URI scheme.
+            system_prompt: System prompt for the AI model.
+            user_prompt: User prompt for the AI model.
+            text_format: The model into which the response should be parsed.
+            context: Logging context for retry logs.
+
+        Note:
+            (c.f. :func:`_responses_create`)
+        """
+        # Prepare variables
+        endpoint = "response.parse"
+        detail: Literal["low", "high", "auto"] = "high"
+        input_param = self._get_input_param(
+            image_url=image_url,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            detail=detail,
+        )
+
+        # Extract information from image
+        # Perform the request and retry if necessary. There is some context aware logging
+        #  - `before`: before the request is made (or before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_before(
+            endpoint=endpoint, context=context, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_before_sleep(
+            endpoint=endpoint, context=context, retry_state=retry_state
+        )
+        async for attempt in retry:
+            with attempt:
+                response = await self._client.responses.parse(
+                    model=self._model,
+                    input=input_param,
+                    text_format=text_format,
                     **kwargs,
                 )
         return response
