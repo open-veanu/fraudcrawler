@@ -5,7 +5,12 @@ from typing import Dict, List, Literal, TypeAlias
 import httpx
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, ParsedChatCompletion
-from openai.types.responses import Response, ParsedResponse, ResponseInputImageParam, ResponseInputParam
+from openai.types.responses import (
+    Response,
+    ParsedResponse,
+    ResponseInputImageParam,
+    ResponseInputParam,
+)
 from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
@@ -145,7 +150,7 @@ class OpenAIWorkflow(Workflow):
                     **kwargs,
                 )
         return response
-    
+
     @staticmethod
     def _get_input_param(
         image_url: str,
