@@ -17,11 +17,20 @@ from fraudcrawler.settings import (
 
 
 def _is_retryable_exception(err: BaseException) -> bool:
-    if (
-        isinstance(err, HTTPStatusError)
-        and err.response.status_code in RETRY_SKIP_IF_CODE
-    ):
+    """Checks if failing HTTP connection is worth to be re-tried."""
+
+    # Get status_code from err
+    response = getattr(err, 'response', None)
+    if response is not None:
+        status_code = getattr(response, 'status_code', None)
+    else:
+        status_code = getattr(err, 'status_code', None)
+    
+    # Check if we skip retry
+    if status_code is not None and status_code in RETRY_SKIP_IF_CODE:
         return False
+    
+    # Else we do try it again
     return True
 
 
