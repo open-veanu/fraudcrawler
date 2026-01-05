@@ -27,13 +27,7 @@ class TmpResult(BaseModel):
     output_tokens: int = 0
 
 
-class InsightsResult(BaseModel):
-    """Model for insights results."""
-
-    value: Dict[str, str | List[str]]
-
-
-WorkflowResult: TypeAlias = ClassificationResult | TmpResult | InsightsResult | None
+WorkflowResult: TypeAlias = ClassificationResult | TmpResult | None
 
 
 class Workflow(ABC):
