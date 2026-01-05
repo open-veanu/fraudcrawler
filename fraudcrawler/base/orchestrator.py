@@ -30,7 +30,6 @@ from fraudcrawler import (
     Processor,
     ClassificationResult,
     TmpResult,
-    InsightsResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -246,14 +245,6 @@ class Orchestrator(ABC):
                             product.tmp[name] = res
                             inp_tok = res.input_tokens
                             out_tok = res.output_tokens
-
-                        elif isinstance(res, InsightsResult):
-                            logger.debug(
-                                f'result from workflow="{name}" added to product.insights'
-                            )
-                            if product.insights is None:
-                                product.insights = {}
-                            product.insights[name] = res.value
 
                         elif res is None:
                             logger.debug(
