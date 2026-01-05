@@ -30,7 +30,7 @@ class TmpResult(BaseModel):
 class InsightsResult(BaseModel):
     """Model for insights results."""
 
-    value: str
+    value: Dict[str, str]
 
 
 WorkflowResult: TypeAlias = ClassificationResult | TmpResult | InsightsResult | None

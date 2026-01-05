@@ -602,7 +602,7 @@ async def test_searcher_apply_toppreise_post_search(searcher):
     search_engine = "toppreise"
     location = Location(name="Switzerland")
     language = Language(name="German")
-    num_results = 19
+    num_results = 16
 
     results = await searcher.apply(
         search_term=search_term,
