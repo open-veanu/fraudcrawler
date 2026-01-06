@@ -303,7 +303,9 @@ class OpenAIWorkflow(Workflow):
         """Ensure all product_item_fields are valid ProductItem attributes."""
         return set(product_item_fields).issubset(ProductItem.model_fields.keys())
 
-    def _get_product_details(self, product: ProductItem, product_item_fields: List[str]) -> str:
+    def _get_product_details(
+        self, product: ProductItem, product_item_fields: List[str]
+    ) -> str:
         """Extracts product details based on the configuration.
 
         Args:
@@ -316,10 +318,8 @@ class OpenAIWorkflow(Workflow):
             not_valid_fields = set(product_item_fields) - set(
                 ProductItem.model_fields.keys()
             )
-            raise ValueError(
-                f"Invalid product_item_fields: {not_valid_fields}."
-            )
-        
+            raise ValueError(f"Invalid product_item_fields: {not_valid_fields}.")
+
         details = []
         for name in product_item_fields:
             if value := getattr(product, name, None):
@@ -334,11 +334,15 @@ class OpenAIWorkflow(Workflow):
                 )
         return "\n\n".join(details)
 
-    async def _get_prompt_from_product_details(self, product: ProductItem, product_item_fields: List[str]) -> str:
+    async def _get_prompt_from_product_details(
+        self, product: ProductItem, product_item_fields: List[str]
+    ) -> str:
         """Forms and returns the product related part for the user_prompt."""
 
         # Form the product details from the ProductItem
-        product_details = self._get_product_details(product=product, product_item_fields=product_item_fields)
+        product_details = self._get_product_details(
+            product=product, product_item_fields=product_item_fields
+        )
         if not product_details:
             raise ValueError(
                 f"Missing product_details for product_item_fields={product_item_fields}."
@@ -359,6 +363,7 @@ class OpenAIWorkflow(Workflow):
         user_inputs_joined = "\n".join(user_inputs_strings)
         return f"User Inputs:\n{user_inputs_joined}"
 
+
 class OpenAIClassification(OpenAIWorkflow):
     """Open AI classification workflow with single API call using specific product_item fields for setting up the context.
 
@@ -367,6 +372,7 @@ class OpenAIClassification(OpenAIWorkflow):
         The fields declared in product_item_fields are concatenated for creating a user prompt from
         which the classification should happen.
     """
+
     _max_tokens: int = 1
 
     def __init__(

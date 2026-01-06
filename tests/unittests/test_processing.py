@@ -62,15 +62,18 @@ async def test_openai_clfc_get_product_details(
     processor: Processor, product: ProductItem
 ):
     openai_clfc = cast(OpenAIClassification, processor._workflows[0])
-    details = openai_clfc._get_product_details(product=product)
+    details = openai_clfc._get_product_details(
+        product=product, product_item_fields=openai_clfc._product_item_fields
+    )
     assert isinstance(details, str)
     assert "product_name:\nTest Product" in details
     assert "product_description:\nThis is a test product." in details
 
     openai_clfc._product_item_fields = ["not_a_field"]
-    details = openai_clfc._get_product_details(product)
-    assert details == ""
-
+    with pytest.raises(ValueError):
+        details = openai_clfc._get_product_details(
+            product=product, product_item_fields=openai_clfc._product_item_fields
+        )
 
 def test_openai_clfc_product_item_fields_are_valid():
     assert OpenAIClassification._product_item_fields_are_valid(
