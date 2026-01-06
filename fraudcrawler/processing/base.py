@@ -87,6 +87,7 @@ class Processor:
                 logger.error(
                     f'Error while running workflow="{wf.name}" for product with url="{product.url_resolved}": type={type(e)}, msg={str(e)}'
                 )
+                continue
 
             results[wf.name] = res
         return results
