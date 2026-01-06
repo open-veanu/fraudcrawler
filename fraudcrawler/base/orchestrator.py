@@ -273,7 +273,7 @@ class Orchestrator(ABC):
                                 "output_tokens": out_tok,
                             }
 
-                except Exception as e:
+                except Exception:
                     logger.error(
                         f"Processing product with url={product.url_resolved} failed",
                         exc_info=True,

@@ -339,7 +339,7 @@ class Enricher:
                 language=language,
                 limit=n_terms,
             )
-        except Exception as e:
+        except Exception:
             logger.error(
                 f"Fetching related keywords for search_term='{search_term}' failed",
                 exc_info=True,
