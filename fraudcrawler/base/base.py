@@ -141,6 +141,7 @@ class ProductItem(BaseModel):
     product_price: str | None = None
     product_description: str | None = None
     product_images: List[str] | None = None
+    product_gtin: str | None = None
     probability: float | None = None
     html: str | None = None
     html_clean: str | None = None

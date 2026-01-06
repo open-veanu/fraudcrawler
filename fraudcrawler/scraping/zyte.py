@@ -138,6 +138,27 @@ class ZyteAPI(DomainUtils):
         return images
 
     @staticmethod
+    def _extract_gtin(details: dict) -> str | None:
+        """Extracts the GTIN from the product data.
+
+        The input argument is a dictionary of the following structure:
+            {
+                "product": {
+                    "gtin": [{"type": str, "value": str}],
+                }
+            }
+        """
+        product = details.get("product", {})
+        gtin_list = product.get("gtin", [])
+        
+        if gtin_list and len(gtin_list) > 0:
+            # Extract the first GTIN value
+            gtin_value = gtin_list[0].get("value")
+            if gtin_value:
+                return gtin_value
+        return None
+
+    @staticmethod
     def _extract_probability(details: dict) -> float:
         """Extracts the probability from the product data.
 
@@ -195,6 +216,7 @@ class ZyteAPI(DomainUtils):
         product.product_price = self._extract_product_price(details=details)
         product.product_description = self._extract_product_description(details=details)
         product.product_images = self._extract_image_urls(details=details)
+        product.product_gtin = self._extract_gtin(details=details)
         product.probability = self._extract_probability(details=details)
         product.html = self._extract_html(details=details)
         if product.html:
@@ -255,6 +277,7 @@ class ZyteAPI(DomainUtils):
                     "mainImage": {"url": str},
                     "images": [{"url": str}],
                     "description": str,
+                    "gtin": [{"type": str, "value": str}],
                     "metadata": {
                         "probability": float,
                     },
