@@ -151,7 +151,7 @@ class ZyteAPI(DomainUtils):
         product = details.get("product", {})
         gtin_list = product.get("gtin", [])
         
-        if gtin_list and len(gtin_list) > 0:
+        if len(gtin_list) > 0:
             # Extract the first GTIN value
             gtin_value = gtin_list[0].get("value")
             if gtin_value:
