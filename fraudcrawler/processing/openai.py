@@ -29,6 +29,10 @@ Context: TypeAlias = Dict[str, str]
 class OpenAIWorkflow(Workflow):
     """(Abstract) Workflow using OpenAI API calls."""
 
+    _product_prompt_template = "Product Details:\n{product_details}\n\nRelevance:"
+    _product_details_template = "{field_name}:\n{field_value}"
+    _user_inputs_template = "{key}: {val}"
+
     def __init__(
         self,
         http_client: httpx.AsyncClient,
@@ -294,6 +298,71 @@ class OpenAIWorkflow(Workflow):
                 )
         return response
 
+    @staticmethod
+    def _product_item_fields_are_valid(product_item_fields: List[str]) -> bool:
+        """Ensure all product_item_fields are valid ProductItem attributes."""
+        return set(product_item_fields).issubset(ProductItem.model_fields.keys())
+
+    def _get_product_details(
+        self, product: ProductItem, product_item_fields: List[str]
+    ) -> str:
+        """Extracts product details based on the configuration.
+
+        Args:
+            product: The product item to extract details from.
+            product_item_fields: The product item fields to use.
+        """
+        if not self._product_item_fields_are_valid(
+            product_item_fields=product_item_fields
+        ):
+            not_valid_fields = set(product_item_fields) - set(
+                ProductItem.model_fields.keys()
+            )
+            raise ValueError(f"Invalid product_item_fields: {not_valid_fields}.")
+
+        details = []
+        for name in product_item_fields:
+            if value := getattr(product, name, None):
+                details.append(
+                    self._product_details_template.format(
+                        field_name=name, field_value=value
+                    )
+                )
+            else:
+                logger.warning(
+                    f'Field "{name}" is missing in ProductItem with url="{product.url}"'
+                )
+        return "\n\n".join(details)
+
+    async def _get_prompt_from_product_details(
+        self, product: ProductItem, product_item_fields: List[str]
+    ) -> str:
+        """Forms and returns the product related part for the user_prompt."""
+
+        # Form the product details from the ProductItem
+        product_details = self._get_product_details(
+            product=product, product_item_fields=product_item_fields
+        )
+        if not product_details:
+            raise ValueError(
+                f"Missing product_details for product_item_fields={product_item_fields}."
+            )
+
+        # Create user prompt
+        product_prompt = self._product_prompt_template.format(
+            product_details=product_details,
+        )
+        return product_prompt
+
+    async def _get_prompt_from_user_inputs(self, user_inputs: UserInputs) -> str:
+        """Forms and returns the user_inputs part for the user_prompt."""
+        user_inputs_strings = [
+            self._user_inputs_template.format(key=k, val=v)
+            for k, v in user_inputs.items()
+        ]
+        user_inputs_joined = "\n".join(user_inputs_strings)
+        return f"User Inputs:\n{user_inputs_joined}"
+
 
 class OpenAIClassification(OpenAIWorkflow):
     """Open AI classification workflow with single API call using specific product_item fields for setting up the context.
@@ -304,8 +373,6 @@ class OpenAIClassification(OpenAIWorkflow):
         which the classification should happen.
     """
 
-    _product_prompt_template = "Product Details:\n{product_details}\n\nRelevance:"
-    _product_details_template = "{field_name}:\n{field_value}"
     _max_tokens: int = 1
 
     def __init__(
@@ -335,16 +402,6 @@ class OpenAIClassification(OpenAIWorkflow):
             api_key=api_key,
             model=model,
         )
-
-        if not self._product_item_fields_are_valid(
-            product_item_fields=product_item_fields
-        ):
-            not_valid_fields = set(product_item_fields) - set(
-                ProductItem.model_fields.keys()
-            )
-            raise ValueError(
-                f"Invalid product_item_fields are given: {not_valid_fields}."
-            )
         self._product_item_fields = product_item_fields
         self._system_prompt = system_prompt
 
@@ -352,50 +409,12 @@ class OpenAIClassification(OpenAIWorkflow):
             raise ValueError("Values of allowed_classes must be >= 0")
         self._allowed_classes = allowed_classes
 
-    @staticmethod
-    def _product_item_fields_are_valid(product_item_fields: List[str]) -> bool:
-        """Ensure all product_item_fields are valid ProductItem attributes."""
-        return set(product_item_fields).issubset(ProductItem.model_fields.keys())
-
-    def _get_product_details(self, product: ProductItem) -> str:
-        """Extracts product details based on the configuration.
-
-        Args:
-            product: The product item to extract details from.
-        """
-        details = []
-        for name in self._product_item_fields:
-            if value := getattr(product, name, None):
-                details.append(
-                    self._product_details_template.format(
-                        field_name=name, field_value=value
-                    )
-                )
-            else:
-                logger.warning(
-                    f'Field "{name}" is missing in ProductItem with url="{product.url}"'
-                )
-        return "\n\n".join(details)
-
-    async def _get_product_prompt(self, product: ProductItem) -> str:
-        """Forms and returns the product related part for the user_prompt."""
-
-        # Form the product details from the ProductItem
-        product_details = self._get_product_details(product=product)
-        if not product_details:
-            raise ValueError(
-                f"Missing product_details for product_item_fields={self._product_item_fields}."
-            )
-
-        # Create user prompt
-        product_prompt = self._product_prompt_template.format(
-            product_details=product_details,
-        )
-        return product_prompt
-
     async def _get_user_prompt(self, product: ProductItem) -> str:
         """Forms and returns the user_prompt."""
-        product_prompt = await self._get_product_prompt(product=product)
+        product_prompt = await self._get_prompt_from_product_details(
+            product=product,
+            product_item_fields=self._product_item_fields,
+        )
         return product_prompt
 
     async def _chat_classification(
@@ -472,8 +491,6 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
         creating a user prompt from which the classification should happen.
     """
 
-    _user_inputs_template = "{key}: {val}"
-
     def __init__(
         self,
         http_client: httpx.AsyncClient,
@@ -506,15 +523,16 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
             system_prompt=system_prompt,
             allowed_classes=allowed_classes,
         )
-        user_inputs_strings = [
-            self._user_inputs_template.format(key=k, val=v)
-            for k, v in user_inputs.items()
-        ]
-        user_inputs_joined = "\n".join(user_inputs_strings)
-        self._user_inputs_prompt = f"User Inputs:\n{user_inputs_joined}"
+        self._user_inputs = user_inputs
 
     async def _get_user_prompt(self, product: ProductItem) -> str:
         """Forms the user_prompt from the product details plus user_inputs."""
-        product_prompt = await super()._get_product_prompt(product=product)
-        user_prompt = f"{self._user_inputs_prompt}\n\n{product_prompt}"
+        product_prompt = await self._get_prompt_from_product_details(
+            product=product,
+            product_item_fields=self._product_item_fields,
+        )
+        user_inputs_prompt = await self._get_prompt_from_user_inputs(
+            user_inputs=self._user_inputs,
+        )
+        user_prompt = f"{user_inputs_prompt}\n\n{product_prompt}"
         return user_prompt
