@@ -70,13 +70,12 @@ class Processor:
         """Tests if the workflows have unique names."""
         return len(workflows) == len(set([wf.name for wf in workflows]))
 
-    async def run(self, product: ProductItem) -> Dict[str, WorkflowResult]:
+    async def run(self, product: ProductItem) -> ProductItem:
         """Run the processing step for multiple workflows and return all results together with workflow.name.
 
         Args:
             product: The product item to process.
         """
-        results = {}
         for wf in self._workflows:
             try:
                 logger.info(
@@ -90,5 +89,41 @@ class Processor:
                 )
                 continue
 
-            results[wf.name] = res
-        return results
+            # Update the product item
+            inp_tok = out_tok = 0
+            if isinstance(res, ClassificationResult):
+                logger.debug(
+                    f'result from workflow="{wf.name}" added to product.classifications'
+                )
+                product.classifications[wf.name] = int(res.result)
+                inp_tok = res.input_tokens
+                out_tok = res.output_tokens
+
+            elif isinstance(res, TmpResult):
+                logger.debug(f'result from workflow="{wf.name}" added to product.tmp')
+                product.tmp[wf.name] = res
+                inp_tok = res.input_tokens
+                out_tok = res.output_tokens
+
+            elif res is None:
+                logger.debug(
+                    f'result from workflow="{wf.name}" is `None` and therefore not stored'
+                )
+
+            else:
+                logger.warning(
+                    f'result from workflow="{wf.name}" return type={type(res)} is not allowed; '
+                    f"must either be of type `ClassificationResult`, "
+                    f"`TmpResult`, or `None`; not type={type(res)}"
+                )
+
+            if inp_tok > 0 or out_tok > 0:
+                logger.debug(
+                    f'result from workflow="{wf.name}" used input_tokens={inp_tok}, output_tokens={out_tok}'
+                )
+                product.usage[wf.name] = {
+                    "input_tokens": inp_tok,
+                    "output_tokens": out_tok,
+                }
+
+        return product

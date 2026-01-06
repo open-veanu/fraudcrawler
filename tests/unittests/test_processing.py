@@ -181,10 +181,15 @@ async def test_openai_responses_parse(processor: Processor, product: ProductItem
 
 @pytest.mark.asyncio
 async def test_processor_run(processor: Processor, product: ProductItem):
-    results = await processor.run(product=product)
-    clfc = cast(ClassificationResult, results["test_openai_clfc"])
-    assert isinstance(clfc.result, int)
-    assert isinstance(clfc.input_tokens, int)
-    assert clfc.input_tokens > 0
-    assert isinstance(clfc.output_tokens, int)
-    assert clfc.output_tokens > 0
+    product = await processor.run(product=product)
+
+    clfc = product.classifications
+    assert "test_openai_clfc" in clfc
+    assert isinstance(clfc["test_openai_clfc"], int)
+
+    usage = product.usage
+    assert "test_openai_clfc" in usage
+    assert isinstance(usage["test_openai_clfc"]["input_tokens"], int)
+    assert usage["test_openai_clfc"]["input_tokens"] > 0
+    assert isinstance(usage["test_openai_clfc"]["output_tokens"], int)
+    assert usage["test_openai_clfc"]["output_tokens"] > 0
