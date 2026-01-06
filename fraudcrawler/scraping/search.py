@@ -474,7 +474,7 @@ class Toppreise(SearchEngine):
                     content = await self._zyteapi.unblock_url_content(url)
                 except Exception as err_resolve:
                     msg = f'Error unblocking URL="{url}" with Zyte proxy: {err_resolve}'
-                    logger.error(msg)
+                    logger.error(msg, exc_info=True)
                     raise httpx.HTTPError(msg) from err_resolve
             else:
                 raise err_direct

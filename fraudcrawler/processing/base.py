@@ -83,9 +83,10 @@ class Processor:
                     f'Running workflow="{wf.name}" for product with url="{product.url_resolved}".'
                 )
                 res = await wf.run(product=product)
-            except Exception as e:
+            except Exception:
                 logger.error(
-                    f'Error while running workflow="{wf.name}" for product with url="{product.url_resolved}": type={type(e)}, msg={str(e)}'
+                    f'Error while running workflow="{wf.name}" for product with url="{product.url_resolved}"',
+                    exc_info=True,
                 )
                 continue
 
