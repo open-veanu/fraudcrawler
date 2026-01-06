@@ -324,9 +324,10 @@ class Enricher:
                 language=language,
                 limit=n_terms,
             )
-        except Exception as e:
+        except Exception:
             logger.error(
-                f"Error fetching suggested keywords for search_term='{search_term}': {e}"
+                f"Fetching suggested keywords for search_term='{search_term}' failed",
+                exc_info=True,
             )
             suggested = []
 
@@ -340,7 +341,8 @@ class Enricher:
             )
         except Exception as e:
             logger.error(
-                f"Error fetching related keywords for search_term='{search_term}': {e}"
+                f"Fetching related keywords for search_term='{search_term}' failed",
+                exc_info=True,
             )
             related = []
 

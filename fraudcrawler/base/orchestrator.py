@@ -128,8 +128,11 @@ class Orchestrator(ABC):
                         filtered_at_stage=res.filtered_at_stage,
                     )
                     await queue_out.put(product)
-            except Exception as e:
-                logger.error(f"Error executing search: {e}")
+            except Exception:
+                logger.error(
+                    f"Running search failed with item={item}",
+                    exc_info=True,
+                )
             queue_in.task_done()
 
     async def _collect_url(
@@ -197,8 +200,11 @@ class Orchestrator(ABC):
                         product.filtered = True
                         product.filtered_at_stage = "Context (exact search)"
 
-                except Exception as e:
-                    logger.error(f"Error executing Zyte API search: {e}.")
+                except Exception:
+                    logger.error(
+                        f"Running Zyte API search failed for product with url={product.url_resolved}",
+                        exc_info=True,
+                    )
             await queue_out.put(product)
             queue_in.task_done()
 
@@ -269,7 +275,8 @@ class Orchestrator(ABC):
 
                 except Exception as e:
                     logger.error(
-                        f"Error processing product with url={product.url}: {e}."
+                        f"Processing product with url={product.url_resolved} failed",
+                        exc_info=True,
                     )
 
             await queue_out.put(product)
@@ -626,8 +633,11 @@ class Orchestrator(ABC):
                 if isinstance(res, Exception):
                     logger.error(f"Error in srch_worker {i}: {res}")
             logger.debug("...srch_workers concluded their tasks")
-        except Exception as e:
-            logger.error(f"Gathering srch_workers failed: {e}")
+        except Exception:
+            logger.error(
+                "Gathering srch_workers failed",
+                exc_info=True,
+            )
         finally:
             await srch_queue.join()
 
@@ -644,8 +654,11 @@ class Orchestrator(ABC):
             logger.debug("Waiting for url_collector to conclude its tasks...")
             await url_collector
             logger.debug("...url_collector concluded its tasks")
-        except Exception as e:
-            logger.error(f"Gathering url_collector failed: {e}")
+        except Exception:
+            logger.error(
+                "Gathering url_collector failed",
+                exc_info=True,
+            )
         finally:
             await url_queue.join()
 
@@ -666,8 +679,11 @@ class Orchestrator(ABC):
                 if isinstance(res, Exception):
                     logger.error(f"Error in cntx_worker {i}: {res}")
             logger.debug("...cntx_workers concluded their tasks")
-        except Exception as e:
-            logger.error(f"Gathering cntx_workers failed: {e}")
+        except Exception:
+            logger.error(
+                "Gathering cntx_workers failed",
+                exc_info=True,
+            )
         finally:
             await cntx_queue.join()
 
@@ -688,8 +704,11 @@ class Orchestrator(ABC):
                 if isinstance(res, Exception):
                     logger.error(f"Error in proc_worker {i}: {res}")
             logger.debug("...proc_workers concluded their tasks")
-        except Exception as e:
-            logger.error(f"Gathering proc_workers failed: {e}")
+        except Exception:
+            logger.error(
+                "Gathering proc_workers failed",
+                exc_info=True,
+            )
         finally:
             await proc_queue.join()
 
@@ -706,8 +725,11 @@ class Orchestrator(ABC):
             logger.debug("Waiting for res_collector to conclude its tasks...")
             await res_collector
             logger.debug("...res_collector concluded its tasks")
-        except Exception as e:
-            logger.error(f"Gathering res_collector failed: {e}")
+        except Exception:
+            logger.error(
+                "Gathering res_collector failed",
+                exc_info=True,
+            )
         finally:
             await res_queue.join()
 
