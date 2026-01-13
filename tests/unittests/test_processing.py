@@ -75,6 +75,7 @@ async def test_openai_clfc_get_product_details(
             product=product, product_item_fields=openai_clfc._product_item_fields
         )
 
+
 def test_openai_clfc_product_item_fields_are_valid():
     assert OpenAIClassification._product_item_fields_are_valid(
         ["product_name", "product_description"]

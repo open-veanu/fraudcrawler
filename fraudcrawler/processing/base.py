@@ -48,24 +48,24 @@ class Workflow(ABC):
         self.name = name
 
     def _log_before(
-        self, endpoint: str, context: Context, retry_state: RetryCallState
+        self, context: Context, retry_state: RetryCallState
     ) -> None:
         """Context aware logging before the request is made."""
         if retry_state:
             logger.debug(
-                f"Workflow={self.name} calls endpoint={endpoint} within context={context} (Attempt {retry_state.attempt_number})."
+                f"Workflow={self.name} retry-call within context={context} (Attempt {retry_state.attempt_number})."
             )
         else:
             logger.debug(f"retry_state is {retry_state}; not logging before.")
 
     def _log_before_sleep(
-        self, endpoint: str, context: Context, retry_state: RetryCallState
+        self, context: Context, retry_state: RetryCallState
     ) -> None:
         """Context aware logging before sleeping after a failed request."""
         if retry_state and retry_state.outcome:
             logger.warning(
                 f"Attempt {retry_state.attempt_number} of workflow={self.name} "
-                f"calling endpoint={endpoint} within context={context} "
+                f"retry-call within context={context} "
                 f"failed with error: {retry_state.outcome.exception()}. "
                 f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
