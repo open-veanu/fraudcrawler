@@ -3,11 +3,14 @@ import logging
 from pydantic import BaseModel
 from typing import Any, Dict, List, Sequence, TypeAlias
 
+from tenacity import RetryCallState
+
 from fraudcrawler.base.base import ProductItem
 
 logger = logging.getLogger(__name__)
 
 
+Context: TypeAlias = Dict[str, str]
 UserInputs: TypeAlias = Dict[str, List[str]]
 
 
@@ -43,6 +46,25 @@ class Workflow(ABC):
             name: Name of the classification workflow.
         """
         self.name = name
+
+    def _log_before(self, context: Context, retry_state: RetryCallState) -> None:
+        """Context aware logging before the request is made."""
+        if retry_state:
+            logger.debug(
+                f"Workflow={self.name} retry-call within context={context} (Attempt {retry_state.attempt_number})."
+            )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before.")
+
+    def _log_before_sleep(self, context: Context, retry_state: RetryCallState) -> None:
+        """Context aware logging before sleeping after a failed request."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f"Attempt {retry_state.attempt_number} of workflow={self.name} "
+                f"retry-call within context={context} "
+                f"failed with error: {retry_state.outcome.exception()}. "
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
+            )
 
     @abstractmethod
     async def run(self, product: ProductItem) -> WorkflowResult:

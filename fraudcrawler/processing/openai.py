@@ -1,6 +1,7 @@
+from copy import deepcopy
 import logging
 from pydantic import BaseModel
-from typing import Dict, List, Literal, TypeAlias
+from typing import List, Literal
 
 import httpx
 from openai import AsyncOpenAI
@@ -11,7 +12,6 @@ from openai.types.responses import (
     ResponseInputImageParam,
     ResponseInputParam,
 )
-from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
@@ -19,11 +19,10 @@ from fraudcrawler.processing.base import (
     ClassificationResult,
     UserInputs,
     Workflow,
+    Context,
 )
 
 logger = logging.getLogger(__name__)
-
-Context: TypeAlias = Dict[str, str]
 
 
 class OpenAIWorkflow(Workflow):
@@ -53,29 +52,6 @@ class OpenAIWorkflow(Workflow):
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
 
-    def _log_before(
-        self, endpoint: str, context: Context, retry_state: RetryCallState
-    ) -> None:
-        """Context aware logging before the request is made."""
-        if retry_state:
-            logger.debug(
-                f"Workflow={self.name} calls endpoint={endpoint} within context={context} (Attempt {retry_state.attempt_number})."
-            )
-        else:
-            logger.debug(f"retry_state is {retry_state}; not logging before.")
-
-    def _log_before_sleep(
-        self, endpoint: str, context: Context, retry_state: RetryCallState
-    ) -> None:
-        """Context aware logging before sleeping after a failed request."""
-        if retry_state and retry_state.outcome:
-            logger.warning(
-                f"Attempt {retry_state.attempt_number} of workflow={self.name} "
-                f"calling endpoint={endpoint} within context={context} "
-                f"failed with error: {retry_state.outcome.exception()}. "
-                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
-            )
-
     async def _chat_completions_create(
         self,
         system_prompt: str,
@@ -90,17 +66,20 @@ class OpenAIWorkflow(Workflow):
             system_prompt: System prompt for the AI model.
             user_prompt: User prompt for the AI model.
         """
-        endpoint = "chat.completions.create"
+        cntx = deepcopy(context)
+        cntx["endpoint"] = "chat.completions.create"
 
         # Perform the request and retry if necessary. There is some context aware logging
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
         retry.before = lambda retry_state: self._log_before(
-            endpoint=endpoint, context=context, retry_state=retry_state
+            context=cntx,
+            retry_state=retry_state,
         )
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            endpoint=endpoint, context=context, retry_state=retry_state
+            context=cntx,
+            retry_state=retry_state,
         )
         async for attempt in retry:
             with attempt:
@@ -130,17 +109,18 @@ class OpenAIWorkflow(Workflow):
             response_format: The model into which the response should be parsed.
             context: Logging context for retry logs.
         """
-        endpoint = "chat.completions.parse"
+        cntx = deepcopy(context)
+        cntx["endpoint"] = "chat.completions.parse"
 
         # Perform the request and retry if necessary. There is some context aware logging
         #  - `before`: before the request is made (or before retrying)
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
         retry.before = lambda retry_state: self._log_before(
-            endpoint=endpoint, context=context, retry_state=retry_state
+            context=cntx, retry_state=retry_state
         )
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            endpoint=endpoint, context=context, retry_state=retry_state
+            context=cntx, retry_state=retry_state
         )
         async for attempt in retry:
             with attempt:
@@ -217,7 +197,9 @@ class OpenAIWorkflow(Workflow):
             The extracted text can be obtained by `response.output_text`
         """
         # Prepare variables
-        endpoint = "response.create"
+        cntx = deepcopy(context)
+        cntx["endpoint"] = "response.create"
+
         detail: Literal["low", "high", "auto"] = "high"
         input_param = self._get_input_param(
             image_url=image_url,
@@ -232,10 +214,10 @@ class OpenAIWorkflow(Workflow):
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
         retry.before = lambda retry_state: self._log_before(
-            endpoint=endpoint, context=context, retry_state=retry_state
+            context=cntx, retry_state=retry_state
         )
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            endpoint=endpoint, context=context, retry_state=retry_state
+            context=cntx, retry_state=retry_state
         )
         async for attempt in retry:
             with attempt:
@@ -268,7 +250,8 @@ class OpenAIWorkflow(Workflow):
             (c.f. :func:`_responses_create`)
         """
         # Prepare variables
-        endpoint = "response.parse"
+        cntx = deepcopy(context)
+        cntx["enpdoint"] = "response.parse"
         detail: Literal["low", "high", "auto"] = "high"
         input_param = self._get_input_param(
             image_url=image_url,
@@ -283,10 +266,10 @@ class OpenAIWorkflow(Workflow):
         #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
         retry.before = lambda retry_state: self._log_before(
-            endpoint=endpoint, context=context, retry_state=retry_state
+            context=cntx, retry_state=retry_state
         )
         retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            endpoint=endpoint, context=context, retry_state=retry_state
+            context=cntx, retry_state=retry_state
         )
         async for attempt in retry:
             with attempt:
