@@ -67,7 +67,7 @@ class OpenAIWorkflow(Workflow):
             user_prompt: User prompt for the AI model.
         """
         cntx = deepcopy(context)
-        cntx['endpoint'] = "chat.completions.create"
+        cntx["endpoint"] = "chat.completions.create"
 
         # Perform the request and retry if necessary. There is some context aware logging
         #  - `before`: before the request is made (or before retrying)
@@ -110,7 +110,7 @@ class OpenAIWorkflow(Workflow):
             context: Logging context for retry logs.
         """
         cntx = deepcopy(context)
-        cntx['endpoint'] = "chat.completions.parse"
+        cntx["endpoint"] = "chat.completions.parse"
 
         # Perform the request and retry if necessary. There is some context aware logging
         #  - `before`: before the request is made (or before retrying)
@@ -198,7 +198,7 @@ class OpenAIWorkflow(Workflow):
         """
         # Prepare variables
         cntx = deepcopy(context)
-        cntx['endpoint'] = "response.create"
+        cntx["endpoint"] = "response.create"
 
         detail: Literal["low", "high", "auto"] = "high"
         input_param = self._get_input_param(
@@ -251,7 +251,7 @@ class OpenAIWorkflow(Workflow):
         """
         # Prepare variables
         cntx = deepcopy(context)
-        cntx['enpdoint'] = "response.parse"
+        cntx["enpdoint"] = "response.parse"
         detail: Literal["low", "high", "auto"] = "high"
         input_param = self._get_input_param(
             image_url=image_url,
