@@ -31,12 +31,17 @@ def _get_cache() -> Cache:
         _cache = Cache.from_url(redis_url)
         _cache.namespace = "resp_cache"
         _cache.serializer = PickleSerializer()
-        logger.info(f"Initialized Redis cache: {redis_url} (namespace={_cache.namespace})")
+        logger.info(
+            f"Initialized Redis cache: {redis_url} (namespace={_cache.namespace})"
+        )
     return _cache
 
+
 def build_cache_key(signature_payload: Mapping[str, object]) -> str:
-    serialized = json.dumps(signature_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()  # namespace handled by aiocache
+    serialized = json.dumps(
+        signature_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _is_incompatible_cache_entry_error(e: Exception) -> bool:
@@ -47,7 +52,8 @@ def _is_incompatible_cache_entry_error(e: Exception) -> bool:
 
 async def _cache_get_or_purge(cache: Cache, key: str) -> object | None:
     """
-    Returns cached value if present. If entry exists but can't be deserialized due to serializer mismatch, delete and treat as miss.
+    Returns cached value if present. If entry exists but can't be deserialized due to serializer mismatch,
+    delete and treat as miss.
     """
     try:
         return await cache.get(key)
@@ -55,13 +61,20 @@ async def _cache_get_or_purge(cache: Cache, key: str) -> object | None:
         if _is_incompatible_cache_entry_error(e):
             try:
                 await cache.delete(key)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "Failed to purge incompatible cache entry key=%r (ignored): %s",
+                    key,
+                    exc,
+                    exc_info=True,
+                )
             return None
         raise
 
 
-async def _wait_for_cache(cache: Cache, key: str, wait_timeout: float, poll_interval: float) -> object | None:
+async def _wait_for_cache(
+    cache: Cache, key: str, wait_timeout: float, poll_interval: float
+) -> object | None:
     deadline = asyncio.get_event_loop().time() + wait_timeout
     while asyncio.get_event_loop().time() < deadline:
         await asyncio.sleep(poll_interval)
@@ -69,16 +82,28 @@ async def _wait_for_cache(cache: Cache, key: str, wait_timeout: float, poll_inte
             v = await _cache_get_or_purge(cache, key)
             if v is not None:
                 return v
-        except Exception:
-            # ignore transient issues during wait
-            pass
+        except Exception as exc:
+            logger.debug(
+                "Transient cache issue during wait for key=%r (ignored): %s",
+                key,
+                exc,
+                exc_info=True,
+            )
     return None
 
 
 def _log_context(signature_payload: Mapping[str, object]) -> str:
     endpoint = signature_payload.get("endpoint", "?")
-    url = signature_payload.get("url") or signature_payload.get("request_url") or "?"
     provider = signature_payload.get("provider")
+
+    # serpapi has no url parameter, so we use the search query
+    if provider == "serpapi" and (q := signature_payload.get("q")):
+        url = f"q={q}"
+    else:
+        url = (
+            signature_payload.get("url") or signature_payload.get("request_url") or "?"
+        )
+
     if provider:
         return f"provider={provider} endpoint={endpoint} url={url}"
     return f"endpoint={endpoint} url={url}"
@@ -98,7 +123,7 @@ def cached_external_call(
             # Bypass cache if disabled
             if not _USE_CACHE:
                 return await func(*args, **kwargs)
-            
+
             async def call_uncached() -> R:
                 return await func(*args, **kwargs)
 
@@ -107,12 +132,16 @@ def cached_external_call(
                 try:
                     signature_payload = key_builder(*args, **kwargs)
                 except Exception:
-                    logger.exception(f"key_builder failed for {func.__name__}; bypassing cache")
+                    logger.exception(
+                        f"key_builder failed for {func.__name__}; bypassing cache"
+                    )
                     return await call_uncached()
             else:
                 sp = kwargs.get("signature_payload")
                 if not isinstance(sp, Mapping):
-                    logger.warning(f"No/invalid signature_payload for {func.__name__}; bypassing cache")
+                    logger.warning(
+                        f"No/invalid signature_payload for {func.__name__}; bypassing cache"
+                    )
                     return await call_uncached()
                 signature_payload = cast(Mapping[str, object], sp)
 
@@ -121,7 +150,9 @@ def cached_external_call(
                 cache = _get_cache()
                 cache_key = build_cache_key(signature_payload)
             except Exception:
-                logger.exception(f"Cache init/key build failed for {func.__name__}; bypassing cache")
+                logger.exception(
+                    f"Cache init/key build failed for {func.__name__}; bypassing cache"
+                )
                 return await call_uncached()
 
             ctx = _log_context(signature_payload)
@@ -130,7 +161,9 @@ def cached_external_call(
             try:
                 cached_value = await _cache_get_or_purge(cache, cache_key)
             except Exception:
-                logger.exception(f"Cache get failed for {func.__name__}; bypassing cache ({ctx})")
+                logger.exception(
+                    f"Cache get failed for {func.__name__}; bypassing cache ({ctx})"
+                )
                 return await call_uncached()
 
             if cached_value is not None:
@@ -155,11 +188,15 @@ def cached_external_call(
                         await cache.set(cache_key, result, ttl=ttl)
                         logger.info(f"Computed and cached result for {ctx}")
                     except Exception:
-                        logger.exception(f"Cache set failed for {func.__name__} (continuing) ({ctx})")
+                        logger.exception(
+                            f"Cache set failed for {func.__name__} (continuing) ({ctx})"
+                        )
 
                     return result
             except Exception:
-                logger.debug(f"Lock path failed for {func.__name__}; waiting up to {wait_timeout:.1f}s ({ctx})")
+                logger.debug(
+                    f"Lock path failed for {func.__name__}; waiting up to {wait_timeout:.1f}s ({ctx})"
+                )
 
             # 5) wait/poll
             v = await _wait_for_cache(cache, cache_key, wait_timeout, poll_interval)
@@ -168,13 +205,20 @@ def cached_external_call(
                 return cast(R, v)
 
             # 6) fallback compute
-            logger.info(f"Cache unavailable (timeout); computing without cache for {ctx}")
+            logger.info(
+                f"Cache unavailable (timeout); computing without cache for {ctx}"
+            )
             result = await call_uncached()
             try:
                 await cache.set(cache_key, result, ttl=ttl)
                 logger.info(f"Computed and cached result (post-timeout) for {ctx}")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "Post-timeout cache set failed for %s (ignored): %s",
+                    ctx,
+                    exc,
+                    exc_info=True,
+                )
             return result
 
         return wrapper

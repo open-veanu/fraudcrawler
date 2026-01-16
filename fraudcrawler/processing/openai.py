@@ -66,7 +66,8 @@ class OpenAIWorkflow(Workflow):
             "generation_params": {
                 k: v
                 for k, v in kwargs.items()
-                if k in ("temperature", "top_p", "seed", "max_tokens", "response_format")
+                if k
+                in ("temperature", "top_p", "seed", "max_tokens", "response_format")
             },
         }
     )
@@ -112,7 +113,12 @@ class OpenAIWorkflow(Workflow):
         return response
 
     @cached_external_call(
-        key_builder=lambda self, system_prompt, user_prompt, response_format, context, **kwargs: {
+        key_builder=lambda self,
+        system_prompt,
+        user_prompt,
+        response_format,
+        context,
+        **kwargs: {
             "provider": "openai",
             "endpoint": "chat.completions.parse",
             "model": self._model,
@@ -199,7 +205,12 @@ class OpenAIWorkflow(Workflow):
         return input_param
 
     @cached_external_call(
-        key_builder=lambda self, image_url, system_prompt, user_prompt, context, **kwargs: {
+        key_builder=lambda self,
+        image_url,
+        system_prompt,
+        user_prompt,
+        context,
+        **kwargs: {
             "provider": "openai",
             "endpoint": "responses.create",
             "model": self._model,
@@ -279,7 +290,13 @@ class OpenAIWorkflow(Workflow):
         return response
 
     @cached_external_call(
-        key_builder=lambda self, image_url, system_prompt, user_prompt, text_format, context, **kwargs: {
+        key_builder=lambda self,
+        image_url,
+        system_prompt,
+        user_prompt,
+        text_format,
+        context,
+        **kwargs: {
             "provider": "openai",
             "endpoint": "responses.parse",
             "model": self._model,
