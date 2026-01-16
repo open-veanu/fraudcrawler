@@ -10,6 +10,7 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
 from fraudcrawler.base.base import Location, Language
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache.external_response_cache import cached_external_call
 
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,18 @@ class Enricher:
                 logger.warning(f"Ignoring keyword due to error: {e}.")
         return keywords
 
+    @cached_external_call(
+        key_builder=lambda self, search_term, language, location, limit: {
+            "provider": "dataforseo",
+            "endpoint": "keyword_suggestions",
+            "keyword": search_term,
+            "language_name": language.name,
+            "location_name": location.name,
+            "limit": limit,
+            "include_serp_info": True,
+            "include_seed_keyword": True,
+        }
+    )
     async def _get_suggested_keywords(
         self,
         search_term: str,
@@ -244,6 +257,16 @@ class Enricher:
                 logger.warning(f"Ignoring keyword due to error: {e}.")
         return keywords
 
+    @cached_external_call(
+        key_builder=lambda self, search_term, language, location, limit: {
+            "provider": "dataforseo",
+            "endpoint": "related_keywords",
+            "keyword": search_term,
+            "language_name": language.name,
+            "location_name": location.name,
+            "limit": limit,
+        }
+    )
     async def _get_related_keywords(
         self,
         search_term: str,

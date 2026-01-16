@@ -1,4 +1,5 @@
 from copy import deepcopy
+import hashlib
 import logging
 from pydantic import BaseModel
 from typing import List, Literal
@@ -15,6 +16,7 @@ from openai.types.responses import (
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache.external_response_cache import cached_external_call
 from fraudcrawler.processing.base import (
     ClassificationResult,
     UserInputs,
@@ -52,6 +54,22 @@ class OpenAIWorkflow(Workflow):
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
 
+    @cached_external_call(
+        key_builder=lambda self, system_prompt, user_prompt, context, **kwargs: {
+            "provider": "openai",
+            "endpoint": "chat.completions.create",
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "generation_params": {
+                k: v
+                for k, v in kwargs.items()
+                if k in ("temperature", "top_p", "seed", "max_tokens", "response_format")
+            },
+        }
+    )
     async def _chat_completions_create(
         self,
         system_prompt: str,
@@ -93,6 +111,23 @@ class OpenAIWorkflow(Workflow):
                 )
         return response
 
+    @cached_external_call(
+        key_builder=lambda self, system_prompt, user_prompt, response_format, context, **kwargs: {
+            "provider": "openai",
+            "endpoint": "chat.completions.parse",
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "response_format": response_format.__name__ if response_format else None,
+            "generation_params": {
+                k: v
+                for k, v in kwargs.items()
+                if k in ("temperature", "top_p", "seed", "max_tokens")
+            },
+        }
+    )
     async def _chat_completions_parse(
         self,
         system_prompt: str,
@@ -163,6 +198,21 @@ class OpenAIWorkflow(Workflow):
         ]
         return input_param
 
+    @cached_external_call(
+        key_builder=lambda self, image_url, system_prompt, user_prompt, context, **kwargs: {
+            "provider": "openai",
+            "endpoint": "responses.create",
+            "model": self._model,
+            "image_url_hash": hashlib.sha256(image_url.encode("utf-8")).hexdigest(),
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "generation_params": {
+                k: v
+                for k, v in kwargs.items()
+                if k in ("temperature", "top_p", "seed", "max_tokens")
+            },
+        }
+    )
     async def _responses_create(
         self,
         image_url: str,
@@ -228,6 +278,22 @@ class OpenAIWorkflow(Workflow):
                 )
         return response
 
+    @cached_external_call(
+        key_builder=lambda self, image_url, system_prompt, user_prompt, text_format, context, **kwargs: {
+            "provider": "openai",
+            "endpoint": "responses.parse",
+            "model": self._model,
+            "image_url_hash": hashlib.sha256(image_url.encode("utf-8")).hexdigest(),
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "text_format": text_format.__name__ if text_format else None,
+            "generation_params": {
+                k: v
+                for k, v in kwargs.items()
+                if k in ("temperature", "top_p", "seed", "max_tokens")
+            },
+        }
+    )
     async def _responses_parse(
         self,
         image_url: str,

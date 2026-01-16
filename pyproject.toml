@@ -27,6 +27,8 @@ openai = "^1.68.2"
 beautifulsoup4 = "^4.13.4"
 tenacity = "^9.1.2"
 httpx = "^0.28.1"
+aiocache = "^0.12.2"
+redis = "^5.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest-cov = "^6.0.0"

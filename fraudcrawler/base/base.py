@@ -46,6 +46,9 @@ class Setup(BaseSettings):
     zyteapi_key: str
     openaiapi_key: str
     pypy_token: str
+    redis_url: str
+    redis_use_cache: bool
+    redis_cache_ttl: int
 
     class Config:
         env_file = ".env"

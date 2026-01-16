@@ -17,6 +17,7 @@ from fraudcrawler.settings import (
 )
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache.external_response_cache import cached_external_call
 from fraudcrawler.scraping.zyte import ZyteAPI
 
 logger = logging.getLogger(__name__)
@@ -192,6 +193,22 @@ class SerpAPI(SearchEngine):
             return "google.com.ar"
         return f"google.{location.code}"
 
+    @cached_external_call(
+        key_builder=lambda self, search_string, language, location, num_results: {
+            "provider": "serpapi",
+            "endpoint": "search",
+            "engine": self._engine,
+            "q": search_string,
+            "google_domain": self._get_google_domain(location),
+            "location_requested": location.name,
+            "location_used": location.name,
+            "tbs": f"ctr:{location.code.upper()}",
+            "cr": f"country{location.code.upper()}",
+            "gl": location.code,
+            "hl": language.code,
+            "num": num_results,
+        }
+    )
     async def _search(
         self,
         search_string: str,
@@ -658,6 +675,13 @@ class Searcher(DomainUtils):
             zyteapi_key=zyteapi_key,
         )
 
+    @cached_external_call(
+        key_builder=lambda self, url: {
+            "provider": "serpapi",
+            "endpoint": "google_immersive_product",
+            "url": url,  # URL already contains page_token and other params
+        }
+    )
     async def _post_search_google_shopping_immersive(self, url: str) -> List[str]:
         """Post-search for product URLs from a Google Shopping immersive product page.
 

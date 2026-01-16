@@ -9,6 +9,7 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
 from fraudcrawler.base.base import DomainUtils, ProductItem
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache.external_response_cache import cached_external_call
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +260,14 @@ class ZyteAPI(DomainUtils):
 
         return b64decode(details["httpResponseBody"])
 
+    @cached_external_call(
+        key_builder=lambda self, url: {
+            "provider": "zyte",
+            "endpoint": "extract",
+            "url": url,
+            "config": self._config,
+        }
+    )
     async def details(self, url: str) -> dict:
         """Fetches product details for a single URL.
 
