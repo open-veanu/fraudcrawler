@@ -38,8 +38,10 @@ def _get_cache() -> Cache:
 
 
 def build_cache_key(signature_payload: Mapping[str, object]) -> str:
+    # Exclude logging-only fields from cache key
+    payload_for_key = {k: v for k, v in signature_payload.items() if k != "url"}
     serialized = json.dumps(
-        signature_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        payload_for_key, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
@@ -93,16 +95,15 @@ async def _wait_for_cache(
 
 
 def _log_context(signature_payload: Mapping[str, object]) -> str:
-    endpoint = signature_payload.get("endpoint", "?")
+    endpoint = str(signature_payload.get("endpoint", "?"))
     provider = signature_payload.get("provider")
 
     # serpapi has no url parameter, so we use the search query
     if provider == "serpapi" and (q := signature_payload.get("q")):
         url = f"q={q}"
     else:
-        url = (
-            signature_payload.get("url") or signature_payload.get("request_url") or "?"
-        )
+        url_val = signature_payload.get("url") or signature_payload.get("request_url")
+        url = str(url_val) if url_val is not None else "?"
 
     if provider:
         return f"provider={provider} endpoint={endpoint} url={url}"

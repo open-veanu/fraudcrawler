@@ -69,6 +69,7 @@ class OpenAIWorkflow(Workflow):
                 if k
                 in ("temperature", "top_p", "seed", "max_tokens", "response_format")
             },
+            "url": context.get("product.url", "") if isinstance(context, dict) else "",
         }
     )
     async def _chat_completions_create(

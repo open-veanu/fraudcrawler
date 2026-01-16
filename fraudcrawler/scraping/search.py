@@ -531,8 +531,8 @@ class Toppreise(SearchEngine):
             if (
                 hasattr(link, "get")  # Ensure we have a Tag object with href attribute
                 and (href := link.get("href"))  # Ensure href is not None
-                and not href.startswith("javascript:")  # Skip javascript links
                 and isinstance(href, str)  # Ensure href is a string
+                and not href.startswith("javascript:")  # Skip javascript links
                 # Make sure the link is either an external product link (href contains 'ext_')
                 # or is a search result link (href contains 'preisvergleich', 'comparison-prix', or 'price-comparison')
                 and (
