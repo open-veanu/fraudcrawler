@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 Context: TypeAlias = Dict[str, str]
-UserInputs: TypeAlias = Dict[str, List[str]]
+UserInputs: TypeAlias = Dict[str, str | List[str]]
 
 
 class ClassificationResult(BaseModel):
