@@ -10,7 +10,7 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
 from fraudcrawler.base.base import Location, Language
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.cache.redis import RedisCacher
+from fraudcrawler.cache.redis_cache import RedisCacher
 
 
 logger = logging.getLogger(__name__)

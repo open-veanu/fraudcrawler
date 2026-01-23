@@ -3,42 +3,33 @@ import hashlib
 import json
 import logging
 import os
-from abc import ABC, abstractmethod
-from typing import Awaitable, Callable, Mapping, Optional, ParamSpec, TypeVar, cast
+from typing import Awaitable, Callable, Mapping, Optional, TypeVar, cast
 
 from aiocache import Cache
 from aiocache.lock import RedLock
 from aiocache.serializers import PickleSerializer
+import redis.asyncio as redis
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-P = ParamSpec("P")
 R = TypeVar("R")
 
 
-class RedisCacher(ABC):
-    """Mixin class that provides Redis caching functionality.
-
-    Components can inherit from this class to get access to the `capply()` method
+class RedisCacher:
+    """Components can inherit from this class to get access to the `capply()` method
     for caching any async method call. Cache behavior is configured via `__init__`
     parameters with sensible defaults from environment variables.
     """
-
-    # Default cache settings
-    DEFAULT_LOCK_LEASE = 60
-    WAIT_TIMEOUT = 30.0
-    POLL_INTERVAL = 0.2
-    DEFAULT_REDIS_URL = "redis://localhost:6379/0"
-    DEFAULT_REDIS_CACHE_TTL = 86400  # 24 hours
 
     def __init__(
         self,
         use_cache: bool | None = None,
         redis_url: str | None = None,
         redis_cache_ttl: int | None = None,
-        lock_lease: int = DEFAULT_LOCK_LEASE,
-        wait_timeout: float = WAIT_TIMEOUT,
-        poll_interval: float = POLL_INTERVAL,
+        lock_lease: int = 60,
+        wait_timeout: float = 30.0,
+        poll_interval: float = 0.2,
     ):
         """Initialize RedisCacher with cache configuration.
 
@@ -46,41 +37,76 @@ class RedisCacher(ABC):
             use_cache: Whether to enable caching. Defaults to REDIS_USE_CACHE env var or True.
             redis_url: Redis connection URL. Defaults to REDIS_URL env var or localhost.
             redis_cache_ttl: Time-to-live for cache entries in seconds. Defaults to REDIS_CACHE_TTL env var or 86400.
-            lock_lease: Lock lease time in seconds.
-            wait_timeout: Maximum time to wait for cache in seconds.
-            poll_interval: Interval between cache polls in seconds.
+            lock_lease: Lock lease time in seconds. Defaults to 60.
+            wait_timeout: Maximum time to wait for cache in seconds. Defaults to 30.0.
+            poll_interval: Interval between cache polls in seconds. Defaults to 0.2.
         """
         if use_cache is None:
             use_cache_str = os.getenv("REDIS_USE_CACHE", "true")
             self._use_cache = use_cache_str.lower() in ("true", "1", "yes", "on")
         else:
             self._use_cache = use_cache
-        self._redis_url = redis_url or os.getenv("REDIS_URL", self.DEFAULT_REDIS_URL)
-        self._ttl = redis_cache_ttl or int(
-            os.getenv("REDIS_CACHE_TTL", str(self.DEFAULT_REDIS_CACHE_TTL))
-        )
+
+        self._url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        self._ttl = redis_cache_ttl or int(os.getenv("REDIS_CACHE_TTL", "86400"))
+        # Validate parameters
+        if lock_lease <= 0:
+            raise ValueError("lock_lease must be positive")
+        if wait_timeout <= 0:
+            raise ValueError("wait_timeout must be positive")
+        if poll_interval <= 0:
+            raise ValueError("poll_interval must be positive")
+
         self._lock_lease = lock_lease
         self._wait_timeout = wait_timeout
         self._poll_interval = poll_interval
 
         # Initialize cache instance if caching is enabled
         self._cache: Optional[Cache] = None
+        self._redis_unavailable = False  # Track if we've detected Redis is unavailable
         if self._use_cache:
-            try:
-                self._cache = Cache.from_url(self._redis_url)
-                self._cache.namespace = "resp_cache"
-                self._cache.serializer = PickleSerializer()
-                logger.info(
-                    f"Initialized Redis cache for {self.__class__.__name__}: "
-                    f"{self._redis_url} (namespace={self._cache.namespace})"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to initialize Redis cache for {self.__class__.__name__}: {e}. "
-                    "Caching will be disabled."
-                )
+            self._cache = self._create_cache(self._url)
+            if self._cache is None:
                 self._use_cache = False
-                self._cache = None
+                self._redis_unavailable = True
+
+    @staticmethod
+    def _create_cache(redis_url: str) -> Optional[Cache]:
+        """Create a Redis cache instance from a Redis URL."""
+        try:
+            # Parse Redis URL to extract connection parameters
+            parsed = urlparse(redis_url)
+            endpoint = parsed.hostname or "localhost"
+            port = parsed.port or 6379
+            password = parsed.password
+            db = (
+                int(parsed.path.lstrip("/"))
+                if parsed.path and parsed.path != "/"
+                else 0
+            )
+
+            # Create cache with RedisCache backend and explicit timeout configuration
+            cache_kwargs = {
+                "endpoint": endpoint,
+                "port": port,
+                "db": db,
+                "namespace": "resp_cache",
+            }
+            # Only include password if provided in URL
+            if password:
+                cache_kwargs["password"] = password
+
+            cache = Cache(Cache.REDIS, **cache_kwargs)
+            cache.serializer = PickleSerializer()
+            logger.info(
+                f"Initialized Redis cache: {redis_url} (namespace={cache.namespace})"
+            )
+            return cache
+        except Exception as e:
+            logger.warning(
+                f"Failed to initialize Redis cache: {e}. Caching will be disabled."
+            )
+            return None
 
     async def capply(
         self,
@@ -95,21 +121,6 @@ class RedisCacher(ABC):
             key_builder: Required function that builds the cache key from args/kwargs.
             *args: Positional arguments to pass to the function.
             func: Function to cache. If None, uses self.apply().
-            **kwargs: Keyword arguments to pass to the function.
-
-        Returns:
-            Result from the function, potentially from cache.
-        """
-        if func is None:
-            target_func = self.apply
-        else:
-            target_func = func
-        """Cache a call to self.apply() or a provided function.
-
-        Args:
-            key_builder: Required function that builds the cache key from args/kwargs.
-            *args: Positional arguments to pass to the function.
-            func: Optional function to cache. If None, uses self.apply().
             **kwargs: Keyword arguments to pass to the function.
 
         Returns:
@@ -158,8 +169,16 @@ class RedisCacher(ABC):
         # Try to get from cache
         try:
             cached_value = await self._cache_get_or_purge(cache_key)
-        except Exception:
-            logger.exception(
+        except Exception as e:
+            if not self._redis_unavailable:
+                # First time detecting Redis is unavailable - log prominently
+                logger.error(
+                    f"Redis connection failed for {self.__class__.__name__}. "
+                    f"Cannot connect to {self._url}. "
+                    f"All cache operations will be bypassed. Error: {e}"
+                )
+                self._redis_unavailable = True
+            logger.warning(
                 f"Cache get failed for {self.__class__.__name__}.apply; "
                 f"bypassing cache ({ctx})"
             )
@@ -194,7 +213,7 @@ class RedisCacher(ABC):
 
                 return result
         except Exception:
-            logger.debug(
+            logger.warning(
                 f"Lock path failed for {self.__class__.__name__}.apply; "
                 f"waiting up to {self._wait_timeout:.1f}s ({ctx})"
             )
@@ -218,10 +237,12 @@ class RedisCacher(ABC):
             )
         return result
 
-    @abstractmethod
     async def apply(self, *args, **kwargs):
-        """The 'Implementation'. Each child must define this."""
+        """The 'Implementation'. Each child should define this, or use capply() with func= parameter.
 
+        This method can be overridden by subclasses. If not overridden and capply() is called
+        without a func= parameter, a NotImplementedError will be raised.
+        """
         raise NotImplementedError(
             f"{self.__class__.__name__}.apply() not implemented. "
             "Either implement apply() or use capply() with func= parameter."
@@ -229,7 +250,6 @@ class RedisCacher(ABC):
 
     def _build_cache_key(self, signature_payload: Mapping[str, object]) -> str:
         """Build a cache key from signature payload, namespaced by class name."""
-
         # Exclude logging-only fields from cache key
         payload_for_key = {k: v for k, v in signature_payload.items() if k != "url"}
         serialized = json.dumps(
@@ -240,8 +260,82 @@ class RedisCacher(ABC):
         # Namespace by class name and include redis_url identifier to avoid collisions
         class_name = self.__class__.__name__
         # Use a hash of redis_url to keep key reasonable length
-        redis_id = hashlib.sha256(self._redis_url.encode("utf-8")).hexdigest()[:8]
+        redis_id = hashlib.sha256(self._url.encode("utf-8")).hexdigest()[:8]
         return f"{class_name}:{redis_id}:{payload_hash}"
+
+    async def test_connection(self, timeout: float = 2.0) -> bool:
+        """Test if Redis connection is available.
+
+        Args:
+            timeout: Maximum time to wait for connection test in seconds. Defaults to 2.0.
+
+        Returns:
+            True if Redis is available and working, False otherwise.
+        """
+        if not self._use_cache or self._cache is None:
+            return False
+
+        # Use redis-py directly for a more reliable connection test
+        # This bypasses aiocache's potential connection pooling/caching issues
+        test_client = None
+        try:
+            # Create a direct Redis client connection to test
+            # Use single_connection_client=True to avoid connection pooling issues
+            # and ensure we test the actual connection immediately
+            test_client = redis.from_url(
+                self._url,
+                socket_connect_timeout=timeout,
+                socket_timeout=timeout,
+                decode_responses=False,  # aiocache uses decode_responses=False
+                single_connection_client=True,  # Force single connection for testing
+            )
+
+            # Try to ping Redis with timeout - this will force a connection attempt
+            ping_result = await asyncio.wait_for(test_client.ping(), timeout=timeout)
+
+            if ping_result:
+                self._redis_unavailable = False
+                return True
+            return False
+        except asyncio.TimeoutError:
+            self._handle_connection_error(
+                f"Redis connection test timed out for {self.__class__.__name__}. "
+                f"Cannot connect to {self._url} within {timeout}s. "
+                "Redis appears to be unavailable."
+            )
+            return False
+        except (
+            redis.ConnectionError,
+            redis.TimeoutError,
+            OSError,
+            ConnectionRefusedError,
+        ) as e:
+            # These are expected when Redis is down
+            self._handle_connection_error(
+                f"Redis connection test failed for {self.__class__.__name__}. "
+                f"Cannot connect to {self._url}. Error: {e}"
+            )
+            return False
+        except Exception as e:
+            # Catch any other unexpected errors
+            self._handle_connection_error(
+                f"Redis connection test failed for {self.__class__.__name__}. "
+                f"Cannot connect to {self._url}. Error: {e}"
+            )
+            return False
+        finally:
+            # Clean up the test client
+            if test_client is not None:
+                try:
+                    await test_client.aclose()
+                except Exception:
+                    pass  # Ignore errors during cleanup
+
+    def _handle_connection_error(self, message: str) -> None:
+        """Handle Redis connection error by logging and updating availability status."""
+        if not self._redis_unavailable:
+            logger.error(message)
+        self._redis_unavailable = True
 
     @staticmethod
     def _is_incompatible_cache_entry_error(e: Exception) -> bool:
@@ -251,8 +345,13 @@ class RedisCacher(ABC):
         return ("UnpicklingError" in name) or ("invalid load key" in msg)
 
     async def _cache_get_or_purge(self, key: str) -> object | None:
-        """Get cached value, purging if incompatible. Returns cached value if present. If entry exists but can't be deserialized
-        due to serializer mismatch, delete and treat as miss. Return cached value or None.
+        """Get cached value, purging if incompatible.
+
+        Returns cached value if present. If entry exists but can't be deserialized
+        due to serializer mismatch, delete and treat as miss.
+
+        Returns:
+            Cached value or None.
         """
         if self._cache is None:
             return None
@@ -273,12 +372,15 @@ class RedisCacher(ABC):
 
     async def _wait_for_cache(self, key: str) -> object | None:
         """Wait for cache entry to appear, polling at intervals."""
-
         if self._cache is None:
             return None
 
-        deadline = asyncio.get_event_loop().time() + self._wait_timeout
-        while asyncio.get_event_loop().time() < deadline:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+        deadline = loop.time() + self._wait_timeout
+        while loop.time() < deadline:
             await asyncio.sleep(self._poll_interval)
             try:
                 v = await self._cache_get_or_purge(key)
@@ -294,7 +396,6 @@ class RedisCacher(ABC):
     @staticmethod
     def _log_context(signature_payload: Mapping[str, object]) -> str:
         """Build a log context string from signature payload."""
-
         endpoint = str(signature_payload.get("endpoint", "?"))
         provider = signature_payload.get("provider")
 
@@ -310,3 +411,17 @@ class RedisCacher(ABC):
         if provider:
             return f"provider={provider} endpoint={endpoint} url={url}"
         return f"endpoint={endpoint} url={url}"
+
+
+if __name__ == "__main__":
+
+    async def main():
+        print("Testing Redis connection...")
+        cacher = RedisCacher()
+        is_available = await cacher.test_connection()
+        if is_available:
+            print("Redis connection test: Available")
+        else:
+            print("Redis connection test: Unavailable (caching will be bypassed)")
+
+    asyncio.run(main())

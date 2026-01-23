@@ -58,7 +58,7 @@ REDIS_URL=redis://localhost:6379/0  # optional, for response caching
 Fraudcrawler uses Redis-backed caching to avoid duplicate expensive API calls when re-running pipelines during debugging. External API responses (OpenAI, Zyte, SerpAPI, DataForSEO) are automatically cached with a default 24-hour TTL.
 
 **Setup:**
-- Install Redis locally via docker: `docker run -d -p 6379:6379 redis:latest` or use a cloud Redis instance
+- Install Redis locally via docker: `docker run -d -p 6379:6379 redis:8` or use a cloud Redis instance
 - Set `REDIS_USE_CACHE` in your `.env` file (defaults to `true`, switch to `false`if you do not want to use the cache)
 - Set `REDIS_URL` in your `.env` file (defaults to `redis://localhost:6379/0` if not set)
 - Set `REDIS_CACHE_TTL` in your `.env` file (defaults to `86400` which is 24h if not set)

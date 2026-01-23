@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Sequence, TypeAlias
 from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
-from fraudcrawler.cache.redis import RedisCacher
+from fraudcrawler.cache.redis_cache import RedisCacher
 
 logger = logging.getLogger(__name__)
 
