@@ -223,7 +223,13 @@ class SerpAPI(SearchEngine):
             api_key: The API key to use for the search.
         """
         if self._cache_helper:
-            def key_builder(search_string: str, language: Language, location: Location, num_results: int) -> dict:
+
+            def key_builder(
+                search_string: str,
+                language: Language,
+                location: Location,
+                num_results: int,
+            ) -> dict:
                 return {
                     "provider": "serpapi",
                     "endpoint": "search",
@@ -238,7 +244,7 @@ class SerpAPI(SearchEngine):
                     "hl": language.code,
                     "num": num_results,
                 }
-            
+
             async def _search_impl(
                 search_string: str,
                 language: Language,
@@ -288,7 +294,7 @@ class SerpAPI(SearchEngine):
                     f'Found total of {len(urls)} URLs from SerpAPI search for q="{search_string}" and engine="{engine}".'
                 )
                 return urls
-            
+
             return await self._cache_helper(
                 _search_impl,
                 key_builder,
@@ -297,7 +303,7 @@ class SerpAPI(SearchEngine):
                 location,
                 num_results,
             )
-        
+
         # No caching - direct implementation
         engine = self._engine
 
@@ -355,7 +361,9 @@ class SerpAPIGoogle(SerpAPI):
             api_key: The API key for SerpAPI.
             cache_helper: Optional cache helper function for caching searches.
         """
-        super().__init__(http_client=http_client, api_key=api_key, cache_helper=cache_helper)
+        super().__init__(
+            http_client=http_client, api_key=api_key, cache_helper=cache_helper
+        )
 
     @property
     def _search_engine_name(self) -> str:
@@ -429,7 +437,9 @@ class SerpAPIGoogleShopping(SerpAPI):
             api_key: The API key for SerpAPI.
             cache_helper: Optional cache helper function for caching searches.
         """
-        super().__init__(http_client=http_client, api_key=api_key, cache_helper=cache_helper)
+        super().__init__(
+            http_client=http_client, api_key=api_key, cache_helper=cache_helper
+        )
 
     @property
     def _search_engine_name(self) -> str:
@@ -734,10 +744,14 @@ class Searcher(RedisCacher, DomainUtils):
         """
         RedisCacher.__init__(self)
         self._http_client = http_client
+
         # Create cache helper for SerpAPI instances
         async def cache_helper(func, key_builder, *args, **kwargs):
             return await self.capply(key_builder, *args, func=func, **kwargs)
-        self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key, cache_helper=cache_helper)
+
+        self._google = SerpAPIGoogle(
+            http_client=http_client, api_key=serpapi_key, cache_helper=cache_helper
+        )
         self._google_shopping = SerpAPIGoogleShopping(
             http_client=http_client,
             api_key=serpapi_key,
@@ -759,13 +773,14 @@ class Searcher(RedisCacher, DomainUtils):
         Args:
             url: The URL of the Google Shopping immersive product page.
         """
+
         def key_builder(url: str) -> dict:
             return {
                 "provider": "serpapi",
                 "endpoint": "google_immersive_product",
                 "url": url,  # URL already contains page_token and other params
             }
-        
+
         async def _post_search_google_shopping_immersive_impl(url: str) -> List[str]:
             # Add SerpAPI key to the url
             sep = "&" if "?" in url else "?"
@@ -776,12 +791,16 @@ class Searcher(RedisCacher, DomainUtils):
 
             # Get external product urls from the data
             data = response.json()
-            urls = self._google_shopping._extract_product_urls_from_immersive_product_api(
-                data=data
+            urls = (
+                self._google_shopping._extract_product_urls_from_immersive_product_api(
+                    data=data
+                )
             )
             return urls
-        
-        return await self.capply(key_builder, url, func=_post_search_google_shopping_immersive_impl)
+
+        return await self.capply(
+            key_builder, url, func=_post_search_google_shopping_immersive_impl
+        )
 
     async def _post_search_toppreise_comparison(self, url: str) -> List[str]:
         """Post-search for product URLs from a Toppreise product comparison page.

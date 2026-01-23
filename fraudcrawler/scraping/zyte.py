@@ -313,6 +313,7 @@ class ZyteAPI(RedisCacher, DomainUtils):
 
     async def details(self, url: str) -> dict:
         """Public method that calls apply() with caching."""
+
         def key_builder(url: str) -> dict:
             return {
                 "provider": "zyte",
@@ -320,5 +321,5 @@ class ZyteAPI(RedisCacher, DomainUtils):
                 "url": url,
                 "config": self._config,
             }
-        
+
         return await self.capply(key_builder, url)

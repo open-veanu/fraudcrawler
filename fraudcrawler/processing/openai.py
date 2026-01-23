@@ -71,7 +71,10 @@ class OpenAIWorkflow(Workflow):
             system_prompt: System prompt for the AI model.
             user_prompt: User prompt for the AI model.
         """
-        def key_builder(system_prompt: str, user_prompt: str, context: Context, **kwargs) -> dict:
+
+        def key_builder(
+            system_prompt: str, user_prompt: str, context: Context, **kwargs
+        ) -> dict:
             return {
                 "provider": "openai",
                 "endpoint": "chat.completions.create",
@@ -86,9 +89,11 @@ class OpenAIWorkflow(Workflow):
                     if k
                     in ("temperature", "top_p", "seed", "max_tokens", "response_format")
                 },
-                "url": context.get("product.url", "") if isinstance(context, dict) else "",
+                "url": context.get("product.url", "")
+                if isinstance(context, dict)
+                else "",
             }
-        
+
         async def _chat_completions_create() -> ChatCompletion:
             cntx = deepcopy(context)
             cntx["endpoint"] = "chat.completions.create"
@@ -116,7 +121,7 @@ class OpenAIWorkflow(Workflow):
                         **kwargs,
                     )
             return response
-        
+
         return await self.capply(key_builder, func=_chat_completions_create)
 
     async def _chat_completions_parse(
@@ -135,7 +140,14 @@ class OpenAIWorkflow(Workflow):
             response_format: The model into which the response should be parsed.
             context: Logging context for retry logs.
         """
-        def key_builder(system_prompt: str, user_prompt: str, response_format: type[BaseModel], context: Context, **kwargs) -> dict:
+
+        def key_builder(
+            system_prompt: str,
+            user_prompt: str,
+            response_format: type[BaseModel],
+            context: Context,
+            **kwargs,
+        ) -> dict:
             return {
                 "provider": "openai",
                 "endpoint": "chat.completions.parse",
@@ -144,14 +156,16 @@ class OpenAIWorkflow(Workflow):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                "response_format": response_format.__name__ if response_format else None,
+                "response_format": response_format.__name__
+                if response_format
+                else None,
                 "generation_params": {
                     k: v
                     for k, v in kwargs.items()
                     if k in ("temperature", "top_p", "seed", "max_tokens")
                 },
             }
-        
+
         async def impl() -> ParsedChatCompletion:
             cntx = deepcopy(context)
             cntx["endpoint"] = "chat.completions.parse"
@@ -178,7 +192,7 @@ class OpenAIWorkflow(Workflow):
                         **kwargs,
                     )
             return response
-        
+
         return await self.capply(key_builder, func=impl)
 
     @staticmethod
@@ -242,7 +256,14 @@ class OpenAIWorkflow(Workflow):
 
             The extracted text can be obtained by `response.output_text`
         """
-        def key_builder(image_url: str, system_prompt: str, user_prompt: str, context: Context, **kwargs) -> dict:
+
+        def key_builder(
+            image_url: str,
+            system_prompt: str,
+            user_prompt: str,
+            context: Context,
+            **kwargs,
+        ) -> dict:
             return {
                 "provider": "openai",
                 "endpoint": "responses.create",
@@ -256,7 +277,7 @@ class OpenAIWorkflow(Workflow):
                     if k in ("temperature", "top_p", "seed", "max_tokens")
                 },
             }
-        
+
         async def impl(*_args, **_kwargs) -> Response:
             # Prepare variables
             cntx = deepcopy(context)
@@ -289,7 +310,7 @@ class OpenAIWorkflow(Workflow):
                         **kwargs,
                     )
             return response
-        
+
         return await self.capply(key_builder, func=impl)
 
     async def _responses_parse(
@@ -313,7 +334,15 @@ class OpenAIWorkflow(Workflow):
         Note:
             (c.f. :func:`_responses_create`)
         """
-        def key_builder(image_url: str, system_prompt: str, user_prompt: str, text_format: type[BaseModel], context: Context, **kwargs) -> dict:
+
+        def key_builder(
+            image_url: str,
+            system_prompt: str,
+            user_prompt: str,
+            text_format: type[BaseModel],
+            context: Context,
+            **kwargs,
+        ) -> dict:
             return {
                 "provider": "openai",
                 "endpoint": "responses.parse",
@@ -328,7 +357,7 @@ class OpenAIWorkflow(Workflow):
                     if k in ("temperature", "top_p", "seed", "max_tokens")
                 },
             }
-        
+
         async def impl(*_args, **_kwargs) -> ParsedResponse:
             # Prepare variables
             cntx = deepcopy(context)
@@ -361,7 +390,7 @@ class OpenAIWorkflow(Workflow):
                         **kwargs,
                     )
             return response
-        
+
         return await self.capply(key_builder, func=impl)
 
     @staticmethod

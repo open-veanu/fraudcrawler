@@ -56,7 +56,9 @@ class RedisCacher(ABC):
         else:
             self._use_cache = use_cache
         self._redis_url = redis_url or os.getenv("REDIS_URL", self.DEFAULT_REDIS_URL)
-        self._ttl = redis_cache_ttl or int(os.getenv("REDIS_CACHE_TTL", str(self.DEFAULT_REDIS_CACHE_TTL)))
+        self._ttl = redis_cache_ttl or int(
+            os.getenv("REDIS_CACHE_TTL", str(self.DEFAULT_REDIS_CACHE_TTL))
+        )
         self._lock_lease = lock_lease
         self._wait_timeout = wait_timeout
         self._poll_interval = poll_interval
@@ -114,7 +116,7 @@ class RedisCacher(ABC):
             Result from the function, potentially from cache.
         """
         target_func = func if func is not None else self.apply
-        
+
         if not self._use_cache:
             return await target_func(*args, **kwargs)
 
@@ -204,9 +206,7 @@ class RedisCacher(ABC):
             return cast(R, v)
 
         # Fallback compute
-        logger.info(
-            f"Cache unavailable (timeout); computing without cache for {ctx}"
-        )
+        logger.info(f"Cache unavailable (timeout); computing without cache for {ctx}")
         result = await call_uncached()
         try:
             await self._cache.set(cache_key, result, ttl=self._ttl)
@@ -218,7 +218,6 @@ class RedisCacher(ABC):
             )
         return result
 
-        
     @abstractmethod
     async def apply(self, *args, **kwargs):
         """The 'Implementation'. Each child must define this."""
@@ -272,10 +271,8 @@ class RedisCacher(ABC):
                 return None
             raise
 
-    async def _wait_for_cache(
-        self, key: str
-    ) -> object | None:
-        """Wait for cache entry to appear, polling at intervals. """
+    async def _wait_for_cache(self, key: str) -> object | None:
+        """Wait for cache entry to appear, polling at intervals."""
 
         if self._cache is None:
             return None
@@ -305,7 +302,9 @@ class RedisCacher(ABC):
         if provider == "serpapi" and (q := signature_payload.get("q")):
             url = f"q={q}"
         else:
-            url_val = signature_payload.get("url") or signature_payload.get("request_url")
+            url_val = signature_payload.get("url") or signature_payload.get(
+                "request_url"
+            )
             url = str(url_val) if url_val is not None else "?"
 
         if provider:

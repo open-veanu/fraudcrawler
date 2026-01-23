@@ -158,7 +158,10 @@ class Enricher(RedisCacher):
             location: The location to use for the search.
             limit: The upper limit of suggestions to get.
         """
-        def key_builder(search_term: str, language: Language, location: Location, limit: int) -> dict:
+
+        def key_builder(
+            search_term: str, language: Language, location: Location, limit: int
+        ) -> dict:
             return {
                 "provider": "dataforseo",
                 "endpoint": "keyword_suggestions",
@@ -169,7 +172,7 @@ class Enricher(RedisCacher):
                 "include_serp_info": True,
                 "include_seed_keyword": True,
             }
-        
+
         async def _get_suggested_keywords_impl(
             search_term: str,
             language: Language,
@@ -215,7 +218,7 @@ class Enricher(RedisCacher):
 
             logger.debug(f"Found {len(keywords)} suggestions from DataForSEO search.")
             return keywords
-        
+
         return await self.capply(
             key_builder,
             search_term,
@@ -292,7 +295,10 @@ class Enricher(RedisCacher):
             language: The language to use for the search.
             limit: The upper limit of suggestions to get.
         """
-        def key_builder(search_term: str, language: Language, location: Location, limit: int) -> dict:
+
+        def key_builder(
+            search_term: str, language: Language, location: Location, limit: int
+        ) -> dict:
             return {
                 "provider": "dataforseo",
                 "endpoint": "related_keywords",
@@ -301,7 +307,7 @@ class Enricher(RedisCacher):
                 "location_name": location.name,
                 "limit": limit,
             }
-        
+
         async def _get_related_keywords_impl(
             search_term: str,
             language: Language,
@@ -343,9 +349,11 @@ class Enricher(RedisCacher):
             data_related_keywords = response.json()
             keywords = self._extract_related_keywords(data=data_related_keywords)
 
-            logger.debug(f"Found {len(keywords)} related keywords from DataForSEO search.")
+            logger.debug(
+                f"Found {len(keywords)} related keywords from DataForSEO search."
+            )
             return keywords
-        
+
         return await self.capply(
             key_builder,
             search_term,
@@ -425,7 +433,10 @@ class Enricher(RedisCacher):
         n_terms: int,
     ) -> List[str]:
         """Public method that calls apply() with caching."""
-        def key_builder(search_term: str, language: Language, location: Location, n_terms: int) -> dict:
+
+        def key_builder(
+            search_term: str, language: Language, location: Location, n_terms: int
+        ) -> dict:
             return {
                 "provider": "dataforseo",
                 "endpoint": "enrich",
@@ -434,5 +445,5 @@ class Enricher(RedisCacher):
                 "location_name": location.name,
                 "n_terms": n_terms,
             }
-        
+
         return await self.capply(key_builder, search_term, language, location, n_terms)
