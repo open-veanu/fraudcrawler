@@ -17,7 +17,7 @@ from fraudcrawler.settings import (
 )
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.cache.external_response_cache import cached_external_call
+from fraudcrawler.cache.redis import RedisCacher
 from fraudcrawler.scraping.zyte import ZyteAPI
 
 logger = logging.getLogger(__name__)
@@ -147,15 +147,17 @@ class SerpAPI(SearchEngine):
 
     _endpoint = "https://serpapi.com/search"
 
-    def __init__(self, http_client: httpx.AsyncClient, api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, api_key: str, cache_helper=None):
         """Initializes the SerpAPI client with the given API key.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
+            cache_helper: Optional cache helper function for caching searches.
         """
         super().__init__(http_client=http_client)
         self._api_key = api_key
+        self._cache_helper = cache_helper
 
     @property
     @abstractmethod
@@ -193,22 +195,6 @@ class SerpAPI(SearchEngine):
             return "google.com.ar"
         return f"google.{location.code}"
 
-    @cached_external_call(
-        key_builder=lambda self, search_string, language, location, num_results: {
-            "provider": "serpapi",
-            "endpoint": "search",
-            "engine": self._engine,
-            "q": search_string,
-            "google_domain": self._get_google_domain(location),
-            "location_requested": location.name,
-            "location_used": location.name,
-            "tbs": f"ctr:{location.code.upper()}",
-            "cr": f"country{location.code.upper()}",
-            "gl": location.code,
-            "hl": language.code,
-            "num": num_results,
-        }
-    )
     async def _search(
         self,
         search_string: str,
@@ -236,6 +222,83 @@ class SerpAPI(SearchEngine):
             num: The number of results to return.
             api_key: The API key to use for the search.
         """
+        if self._cache_helper:
+            def key_builder(search_string: str, language: Language, location: Location, num_results: int) -> dict:
+                return {
+                    "provider": "serpapi",
+                    "endpoint": "search",
+                    "engine": self._engine,
+                    "q": search_string,
+                    "google_domain": self._get_google_domain(location),
+                    "location_requested": location.name,
+                    "location_used": location.name,
+                    "tbs": f"ctr:{location.code.upper()}",
+                    "cr": f"country{location.code.upper()}",
+                    "gl": location.code,
+                    "hl": language.code,
+                    "num": num_results,
+                }
+            
+            async def _search_impl(
+                search_string: str,
+                language: Language,
+                location: Location,
+                num_results: int,
+            ) -> List[str]:
+                engine = self._engine
+
+                # Log the search parameters
+                logger.debug(
+                    f'Performing SerpAPI search with engine="{engine}", '
+                    f'q="{search_string}", '
+                    f'location="{location.name}", '
+                    f'language="{language.code}", '
+                    f"num_results={num_results}."
+                )
+
+                # Get Google domain and country code
+                google_domain = self._get_google_domain(location)
+                country_code = location.code
+
+                params: Dict[str, str | int] = {
+                    "engine": engine,
+                    "q": search_string,
+                    "google_domain": google_domain,
+                    "location_requested": location.name,
+                    "location_used": location.name,
+                    "tbs": f"ctr:{country_code.upper()}",
+                    "cr": f"country{country_code.upper()}",
+                    "gl": country_code,
+                    "hl": language.code,
+                    "num": num_results,
+                    "api_key": self._api_key,
+                }
+                logger.debug(f"SerpAPI search with params: {params}")
+
+                # Perform the search request
+                response: httpx.Response = await self.http_client_get(
+                    url=self._endpoint, params=params
+                )
+
+                # Extract the URLs from the response
+                data = response.json()
+                urls = self._extract_search_results_urls(data=data)
+
+                logger.debug(
+                    f'Found total of {len(urls)} URLs from SerpAPI search for q="{search_string}" and engine="{engine}".'
+                )
+                return urls
+            
+            return await self._cache_helper(
+                _search_impl,
+                key_builder,
+                search_string,
+                language,
+                location,
+                num_results,
+            )
+        
+        # No caching - direct implementation
         engine = self._engine
 
         # Log the search parameters
@@ -284,14 +347,15 @@ class SerpAPI(SearchEngine):
 class SerpAPIGoogle(SerpAPI):
     """Search engine for Google in SerpAPI."""
 
-    def __init__(self, http_client: httpx.AsyncClient, api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, api_key: str, cache_helper=None):
         """Initializes the SerpAPIGoogle client with the given API key.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
+            cache_helper: Optional cache helper function for caching searches.
         """
-        super().__init__(http_client=http_client, api_key=api_key)
+        super().__init__(http_client=http_client, api_key=api_key, cache_helper=cache_helper)
 
     @property
     def _search_engine_name(self) -> str:
@@ -357,14 +421,15 @@ class SerpAPIGoogle(SerpAPI):
 class SerpAPIGoogleShopping(SerpAPI):
     """Search engine for Google Shopping in SerpAPI."""
 
-    def __init__(self, http_client: httpx.AsyncClient, api_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, api_key: str, cache_helper=None):
         """Initializes the SerpAPIGoogleShopping client with the given API key.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for SerpAPI.
+            cache_helper: Optional cache helper function for caching searches.
         """
-        super().__init__(http_client=http_client, api_key=api_key)
+        super().__init__(http_client=http_client, api_key=api_key, cache_helper=cache_helper)
 
     @property
     def _search_engine_name(self) -> str:
@@ -649,13 +714,16 @@ class Toppreise(SearchEngine):
         return results
 
 
-class Searcher(DomainUtils):
+class Searcher(RedisCacher, DomainUtils):
     """Class to perform searches using different search engines."""
 
     _post_search_retry_stop_after = 3
 
     def __init__(
-        self, http_client: httpx.AsyncClient, serpapi_key: str, zyteapi_key: str
+        self,
+        http_client: httpx.AsyncClient,
+        serpapi_key: str,
+        zyteapi_key: str,
     ):
         """Initializes the Search class with the given SerpAPI key.
 
@@ -664,43 +732,56 @@ class Searcher(DomainUtils):
             serpapi_key: The API key for SERP API.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
         """
+        RedisCacher.__init__(self)
         self._http_client = http_client
-        self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
+        # Create cache helper for SerpAPI instances
+        async def cache_helper(func, key_builder, *args, **kwargs):
+            return await self.capply(key_builder, *args, func=func, **kwargs)
+        self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key, cache_helper=cache_helper)
         self._google_shopping = SerpAPIGoogleShopping(
             http_client=http_client,
             api_key=serpapi_key,
+            cache_helper=cache_helper,
         )
         self._toppreise = Toppreise(
             http_client=http_client,
             zyteapi_key=zyteapi_key,
         )
 
-    @cached_external_call(
-        key_builder=lambda self, url: {
-            "provider": "serpapi",
-            "endpoint": "google_immersive_product",
-            "url": url,  # URL already contains page_token and other params
-        }
-    )
     async def _post_search_google_shopping_immersive(self, url: str) -> List[str]:
         """Post-search for product URLs from a Google Shopping immersive product page.
 
+        Note:
+            In comparison to the function SerpAPIGoogleShopping._search, here we extract the urls from
+            immersive product pages (f.e. https://www.google.com/shopping/product/...). These
+            pages can also be found in the results of a google search.
+
         Args:
-            url: The URL of the Google Shopping product page.
+            url: The URL of the Google Shopping immersive product page.
         """
-        # Add SerpAPI key to the url
-        sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}api_key={self._google_shopping._api_key}"
+        def key_builder(url: str) -> dict:
+            return {
+                "provider": "serpapi",
+                "endpoint": "google_immersive_product",
+                "url": url,  # URL already contains page_token and other params
+            }
+        
+        async def _post_search_google_shopping_immersive_impl(url: str) -> List[str]:
+            # Add SerpAPI key to the url
+            sep = "&" if "?" in url else "?"
+            url_with_key = f"{url}{sep}api_key={self._google_shopping._api_key}"
 
-        # Fetch the content of the Google Shopping product page
-        response = await self._google_shopping.http_client_get(url=url)
+            # Fetch the content of the Google Shopping product page
+            response = await self._google_shopping.http_client_get(url=url_with_key)
 
-        # Get external product urls from the data
-        data = response.json()
-        urls = self._google_shopping._extract_product_urls_from_immersive_product_api(
-            data=data
-        )
-        return urls
+            # Get external product urls from the data
+            data = response.json()
+            urls = self._google_shopping._extract_product_urls_from_immersive_product_api(
+                data=data
+            )
+            return urls
+        
+        return await self.capply(key_builder, url, func=_post_search_google_shopping_immersive_impl)
 
     async def _post_search_toppreise_comparison(self, url: str) -> List[str]:
         """Post-search for product URLs from a Toppreise product comparison page.

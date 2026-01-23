@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Sequence, TypeAlias
 from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
+from fraudcrawler.cache.redis import RedisCacher
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class TmpResult(BaseModel):
 WorkflowResult: TypeAlias = ClassificationResult | TmpResult | None
 
 
-class Workflow(ABC):
+class Workflow(RedisCacher):
     """Abstract base class for independent processing workflows."""
 
     def __init__(
@@ -45,6 +46,7 @@ class Workflow(ABC):
         Args:
             name: Name of the classification workflow.
         """
+        RedisCacher.__init__(self)
         self.name = name
 
     def _log_before(self, context: Context, retry_state: RetryCallState) -> None:
@@ -65,11 +67,6 @@ class Workflow(ABC):
                 f"failed with error: {retry_state.outcome.exception()}. "
                 f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
-
-    @abstractmethod
-    async def run(self, product: ProductItem) -> WorkflowResult:
-        """Runs the workflow."""
-        pass
 
 
 class Processor:
@@ -103,7 +100,7 @@ class Processor:
                 logger.info(
                     f'Running workflow="{wf.name}" for product with url="{product.url_resolved}".'
                 )
-                res = await wf.run(product=product)
+                res = await wf.apply(product=product)
             except Exception:
                 logger.error(
                     f'Error while running workflow="{wf.name}" for product with url="{product.url_resolved}"',

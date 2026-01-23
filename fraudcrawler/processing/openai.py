@@ -16,7 +16,6 @@ from openai.types.responses import (
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.cache.external_response_cache import cached_external_call
 from fraudcrawler.processing.base import (
     ClassificationResult,
     UserInputs,
@@ -49,29 +48,15 @@ class OpenAIWorkflow(Workflow):
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
         """
-        super().__init__(name=name)
+        Workflow.__init__(self, name=name)
         self._http_client = http_client
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
 
-    @cached_external_call(
-        key_builder=lambda self, system_prompt, user_prompt, context, **kwargs: {
-            "provider": "openai",
-            "endpoint": "chat.completions.create",
-            "model": self._model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "generation_params": {
-                k: v
-                for k, v in kwargs.items()
-                if k
-                in ("temperature", "top_p", "seed", "max_tokens", "response_format")
-            },
-            "url": context.get("product.url", "") if isinstance(context, dict) else "",
-        }
-    )
+    async def apply(self, *args, **kwargs):
+        """Required by RedisCacher, so this is a non-used method."""
+        pass
+
     async def _chat_completions_create(
         self,
         system_prompt: str,
@@ -86,55 +71,54 @@ class OpenAIWorkflow(Workflow):
             system_prompt: System prompt for the AI model.
             user_prompt: User prompt for the AI model.
         """
-        cntx = deepcopy(context)
-        cntx["endpoint"] = "chat.completions.create"
+        def key_builder(system_prompt: str, user_prompt: str, context: Context, **kwargs) -> dict:
+            return {
+                "provider": "openai",
+                "endpoint": "chat.completions.create",
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "generation_params": {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k
+                    in ("temperature", "top_p", "seed", "max_tokens", "response_format")
+                },
+                "url": context.get("product.url", "") if isinstance(context, dict) else "",
+            }
+        
+        async def _chat_completions_create() -> ChatCompletion:
+            cntx = deepcopy(context)
+            cntx["endpoint"] = "chat.completions.create"
 
-        # Perform the request and retry if necessary. There is some context aware logging
-        #  - `before`: before the request is made (or before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
-        retry = get_async_retry()
-        retry.before = lambda retry_state: self._log_before(
-            context=cntx,
-            retry_state=retry_state,
-        )
-        retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            context=cntx,
-            retry_state=retry_state,
-        )
-        async for attempt in retry:
-            with attempt:
-                response = await self._client.chat.completions.create(
-                    model=self._model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    **kwargs,
-                )
-        return response
+            # Perform the request and retry if necessary. There is some context aware logging
+            #  - `before`: before the request is made (or before retrying)
+            #  - `before_sleep`: if the request fails before sleeping
+            retry = get_async_retry()
+            retry.before = lambda retry_state: self._log_before(
+                context=cntx,
+                retry_state=retry_state,
+            )
+            retry.before_sleep = lambda retry_state: self._log_before_sleep(
+                context=cntx,
+                retry_state=retry_state,
+            )
+            async for attempt in retry:
+                with attempt:
+                    response = await self._client.chat.completions.create(
+                        model=self._model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        **kwargs,
+                    )
+            return response
+        
+        return await self.capply(key_builder, func=_chat_completions_create)
 
-    @cached_external_call(
-        key_builder=lambda self,
-        system_prompt,
-        user_prompt,
-        response_format,
-        context,
-        **kwargs: {
-            "provider": "openai",
-            "endpoint": "chat.completions.parse",
-            "model": self._model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "response_format": response_format.__name__ if response_format else None,
-            "generation_params": {
-                k: v
-                for k, v in kwargs.items()
-                if k in ("temperature", "top_p", "seed", "max_tokens")
-            },
-        }
-    )
     async def _chat_completions_parse(
         self,
         system_prompt: str,
@@ -151,31 +135,51 @@ class OpenAIWorkflow(Workflow):
             response_format: The model into which the response should be parsed.
             context: Logging context for retry logs.
         """
-        cntx = deepcopy(context)
-        cntx["endpoint"] = "chat.completions.parse"
+        def key_builder(system_prompt: str, user_prompt: str, response_format: type[BaseModel], context: Context, **kwargs) -> dict:
+            return {
+                "provider": "openai",
+                "endpoint": "chat.completions.parse",
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "response_format": response_format.__name__ if response_format else None,
+                "generation_params": {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k in ("temperature", "top_p", "seed", "max_tokens")
+                },
+            }
+        
+        async def impl() -> ParsedChatCompletion:
+            cntx = deepcopy(context)
+            cntx["endpoint"] = "chat.completions.parse"
 
-        # Perform the request and retry if necessary. There is some context aware logging
-        #  - `before`: before the request is made (or before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
-        retry = get_async_retry()
-        retry.before = lambda retry_state: self._log_before(
-            context=cntx, retry_state=retry_state
-        )
-        retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            context=cntx, retry_state=retry_state
-        )
-        async for attempt in retry:
-            with attempt:
-                response = await self._client.chat.completions.parse(
-                    model=self._model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    response_format=response_format,  # type: ignore[call-arg]
-                    **kwargs,
-                )
-        return response
+            # Perform the request and retry if necessary. There is some context aware logging
+            #  - `before`: before the request is made (or before retrying)
+            #  - `before_sleep`: if the request fails before sleeping
+            retry = get_async_retry()
+            retry.before = lambda retry_state: self._log_before(
+                context=cntx, retry_state=retry_state
+            )
+            retry.before_sleep = lambda retry_state: self._log_before_sleep(
+                context=cntx, retry_state=retry_state
+            )
+            async for attempt in retry:
+                with attempt:
+                    response = await self._client.chat.completions.parse(
+                        model=self._model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        response_format=response_format,  # type: ignore[call-arg]
+                        **kwargs,
+                    )
+            return response
+        
+        return await self.capply(key_builder, func=impl)
 
     @staticmethod
     def _get_input_param(
@@ -205,26 +209,6 @@ class OpenAIWorkflow(Workflow):
         ]
         return input_param
 
-    @cached_external_call(
-        key_builder=lambda self,
-        image_url,
-        system_prompt,
-        user_prompt,
-        context,
-        **kwargs: {
-            "provider": "openai",
-            "endpoint": "responses.create",
-            "model": self._model,
-            "image_url_hash": hashlib.sha256(image_url.encode("utf-8")).hexdigest(),
-            "system_prompt": system_prompt,
-            "user_prompt": user_prompt,
-            "generation_params": {
-                k: v
-                for k, v in kwargs.items()
-                if k in ("temperature", "top_p", "seed", "max_tokens")
-            },
-        }
-    )
     async def _responses_create(
         self,
         image_url: str,
@@ -258,60 +242,56 @@ class OpenAIWorkflow(Workflow):
 
             The extracted text can be obtained by `response.output_text`
         """
-        # Prepare variables
-        cntx = deepcopy(context)
-        cntx["endpoint"] = "response.create"
+        def key_builder(image_url: str, system_prompt: str, user_prompt: str, context: Context, **kwargs) -> dict:
+            return {
+                "provider": "openai",
+                "endpoint": "responses.create",
+                "model": self._model,
+                "image_url_hash": hashlib.sha256(image_url.encode("utf-8")).hexdigest(),
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "generation_params": {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k in ("temperature", "top_p", "seed", "max_tokens")
+                },
+            }
+        
+        async def impl(*_args, **_kwargs) -> Response:
+            # Prepare variables
+            cntx = deepcopy(context)
+            cntx["endpoint"] = "response.create"
 
-        detail: Literal["low", "high", "auto"] = "high"
-        input_param = self._get_input_param(
-            image_url=image_url,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            detail=detail,
-        )
+            detail: Literal["low", "high", "auto"] = "high"
+            input_param = self._get_input_param(
+                image_url=image_url,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                detail=detail,
+            )
 
-        # Extract information from image
-        # Perform the request and retry if necessary. There is some context aware logging
-        #  - `before`: before the request is made (or before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
-        retry = get_async_retry()
-        retry.before = lambda retry_state: self._log_before(
-            context=cntx, retry_state=retry_state
-        )
-        retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            context=cntx, retry_state=retry_state
-        )
-        async for attempt in retry:
-            with attempt:
-                response = await self._client.responses.create(
-                    model=self._model,
-                    input=input_param,
-                    **kwargs,
-                )
-        return response
+            # Extract information from image
+            # Perform the request and retry if necessary. There is some context aware logging
+            #  - `before`: before the request is made (or before retrying)
+            #  - `before_sleep`: if the request fails before sleeping
+            retry = get_async_retry()
+            retry.before = lambda retry_state: self._log_before(
+                context=cntx, retry_state=retry_state
+            )
+            retry.before_sleep = lambda retry_state: self._log_before_sleep(
+                context=cntx, retry_state=retry_state
+            )
+            async for attempt in retry:
+                with attempt:
+                    response = await self._client.responses.create(
+                        model=self._model,
+                        input=input_param,
+                        **kwargs,
+                    )
+            return response
+        
+        return await self.capply(key_builder, func=impl)
 
-    @cached_external_call(
-        key_builder=lambda self,
-        image_url,
-        system_prompt,
-        user_prompt,
-        text_format,
-        context,
-        **kwargs: {
-            "provider": "openai",
-            "endpoint": "responses.parse",
-            "model": self._model,
-            "image_url_hash": hashlib.sha256(image_url.encode("utf-8")).hexdigest(),
-            "system_prompt": system_prompt,
-            "user_prompt": user_prompt,
-            "text_format": text_format.__name__ if text_format else None,
-            "generation_params": {
-                k: v
-                for k, v in kwargs.items()
-                if k in ("temperature", "top_p", "seed", "max_tokens")
-            },
-        }
-    )
     async def _responses_parse(
         self,
         image_url: str,
@@ -333,37 +313,56 @@ class OpenAIWorkflow(Workflow):
         Note:
             (c.f. :func:`_responses_create`)
         """
-        # Prepare variables
-        cntx = deepcopy(context)
-        cntx["enpdoint"] = "response.parse"
-        detail: Literal["low", "high", "auto"] = "high"
-        input_param = self._get_input_param(
-            image_url=image_url,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            detail=detail,
-        )
+        def key_builder(image_url: str, system_prompt: str, user_prompt: str, text_format: type[BaseModel], context: Context, **kwargs) -> dict:
+            return {
+                "provider": "openai",
+                "endpoint": "responses.parse",
+                "model": self._model,
+                "image_url_hash": hashlib.sha256(image_url.encode("utf-8")).hexdigest(),
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "text_format": text_format.__name__ if text_format else None,
+                "generation_params": {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k in ("temperature", "top_p", "seed", "max_tokens")
+                },
+            }
+        
+        async def impl(*_args, **_kwargs) -> ParsedResponse:
+            # Prepare variables
+            cntx = deepcopy(context)
+            cntx["endpoint"] = "response.parse"
+            detail: Literal["low", "high", "auto"] = "high"
+            input_param = self._get_input_param(
+                image_url=image_url,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                detail=detail,
+            )
 
-        # Extract information from image
-        # Perform the request and retry if necessary. There is some context aware logging
-        #  - `before`: before the request is made (or before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
-        retry = get_async_retry()
-        retry.before = lambda retry_state: self._log_before(
-            context=cntx, retry_state=retry_state
-        )
-        retry.before_sleep = lambda retry_state: self._log_before_sleep(
-            context=cntx, retry_state=retry_state
-        )
-        async for attempt in retry:
-            with attempt:
-                response = await self._client.responses.parse(
-                    model=self._model,
-                    input=input_param,
-                    text_format=text_format,
-                    **kwargs,
-                )
-        return response
+            # Extract information from image
+            # Perform the request and retry if necessary. There is some context aware logging
+            #  - `before`: before the request is made (or before retrying)
+            #  - `before_sleep`: if the request fails before sleeping
+            retry = get_async_retry()
+            retry.before = lambda retry_state: self._log_before(
+                context=cntx, retry_state=retry_state
+            )
+            retry.before_sleep = lambda retry_state: self._log_before_sleep(
+                context=cntx, retry_state=retry_state
+            )
+            async for attempt in retry:
+                with attempt:
+                    response = await self._client.responses.parse(
+                        model=self._model,
+                        input=input_param,
+                        text_format=text_format,
+                        **kwargs,
+                    )
+            return response
+        
+        return await self.capply(key_builder, func=impl)
 
     @staticmethod
     def _product_item_fields_are_valid(product_item_fields: List[str]) -> bool:

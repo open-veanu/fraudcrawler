@@ -59,15 +59,15 @@ def _setup_workflows(http_client: HttpxAsyncClient) -> Sequence[Workflow]:
             system_prompt=_AVAILABILITY_SYSTEM_PROMPT,
             allowed_classes=[0, 1],
         ),
-        OpenAIClassification(
-            http_client=http_client,
-            name="seriousness",
-            api_key=SETUP.openaiapi_key,
-            model="gpt-4o",
-            product_item_fields=["product_name", "product_description"],
-            system_prompt=_SERIOUSNESS_SYSTEM_PROMPT,
-            allowed_classes=[0, 1],
-        ),
+        # OpenAIClassification(
+        #     http_client=http_client,
+        #     name="seriousness",
+        #     api_key=SETUP.openaiapi_key,
+        #     model="gpt-4o",
+        #     product_item_fields=["product_name", "product_description"],
+        #     system_prompt=_SERIOUSNESS_SYSTEM_PROMPT,
+        #     allowed_classes=[0, 1],
+        # ),
     ]
 
 

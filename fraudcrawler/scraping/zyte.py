@@ -9,12 +9,12 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
 from fraudcrawler.base.base import DomainUtils, ProductItem
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.cache.external_response_cache import cached_external_call
+from fraudcrawler.cache.redis import RedisCacher
 
 logger = logging.getLogger(__name__)
 
 
-class ZyteAPI(DomainUtils):
+class ZyteAPI(RedisCacher, DomainUtils):
     """A client to interact with the Zyte API for fetching product details."""
 
     _endpoint = "https://api.zyte.com/v1/extract"
@@ -41,6 +41,7 @@ class ZyteAPI(DomainUtils):
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for Zyte API.
         """
+        RedisCacher.__init__(self)
         self._http_client = http_client
         self._api_key = api_key
 
@@ -260,15 +261,7 @@ class ZyteAPI(DomainUtils):
 
         return b64decode(details["httpResponseBody"])
 
-    @cached_external_call(
-        key_builder=lambda self, url: {
-            "provider": "zyte",
-            "endpoint": "extract",
-            "url": url,
-            "config": self._config,
-        }
-    )
-    async def details(self, url: str) -> dict:
+    async def apply(self, url: str) -> dict:
         """Fetches product details for a single URL.
 
         Args:
@@ -317,3 +310,15 @@ class ZyteAPI(DomainUtils):
 
         details = response.json()
         return details
+
+    async def details(self, url: str) -> dict:
+        """Public method that calls apply() with caching."""
+        def key_builder(url: str) -> dict:
+            return {
+                "provider": "zyte",
+                "endpoint": "extract",
+                "url": url,
+                "config": self._config,
+            }
+        
+        return await self.capply(key_builder, url)
