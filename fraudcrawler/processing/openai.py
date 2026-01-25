@@ -48,14 +48,10 @@ class OpenAIWorkflow(Workflow):
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
         """
-        Workflow.__init__(self, name=name)
+        super().__init__(name=name)
         self._http_client = http_client
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
-
-    async def apply(self, *args, **kwargs):
-        """Required by RedisCacher, so this is a non-used method."""
-        pass
 
     async def _chat_completions_create(
         self,
@@ -94,7 +90,9 @@ class OpenAIWorkflow(Workflow):
                 else "",
             }
 
-        async def _chat_completions_create() -> ChatCompletion:
+        async def _chat_completions_create(
+            system_prompt: str, user_prompt: str, context: Context, **kwargs
+        ) -> ChatCompletion:
             cntx = deepcopy(context)
             cntx["endpoint"] = "chat.completions.create"
 
@@ -122,7 +120,14 @@ class OpenAIWorkflow(Workflow):
                     )
             return response
 
-        return await self.capply(key_builder, func=_chat_completions_create)
+        return await self.capply(
+            key_builder,
+            system_prompt,
+            user_prompt,
+            context,
+            func=_chat_completions_create,
+            **kwargs,
+        )
 
     async def _chat_completions_parse(
         self,
@@ -166,7 +171,13 @@ class OpenAIWorkflow(Workflow):
                 },
             }
 
-        async def impl() -> ParsedChatCompletion:
+        async def impl(
+            system_prompt: str,
+            user_prompt: str,
+            response_format: type[BaseModel],
+            context: Context,
+            **kwargs,
+        ) -> ParsedChatCompletion:
             cntx = deepcopy(context)
             cntx["endpoint"] = "chat.completions.parse"
 
@@ -193,7 +204,15 @@ class OpenAIWorkflow(Workflow):
                     )
             return response
 
-        return await self.capply(key_builder, func=impl)
+        return await self.capply(
+            key_builder,
+            system_prompt,
+            user_prompt,
+            response_format,
+            context,
+            func=impl,
+            **kwargs,
+        )
 
     @staticmethod
     def _get_input_param(
@@ -278,7 +297,13 @@ class OpenAIWorkflow(Workflow):
                 },
             }
 
-        async def impl(*_args, **_kwargs) -> Response:
+        async def impl(
+            image_url: str,
+            system_prompt: str,
+            user_prompt: str,
+            context: Context,
+            **kwargs,
+        ) -> Response:
             # Prepare variables
             cntx = deepcopy(context)
             cntx["endpoint"] = "response.create"
@@ -311,7 +336,15 @@ class OpenAIWorkflow(Workflow):
                     )
             return response
 
-        return await self.capply(key_builder, func=impl)
+        return await self.capply(
+            key_builder,
+            image_url,
+            system_prompt,
+            user_prompt,
+            context,
+            func=impl,
+            **kwargs,
+        )
 
     async def _responses_parse(
         self,
@@ -358,7 +391,14 @@ class OpenAIWorkflow(Workflow):
                 },
             }
 
-        async def impl(*_args, **_kwargs) -> ParsedResponse:
+        async def impl(
+            image_url: str,
+            system_prompt: str,
+            user_prompt: str,
+            text_format: type[BaseModel],
+            context: Context,
+            **kwargs,
+        ) -> ParsedResponse:
             # Prepare variables
             cntx = deepcopy(context)
             cntx["endpoint"] = "response.parse"
@@ -391,7 +431,16 @@ class OpenAIWorkflow(Workflow):
                     )
             return response
 
-        return await self.capply(key_builder, func=impl)
+        return await self.capply(
+            key_builder,
+            image_url,
+            system_prompt,
+            user_prompt,
+            text_format,
+            context,
+            func=impl,
+            **kwargs,
+        )
 
     @staticmethod
     def _product_item_fields_are_valid(product_item_fields: List[str]) -> bool:
@@ -545,9 +594,11 @@ class OpenAIClassification(OpenAIWorkflow):
             output_tokens=usage.completion_tokens,
         )
 
-    async def run(self, product: ProductItem) -> ClassificationResult:
-        """Calls the OpenAI API with the user prompt from the product."""
+    async def apply(self, product: ProductItem, **kwargs) -> ClassificationResult:
+        """Calls the OpenAI API with the user prompt from the product.
 
+        This method is called by the Processor.
+        """
         # Get user prompt
         user_prompt = await self._get_user_prompt(product=product)
 

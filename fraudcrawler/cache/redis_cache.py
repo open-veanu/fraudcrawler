@@ -19,7 +19,7 @@ R = TypeVar("R")
 class RedisCacher:
     """Components can inherit from this class to get access to the `capply()` method
     for caching any async method call. Cache behavior is configured via `__init__`
-    parameters with sensible defaults from environment variables.
+    parameters with defaults from environment variables.
     """
 
     def __init__(
@@ -47,7 +47,7 @@ class RedisCacher:
         else:
             self._use_cache = use_cache
 
-        self._url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        self._url = redis_url or os.getenv("REDIS_URL") or "redis://localhost:6379/0"
         self._ttl = redis_cache_ttl or int(os.getenv("REDIS_CACHE_TTL", "86400"))
         # Validate parameters
         if lock_lease <= 0:
@@ -263,25 +263,14 @@ class RedisCacher:
         redis_id = hashlib.sha256(self._url.encode("utf-8")).hexdigest()[:8]
         return f"{class_name}:{redis_id}:{payload_hash}"
 
-    async def test_connection(self, timeout: float = 2.0) -> bool:
-        """Test if Redis connection is available.
-
-        Args:
-            timeout: Maximum time to wait for connection test in seconds. Defaults to 2.0.
-
-        Returns:
-            True if Redis is available and working, False otherwise.
-        """
+    async def test_redis_is_running(self, timeout: float = 2.0) -> bool:
+        """Test if Redis connection is available."""
         if not self._use_cache or self._cache is None:
             return False
 
-        # Use redis-py directly for a more reliable connection test
-        # This bypasses aiocache's potential connection pooling/caching issues
+        # Use redis-py as aiocache does not provide a way to test if Redis is running
         test_client = None
         try:
-            # Create a direct Redis client connection to test
-            # Use single_connection_client=True to avoid connection pooling issues
-            # and ensure we test the actual connection immediately
             test_client = redis.from_url(
                 self._url,
                 socket_connect_timeout=timeout,
@@ -421,7 +410,7 @@ if __name__ == "__main__":
     async def main():
         print("Testing Redis connection...")
         cacher = RedisCacher()
-        is_available = await cacher.test_connection()
+        is_available = await cacher.test_redis_is_running()
         if is_available:
             print("Redis connection test: Available")
         else:

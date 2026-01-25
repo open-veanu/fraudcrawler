@@ -101,9 +101,9 @@ async def test_openai_clfc_get_user_prompt(processor: Processor, product: Produc
 
 
 @pytest.mark.asyncio
-async def test_openai_classification_run(processor: Processor, product: ProductItem):
+async def test_openai_classification_apply(processor: Processor, product: ProductItem):
     openai_clfc = cast(OpenAIClassification, processor._workflows[0])
-    clfc = await openai_clfc.run(product=product)
+    clfc = await openai_clfc.apply(product=product)
 
     assert isinstance(clfc, ClassificationResult)
     assert isinstance(clfc.result, int)
