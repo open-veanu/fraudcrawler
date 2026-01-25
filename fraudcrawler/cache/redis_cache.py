@@ -47,7 +47,7 @@ class RedisCacher:
         else:
             self._use_cache = use_cache
 
-        self._url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        self._url = redis_url or os.getenv("REDIS_URL") or "redis://localhost:6379/0"
         self._ttl = redis_cache_ttl or int(os.getenv("REDIS_CACHE_TTL", "86400"))
         # Validate parameters
         if lock_lease <= 0:
