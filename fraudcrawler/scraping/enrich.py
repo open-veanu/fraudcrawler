@@ -317,7 +317,15 @@ class Enricher(RedisCacher):
         location: Location,
         n_terms: int,
     ) -> List[str]:
-        """Enrichment logic (cacheable via capply)."""
+        """Applies the enrichment to a search_term. (cacheable via capply).
+
+        Args:
+            search_term: The search term to use for the query.
+            location: The location to use for the search.
+            language: The language to use for the search.
+            n_terms: The number of additional terms
+        """
+
         logger.info(
             f'Applying enrichment for search_term="{search_term}" and n_terms="{n_terms}".'
         )
@@ -335,6 +343,7 @@ class Enricher(RedisCacher):
             )
             suggested = []
 
+        # Get the additional related keywords
         try:
             related = await self._get_related_keywords(
                 search_term=search_term,
@@ -349,6 +358,7 @@ class Enricher(RedisCacher):
             )
             related = []
 
+        # Remove original keyword and aggregate them by volume
         keywords = [kw for kw in suggested + related if kw.text != search_term]
         kw_vol: Dict[str, int] = defaultdict(int)
         for kw in keywords:
@@ -356,6 +366,7 @@ class Enricher(RedisCacher):
         keywords = [Keyword(text=k, volume=v) for k, v in kw_vol.items()]
         logger.debug(f"Found {len(keywords)} additional unique keywords.")
 
+        # Sort the keywords by volume and get the top n_terms
         keywords = sorted(keywords, key=lambda kw: kw.volume, reverse=True)
         terms = [kw.text for kw in keywords[:n_terms]]
         logger.info(f"Produced {len(terms)} additional search_terms.")

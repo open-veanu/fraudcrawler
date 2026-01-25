@@ -270,6 +270,9 @@ class ZyteAPI(RedisCacher, DomainUtils):
         """Fetches product details for a single URL (cacheable via capply)."""
         logger.info(f"Fetching product details by Zyte for URL {url}.")
 
+        # Perform the request and retry if necessary. There is some context aware logging:
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
         retry.before = lambda retry_state: self._log_before(
             url=url, retry_state=retry_state

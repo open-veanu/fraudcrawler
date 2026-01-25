@@ -447,7 +447,7 @@ class OpenAIClassification(OpenAIWorkflow):
         )
 
     async def apply(self, product: ProductItem) -> ClassificationResult:
-        """Classification logic (cacheable via capply)."""
+        """Calls the OpenAI API with the user prompt from the product. (cacheable via capply)."""
         user_prompt = await self._get_user_prompt(product=product)
 
         clfn = await self._chat_classification(

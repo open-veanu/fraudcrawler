@@ -610,7 +610,7 @@ def test_searcher_apply_filters(searcher):
 
 @pytest.mark.asyncio
 async def test_searcher_apply_toppreise_post_search(searcher):
-    """Toppreise search returns valid results; post_search may add more when the page has comparison links."""
+    """With the below search term there are links that should be added by post_search."""
     search_term = "Liebherr CT 2531"
     search_engine = "toppreise"
     location = Location(name="Switzerland")
