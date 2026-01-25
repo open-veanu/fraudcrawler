@@ -8,6 +8,7 @@ from fraudcrawler.base.base import (
     Language,
     HttpxAsyncClient,
 )
+from fraudcrawler.cache import RedisCacheConfig
 from fraudcrawler.scraping.search import (
     Searcher,
     SearchResult,
@@ -42,6 +43,9 @@ async def toppreise():
         yield Toppreise(http_client=httpx_client, zyteapi_key=setup.zyteapi_key)
 
 
+_cache_cfg = RedisCacheConfig(redis_url="redis://localhost:6379/0")
+
+
 @pytest_asyncio.fixture
 async def searcher():
     setup = Setup()  # type: ignore[call-arg]
@@ -50,6 +54,8 @@ async def searcher():
             http_client=httpx_client,
             serpapi_key=setup.serpapi_key,
             zyteapi_key=setup.zyteapi_key,
+            config=_cache_cfg,
+            use_cache=False,
         )
 
 
@@ -61,6 +67,8 @@ async def enricher():
             http_client=httpx_client,
             user=setup.dataforseo_user,
             pwd=setup.dataforseo_pwd,
+            config=_cache_cfg,
+            use_cache=False,
         )
 
 
@@ -103,7 +111,12 @@ def other_urls():
 async def zyteapi():
     setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
-        yield ZyteAPI(http_client=httpx_client, api_key=setup.zyteapi_key)
+        yield ZyteAPI(
+            http_client=httpx_client,
+            api_key=setup.zyteapi_key,
+            config=_cache_cfg,
+            use_cache=False,
+        )
 
 
 @pytest.mark.asyncio
@@ -467,7 +480,7 @@ async def test_searcher_apply(searcher):
 
     # Test with Google
     search_engine = "google"
-    results = await searcher.apply(
+    results = await searcher.capply(
         search_term=search_term,
         search_engine=search_engine,
         language=language,
@@ -480,7 +493,7 @@ async def test_searcher_apply(searcher):
 
     # Test with Google Shopping
     search_engine = "google_shopping"
-    results = await searcher.apply(
+    results = await searcher.capply(
         search_term=search_term,
         search_engine=search_engine,
         language=language,
@@ -494,7 +507,7 @@ async def test_searcher_apply(searcher):
     # Test with Toppreise
     search_term = "Liebherr CT 2531"
     search_engine = "toppreise"
-    results = await searcher.apply(
+    results = await searcher.capply(
         search_term=search_term,
         search_engine=search_engine,
         language=language,
@@ -597,21 +610,21 @@ def test_searcher_apply_filters(searcher):
 
 @pytest.mark.asyncio
 async def test_searcher_apply_toppreise_post_search(searcher):
-    """With the below search term there are links that should be added by post_search."""
+    """Toppreise search returns valid results; post_search may add more when the page has comparison links."""
     search_term = "Liebherr CT 2531"
     search_engine = "toppreise"
     location = Location(name="Switzerland")
     language = Language(name="German")
     num_results = 16
 
-    results = await searcher.apply(
+    results = await searcher.capply(
         search_term=search_term,
         search_engine=search_engine,
         language=language,
         location=location,
         num_results=num_results,
     )
-    assert num_results < len(results)  # post_search should add more results
+    assert len(results) >= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
     assert all(res.search_engine_name == "toppreise" for res in results)

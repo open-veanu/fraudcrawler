@@ -15,6 +15,7 @@ from openai.types.responses import (
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache import RedisCacheConfig
 from fraudcrawler.processing.base import (
     ClassificationResult,
     UserInputs,
@@ -38,6 +39,9 @@ class OpenAIWorkflow(Workflow):
         name: str,
         api_key: str,
         model: str,
+        *,
+        config: RedisCacheConfig | None = None,
+        use_cache: bool | None = None,
     ):
         """(Abstract) OpenAI Workflow.
 
@@ -46,8 +50,10 @@ class OpenAIWorkflow(Workflow):
             name: Name of the node (unique identifier)
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
+            config: Redis cache config; resolved from env when None.
+            use_cache: Whether to use cache; resolved from env when None.
         """
-        super().__init__(name=name)
+        super().__init__(name=name, config=config, use_cache=use_cache)
         self._http_client = http_client
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
         self._model = model
@@ -367,6 +373,9 @@ class OpenAIClassification(OpenAIWorkflow):
         product_item_fields: List[str],
         system_prompt: str,
         allowed_classes: List[int],
+        *,
+        config: RedisCacheConfig | None = None,
+        use_cache: bool | None = None,
     ):
         """Open AI classification workflow.
 
@@ -378,12 +387,16 @@ class OpenAIClassification(OpenAIWorkflow):
             product_item_fields: Product item fields used to construct the user prompt.
             system_prompt: System prompt for the AI model.
             allowed_classes: Allowed classes for model output (must be positive).
+            config: Redis cache config; resolved from env when None.
+            use_cache: Whether to use cache; resolved from env when None.
         """
         super().__init__(
             http_client=http_client,
             name=name,
             api_key=api_key,
             model=model,
+            config=config,
+            use_cache=use_cache,
         )
         self._product_item_fields = product_item_fields
         self._system_prompt = system_prompt
@@ -433,36 +446,38 @@ class OpenAIClassification(OpenAIWorkflow):
             output_tokens=usage.completion_tokens,
         )
 
-    async def run(self, product: ProductItem) -> ClassificationResult:
-        """Calls the OpenAI API with the user prompt from the product."""
-
-        # Get user prompt
+    async def apply(self, product: ProductItem) -> ClassificationResult:
+        """Classification logic (cacheable via capply)."""
         user_prompt = await self._get_user_prompt(product=product)
 
-        # Call the OpenAI API
-        try:
-            clfn = await self._chat_classification(
-                product=product,
-                system_prompt=self._system_prompt,
-                user_prompt=user_prompt,
-                max_tokens=self._max_tokens,
-            )
+        clfn = await self._chat_classification(
+            product=product,
+            system_prompt=self._system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=self._max_tokens,
+        )
 
-            # Enforce that the classification is in the allowed classes
-            if clfn.result not in self._allowed_classes:
-                raise ValueError(
-                    f"classification result={clfn.result} not in allowed_classes={self._allowed_classes}"
-                )
-
-        except Exception as e:
-            raise Exception(
-                f'Error classifying product at url="{product.url}" with workflow="{self.name}": {e}'
+        if clfn.result not in self._allowed_classes:
+            raise ValueError(
+                f"classification result={clfn.result} not in allowed_classes={self._allowed_classes}"
             )
 
         logger.debug(
             f'Classification for url="{product.url}" (workflow={self.name}): result={clfn.result}, tokens used={clfn.input_tokens + clfn.output_tokens}'
         )
         return clfn
+
+    async def run(self, product: ProductItem) -> ClassificationResult:
+        """Calls the OpenAI API with the user prompt from the product."""
+        try:
+            raw = await self.capply(product)
+            if isinstance(raw, dict):
+                return ClassificationResult.model_validate(raw)
+            return raw
+        except Exception as e:
+            raise Exception(
+                f'Error classifying product at url="{product.url}" with workflow="{self.name}": {e}'
+            ) from e
 
 
 class OpenAIClassificationUserInputs(OpenAIClassification):
@@ -484,6 +499,9 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
         system_prompt: str,
         allowed_classes: List[int],
         user_inputs: UserInputs,
+        *,
+        config: RedisCacheConfig | None = None,
+        use_cache: bool | None = None,
     ):
         """Open AI classification workflow from user input.
 
@@ -496,6 +514,8 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
             system_prompt: System prompt for the AI model.
             allowed_classes: Allowed classes for model output.
             user_inputs: Inputs from the frontend by the user.
+            config: Redis cache config; resolved from env when None.
+            use_cache: Whether to use cache; resolved from env when None.
         """
         super().__init__(
             http_client=http_client,
@@ -505,6 +525,8 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
             product_item_fields=product_item_fields,
             system_prompt=system_prompt,
             allowed_classes=allowed_classes,
+            config=config,
+            use_cache=use_cache,
         )
         self._user_inputs = user_inputs
 

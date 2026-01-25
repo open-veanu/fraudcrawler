@@ -7,6 +7,7 @@ from typing import cast, List
 
 from fraudcrawler.settings import ROOT_DIR
 from fraudcrawler.base.base import Setup, HttpxAsyncClient
+from fraudcrawler.cache import RedisCacheConfig
 from fraudcrawler.processing.base import ClassificationResult
 from fraudcrawler import (
     Processor,
@@ -35,6 +36,7 @@ def product():
 async def processor():
     setup = Setup()  # type: ignore[call-arg]
     http_client = HttpxAsyncClient()
+    _cache_cfg = RedisCacheConfig(redis_url="redis://localhost:6379/0")
     openai_clfc = OpenAIClassification(
         name="test_openai_clfc",
         http_client=http_client,
@@ -43,6 +45,8 @@ async def processor():
         product_item_fields=["product_name", "product_description"],
         system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
         allowed_classes=[0, 1],
+        config=_cache_cfg,
+        use_cache=False,
     )
     openai_clfc_user_input = OpenAIClassificationUserInputs(
         name="test_openai_clfc_user_input",
@@ -53,6 +57,8 @@ async def processor():
         system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
         allowed_classes=[0, 1],
         user_inputs={"one": ["plus", "two"]},
+        config=_cache_cfg,
+        use_cache=False,
     )
     return Processor(workflows=[openai_clfc, openai_clfc_user_input])
 

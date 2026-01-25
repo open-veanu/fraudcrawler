@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 import logging
 from pydantic import BaseModel
 from typing import Any, Dict, List, Sequence, TypeAlias
@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Sequence, TypeAlias
 from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
+from fraudcrawler.cache import RedisCacheConfig, RedisCacher
 
 logger = logging.getLogger(__name__)
 
@@ -33,19 +34,28 @@ class TmpResult(BaseModel):
 WorkflowResult: TypeAlias = ClassificationResult | TmpResult | None
 
 
-class Workflow(ABC):
+class Workflow(RedisCacher):
     """Abstract base class for independent processing workflows."""
 
     def __init__(
         self,
         name: str,
+        *,
+        config: RedisCacheConfig | None = None,
+        use_cache: bool | None = None,
     ):
         """Abstract base class for defining a classification workflow.
 
         Args:
             name: Name of the classification workflow.
+            config: Redis cache config; resolved from env when None.
+            use_cache: Whether to use cache; resolved from env when None.
         """
+        super().__init__(config=config, use_cache=use_cache)
         self.name = name
+
+    async def apply(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("Subclasses that use caching must override apply")
 
     def _log_before(self, context: Context, retry_state: RetryCallState) -> None:
         """Context aware logging before the request is made."""

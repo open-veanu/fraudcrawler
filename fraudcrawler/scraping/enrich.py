@@ -10,6 +10,7 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
 from fraudcrawler.base.base import Location, Language
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache import RedisCacheConfig, RedisCacher
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class Keyword(BaseModel):
     volume: int
 
 
-class Enricher:
+class Enricher(RedisCacher):
     """A client to interact with the DataForSEO API for enhancing searches (producing alternative search_terms)."""
 
     _auth_encoding = "ascii"
@@ -30,14 +31,25 @@ class Enricher:
     _suggestions_endpoint = "/v3/dataforseo_labs/google/keyword_suggestions/live"
     _keywords_endpoint = "/v3/dataforseo_labs/google/related_keywords/live"
 
-    def __init__(self, http_client: httpx.AsyncClient, user: str, pwd: str):
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        user: str,
+        pwd: str,
+        *,
+        config: RedisCacheConfig | None = None,
+        use_cache: bool | None = None,
+    ):
         """Initializes the DataForSeoApiClient with the given username and password.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             user: The username for DataForSEO API.
             pwd: The password for DataForSEO API.
+            config: Redis cache config; resolved from env when None.
+            use_cache: Whether to use cache; resolved from env when None.
         """
+        super().__init__(config=config, use_cache=use_cache)
         self._http_client = http_client
         self._user = user
         self._pwd = pwd
@@ -298,25 +310,17 @@ class Enricher:
         logger.debug(f"Found {len(keywords)} related keywords from DataForSEO search.")
         return keywords
 
-    async def enrich(
+    async def apply(
         self,
         search_term: str,
         language: Language,
         location: Location,
         n_terms: int,
     ) -> List[str]:
-        """Applies the enrichment to a search_term.
-
-        Args:
-            search_term: The search term to use for the query.
-            location: The location to use for the search.
-            language: The language to use for the search.
-            n_terms: The number of additional terms
-        """
+        """Enrichment logic (cacheable via capply)."""
         logger.info(
             f'Applying enrichment for search_term="{search_term}" and n_terms="{n_terms}".'
         )
-        # Get the additional suggested keywords
         try:
             suggested = await self._get_suggested_keywords(
                 search_term=search_term,
@@ -331,7 +335,6 @@ class Enricher:
             )
             suggested = []
 
-        # Get the additional related keywords
         try:
             related = await self._get_related_keywords(
                 search_term=search_term,
@@ -346,7 +349,6 @@ class Enricher:
             )
             related = []
 
-        # Remove original keyword and aggregate them by volume
         keywords = [kw for kw in suggested + related if kw.text != search_term]
         kw_vol: Dict[str, int] = defaultdict(int)
         for kw in keywords:
@@ -354,8 +356,22 @@ class Enricher:
         keywords = [Keyword(text=k, volume=v) for k, v in kw_vol.items()]
         logger.debug(f"Found {len(keywords)} additional unique keywords.")
 
-        # Sort the keywords by volume and get the top n_terms
         keywords = sorted(keywords, key=lambda kw: kw.volume, reverse=True)
         terms = [kw.text for kw in keywords[:n_terms]]
         logger.info(f"Produced {len(terms)} additional search_terms.")
         return terms
+
+    async def enrich(
+        self,
+        search_term: str,
+        language: Language,
+        location: Location,
+        n_terms: int,
+    ) -> List[str]:
+        """Applies the enrichment to a search_term (cached via capply)."""
+        return await self.capply(
+            search_term=search_term,
+            language=language,
+            location=location,
+            n_terms=n_terms,
+        )

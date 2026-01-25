@@ -47,6 +47,13 @@ class Setup(BaseSettings):
     openaiapi_key: str
     pypy_token: str
 
+    # Redis cache
+    fraudcrawler_use_cache: bool = True
+    redis_url: str = "redis://localhost:6379/0"
+    redis_ttl: int = 300
+    redis_namespace: str = "fraudcrawler"
+    redis_lease: int = 2
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

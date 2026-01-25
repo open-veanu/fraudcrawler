@@ -9,11 +9,12 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
 from fraudcrawler.base.base import DomainUtils, ProductItem
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache import RedisCacheConfig, RedisCacher
 
 logger = logging.getLogger(__name__)
 
 
-class ZyteAPI(DomainUtils):
+class ZyteAPI(RedisCacher, DomainUtils):
     """A client to interact with the Zyte API for fetching product details."""
 
     _endpoint = "https://api.zyte.com/v1/extract"
@@ -33,13 +34,19 @@ class ZyteAPI(DomainUtils):
         self,
         http_client: httpx.AsyncClient,
         api_key: str,
+        *,
+        config: RedisCacheConfig | None = None,
+        use_cache: bool | None = None,
     ):
         """Initializes the ZyteApiClient with the given API key and retry configurations.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for Zyte API.
+            config: Redis cache config; resolved from env when None.
+            use_cache: Whether to use cache; resolved from env when None.
         """
+        super().__init__(config=config, use_cache=use_cache)
         self._http_client = http_client
         self._api_key = api_key
 
@@ -259,37 +266,10 @@ class ZyteAPI(DomainUtils):
 
         return b64decode(details["httpResponseBody"])
 
-    async def details(self, url: str) -> dict:
-        """Fetches product details for a single URL.
-
-        Args:
-            url: The URL to fetch product details from.
-
-        Returns:
-            A dictionary containing the product details, fields include:
-            (c.f. https://docs.zyte.com/zyte-api/usage/reference.html#operation/extract/response/200/product)
-            {
-                "url": str,
-                "statusCode": str,
-                "product": {
-                    "name": str,
-                    "price": str,
-                    "mainImage": {"url": str},
-                    "images": [{"url": str}],
-                    "description": str,
-                    "gtin": [{"type": str, "value": str}],
-                    "metadata": {
-                        "probability": float,
-                    },
-                },
-                "httpResponseBody": base64
-            }
-        """
+    async def apply(self, url: str) -> dict:
+        """Fetches product details for a single URL (cacheable via capply)."""
         logger.info(f"Fetching product details by Zyte for URL {url}.")
 
-        # Perform the request and retry if necessary. There is some context aware logging:
-        #  - `before`: before the request is made (and before retrying)
-        #  - `before_sleep`: if the request fails before sleeping
         retry = get_async_retry()
         retry.before = lambda retry_state: self._log_before(
             url=url, retry_state=retry_state
@@ -306,5 +286,8 @@ class ZyteAPI(DomainUtils):
                 )
                 response.raise_for_status()
 
-        details = response.json()
-        return details
+        return response.json()
+
+    async def details(self, url: str) -> dict:
+        """Fetches product details for a single URL (cached via capply)."""
+        return await self.capply(url)

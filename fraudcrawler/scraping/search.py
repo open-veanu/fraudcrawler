@@ -17,6 +17,7 @@ from fraudcrawler.settings import (
 )
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache import RedisCacheConfig, RedisCacher
 from fraudcrawler.scraping.zyte import ZyteAPI
 
 logger = logging.getLogger(__name__)
@@ -514,8 +515,10 @@ class Toppreise(SearchEngine):
             if (
                 hasattr(link, "get")  # Ensure we have a Tag object with href attribute
                 and (href := link.get("href"))  # Ensure href is not None
+                and isinstance(
+                    href, str
+                )  # Ensure href is a string (excludes AttributeValueList)
                 and not href.startswith("javascript:")  # Skip javascript links
-                and isinstance(href, str)  # Ensure href is a string
                 # Make sure the link is either an external product link (href contains 'ext_')
                 # or is a search result link (href contains 'preisvergleich', 'comparison-prix', or 'price-comparison')
                 and (
@@ -632,13 +635,19 @@ class Toppreise(SearchEngine):
         return results
 
 
-class Searcher(DomainUtils):
+class Searcher(RedisCacher, DomainUtils):
     """Class to perform searches using different search engines."""
 
     _post_search_retry_stop_after = 3
 
     def __init__(
-        self, http_client: httpx.AsyncClient, serpapi_key: str, zyteapi_key: str
+        self,
+        http_client: httpx.AsyncClient,
+        serpapi_key: str,
+        zyteapi_key: str,
+        *,
+        config: RedisCacheConfig | None = None,
+        use_cache: bool | None = None,
     ):
         """Initializes the Search class with the given SerpAPI key.
 
@@ -646,7 +655,10 @@ class Searcher(DomainUtils):
             http_client: An httpx.AsyncClient to use for the async requests.
             serpapi_key: The API key for SERP API.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
+            config: Redis cache config; resolved from env when None.
+            use_cache: Whether to use cache; resolved from env when None.
         """
+        super().__init__(config=config, use_cache=use_cache)
         self._http_client = http_client
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
         self._google_shopping = SerpAPIGoogleShopping(
@@ -657,6 +669,28 @@ class Searcher(DomainUtils):
             http_client=http_client,
             zyteapi_key=zyteapi_key,
         )
+
+    async def capply(
+        self,
+        search_term: str,
+        search_engine: SearchEngineName | str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        excluded_urls: List[Host] | None = None,
+    ) -> List[SearchResult]:
+        """Cached search: returns List[SearchResult]. Use this as the public entry."""
+        data = await super().capply(
+            search_term=search_term,
+            search_engine=search_engine,
+            language=language,
+            location=location,
+            num_results=num_results,
+            marketplaces=marketplaces,
+            excluded_urls=excluded_urls,
+        )
+        return [SearchResult.model_validate(d) for d in data]
 
     async def _post_search_google_shopping_immersive(self, url: str) -> List[str]:
         """Post-search for product URLs from a Google Shopping immersive product page.
@@ -842,18 +876,8 @@ class Searcher(DomainUtils):
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
-    ) -> List[SearchResult]:
-        """Performs a search and returns SearchResults.
-
-        Args:
-            search_term: The search term to use for the query.
-            search_engine: The search engine to use for the search.
-            language: The language to use for the query ('hl' parameter).
-            location: The location to use for the query ('gl' parameter).
-            num_results: Max number of results per search engine.
-            marketplaces: The marketplaces to include in the search.
-            excluded_urls: The URLs to exclude from the search.
-        """
+    ) -> List[dict]:
+        """Performs a search and returns list of dicts (model_dump) for cache serialization."""
         logger.info(
             f'Performing search for term="{search_term}" using engine="{search_engine}".'
         )
@@ -921,4 +945,4 @@ class Searcher(DomainUtils):
         logger.info(
             f'Search for term="{search_term}" using engine="{search_engine}" produced {len(results)} results.'
         )
-        return results
+        return [r.model_dump() for r in results]

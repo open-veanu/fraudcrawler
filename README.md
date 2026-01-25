@@ -115,6 +115,8 @@ previously_collected_urls = [
 await client.run(..., previously_collected_urls=previously_collected_urls)
 ```
 
+**Redis cache** – Set `FRAUDCRAWLER_USE_CACHE=true` and run Redis to cache API and scrape calls (OpenAI, Zyte, Searcher, Enricher). Optional: `REDIS_URL`, `REDIS_TTL`, `REDIS_NAMESPACE`, `REDIS_LEASE` in `.env` (see `.env.example`).
+
 **View all results** from a client instance:
 ```python
 client.print_available_results()

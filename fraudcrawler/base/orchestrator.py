@@ -108,7 +108,7 @@ class Orchestrator(ABC):
             try:
                 # Execute the search
                 search_term_type = item.pop("search_term_type")
-                results = await self._searcher.apply(**item)
+                results = await self._searcher.capply(**item)
                 logger.debug(
                     f"Search for {item['search_term']} returned {len(results)} results"
                 )
