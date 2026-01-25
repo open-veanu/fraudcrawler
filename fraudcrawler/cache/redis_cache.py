@@ -328,8 +328,11 @@ class RedisCacher:
             if test_client is not None:
                 try:
                     await test_client.aclose()
-                except Exception:
-                    pass  # Ignore errors during cleanup
+                except Exception as exc:
+                    logger.debug(
+                        f"Error closing test Redis client (ignored): {exc}",
+                        exc_info=True,
+                    )
 
     def _handle_connection_error(self, message: str) -> None:
         """Handle Redis connection error by logging and updating availability status."""
