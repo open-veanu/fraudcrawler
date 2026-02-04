@@ -1,3 +1,3 @@
-from fraudcrawler.cache.redis_cacher import RedisCacheConfig, RedisCacher
+from fraudcrawler.cache.cacher import RedisCacher
 
-__all__ = ["RedisCacheConfig", "RedisCacher"]
+__all__ = ["RedisCacher"]

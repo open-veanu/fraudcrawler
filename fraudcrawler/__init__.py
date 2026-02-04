@@ -1,4 +1,4 @@
-from fraudcrawler.cache import RedisCacheConfig, RedisCacher
+from fraudcrawler.cache.cacher import RedisCacher
 from fraudcrawler.scraping.search import Searcher, SearchEngineName
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
@@ -28,7 +28,6 @@ from fraudcrawler.base.base import (
 )
 
 __all__ = [
-    "RedisCacheConfig",
     "RedisCacher",
     "Searcher",
     "SearchEngineName",

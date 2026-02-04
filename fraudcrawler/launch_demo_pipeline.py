@@ -22,6 +22,7 @@ from fraudcrawler import (
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
 LOG_LVL = "INFO"
 DATE_FMT = "%Y-%m-%d %H:%M:%S"
+USE_CACHE = True
 SETUP = Setup()  # type: ignore[call-arg]
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
@@ -100,16 +101,19 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
         http_client=http_client,
         serpapi_key=SETUP.serpapi_key,
         zyteapi_key=SETUP.zyteapi_key,
+        redis_use_cache=USE_CACHE,
     )
     enricher = Enricher(
         http_client=http_client,
         user=SETUP.dataforseo_user,
         pwd=SETUP.dataforseo_pwd,
+        redis_use_cache=USE_CACHE,
     )
     url_collector = URLCollector()
     zyteapi = ZyteAPI(
         http_client=http_client,
         api_key=SETUP.zyteapi_key,
+        redis_use_cache=USE_CACHE,
     )
     workflows = _setup_workflows(http_client=http_client)
     processor = Processor(workflows=workflows)

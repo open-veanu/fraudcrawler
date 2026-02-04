@@ -17,7 +17,7 @@ from fraudcrawler.settings import (
 )
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.cache import RedisCacheConfig, RedisCacher
+from fraudcrawler.cache import RedisCacher
 from fraudcrawler.scraping.zyte import ZyteAPI
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ class SearchEngine(ABC, DomainUtils):
             http_client: An httpx.AsyncClient to use for the async requests.
         """
         self._http_client = http_client
+        super().__init__()
 
     @property
     @abstractmethod
@@ -438,15 +439,16 @@ class Toppreise(SearchEngine):
 
     _endpoint = "https://www.toppreise.ch/"
 
-    def __init__(self, http_client: httpx.AsyncClient, zyteapi_key: str):
+    def __init__(self, http_client: httpx.AsyncClient, zyteapi_key: str, redis_use_cache: bool):
         """Initializes the Toppreise client.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
+            redis_use_cache: Whether to use cache (passed to internal ZyteAPI).
         """
         super().__init__(http_client=http_client)
-        self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key)
+        self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key, redis_use_cache=redis_use_cache)
 
     async def http_client_get_with_fallback(self, url: str) -> bytes:
         """Performs a GET request with retries.
@@ -645,9 +647,7 @@ class Searcher(RedisCacher, DomainUtils):
         http_client: httpx.AsyncClient,
         serpapi_key: str,
         zyteapi_key: str,
-        *,
-        config: RedisCacheConfig | None = None,
-        use_cache: bool | None = None,
+        redis_use_cache: bool,
     ):
         """Initializes the Search class with the given SerpAPI key.
 
@@ -655,10 +655,9 @@ class Searcher(RedisCacher, DomainUtils):
             http_client: An httpx.AsyncClient to use for the async requests.
             serpapi_key: The API key for SERP API.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
-            config: Redis cache config; resolved from env when None.
-            use_cache: Whether to use cache; resolved from env when None.
+            redis_use_cache: Whether to use cache.
         """
-        super().__init__(config=config, use_cache=use_cache)
+        super().__init__(redis_use_cache=redis_use_cache)
         self._http_client = http_client
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
         self._google_shopping = SerpAPIGoogleShopping(
@@ -668,6 +667,7 @@ class Searcher(RedisCacher, DomainUtils):
         self._toppreise = Toppreise(
             http_client=http_client,
             zyteapi_key=zyteapi_key,
+            redis_use_cache=redis_use_cache,
         )
 
     async def capply(

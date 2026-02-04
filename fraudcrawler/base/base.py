@@ -48,11 +48,11 @@ class Setup(BaseSettings):
     pypy_token: str
 
     # Redis cache
-    fraudcrawler_use_cache: bool = True
-    redis_url: str = "redis://localhost:6379/0"
-    redis_ttl: int = 300
-    redis_namespace: str = "fraudcrawler"
-    redis_lease: int = 2
+    redis_use_cache: bool
+    redis_url: str
+    redis_ttl: int
+    redis_namespace: str
+    redis_lease: int
 
     class Config:
         env_file = ".env"

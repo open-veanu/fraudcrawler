@@ -3,14 +3,20 @@ import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 from aiocache import Cache
 from aiocache.serializers import JsonSerializer
 
-from fraudcrawler.base.base import Setup
+from fraudcrawler.settings import (
+    REDIS_USE_CACHE,
+    REDIS_URL,
+    REDIS_TTL,
+    REDIS_NAMESPACE,
+    REDIS_LEASE,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -18,45 +24,31 @@ logger = logging.getLogger(__name__)
 class _PydanticJsonSerializer(JsonSerializer):
     """JsonSerializer that converts Pydantic models via model_dump() before JSON encoding."""
 
+    def _pydantic_json_default(o: Any) -> Any:
+        if hasattr(o, "model_dump"):
+            return o.model_dump()
+        raise TypeError(
+            f"Object of type {o.__class__.__name__} is not JSON serializable"
+        )
+
     def dumps(self, value: Any) -> str:
-        return json.dumps(value, default=_pydantic_json_default)
-
-
-def _pydantic_json_default(o: Any) -> Any:
-    if hasattr(o, "model_dump"):
-        return o.model_dump()
-    raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
-
-
-@dataclass(frozen=True, slots=True)
-class RedisCacheConfig:
-    redis_url: str
-    ttl: int = 300
-    namespace: str = "cache"
-    lease: int = 2
+        return json.dumps(value, default=self._pydantic_json_default)
 
 
 class RedisCacher(ABC):
     def __init__(
         self,
-        *,
-        config: RedisCacheConfig | None = None,
-        use_cache: bool | None = None,
+        redis_use_cache: bool = REDIS_USE_CACHE,
+        redis_url: str = REDIS_URL,
+        redis_ttl: int = REDIS_TTL,
+        redis_namespace: str = REDIS_NAMESPACE,
+        redis_lease: int = REDIS_LEASE,
     ) -> None:
-        if config is None or use_cache is None:
-            s = Setup()  # type: ignore[call-arg]
-            if config is None:
-                config = RedisCacheConfig(
-                    redis_url=s.redis_url,
-                    ttl=s.redis_ttl,
-                    namespace=s.redis_namespace,
-                    lease=s.redis_lease,
-                )
-            if use_cache is None:
-                use_cache = s.fraudcrawler_use_cache
-
-        self._use_cache = use_cache
-        self._cfg = config
+        self._use_cache = redis_use_cache
+        self._redis_url = redis_url
+        self._redis_ttl = redis_ttl
+        self._redis_namespace = redis_namespace
+        self._redis_lease = redis_lease
         self._serializer = _PydanticJsonSerializer()
 
         if not self._use_cache:
@@ -68,9 +60,9 @@ class RedisCacher(ABC):
         self._cache_kwargs = self._redis_kwargs()
 
         self._cache = Cache(
-            Cache.REDIS,
+            cache_class=Cache.REDIS,
             serializer=self._serializer,
-            namespace=self._cfg.namespace,
+            namespace=self._redis_namespace,
             **self._cache_kwargs,
         )
 
@@ -106,12 +98,12 @@ class RedisCacher(ABC):
             ok = await self.redis_is_available()
         except Exception as e:
             raise RuntimeError(
-                f"Redis availability check failed for {self._cfg.redis_url}"
+                f"Redis availability check failed for {self._redis_ttl}"
             ) from e
         if ok:
-            logger.info(f"Redis is available at {self._cfg.redis_url}")
+            logger.info(f"Redis is available at {self._redis_url}")
         else:
-            raise RuntimeError(f"Redis is not available at {self._cfg.redis_url}")
+            raise RuntimeError(f"Redis is not available at {self._redis_url}")
 
     async def redis_is_available(self) -> bool:
         """
@@ -123,15 +115,15 @@ class RedisCacher(ABC):
         key = f"__healthcheck__:{self.__class__.__name__}:{uuid.uuid4().hex}"
         value = "1"
         try:
-            await self._cache.set(key, value, ttl=2)
-            got = await self._cache.get(key)
-            await self._cache.delete(key)
+            await self._cache.set(key=key, value=value, ttl=2)
+            got = await self._cache.get(key=key)
+            await self._cache.delete(key=key)
             return got == value
         except Exception:
             return False
 
     def _redis_kwargs(self) -> dict[str, Any]:
-        u = urlparse(self._cfg.redis_url)
+        u = urlparse(self._redis_url)
         if u.scheme not in {"redis", "rediss"}:
             raise ValueError("redis_url must start with redis:// or rediss://")
         return {
@@ -200,9 +192,9 @@ class RedisCacher(ABC):
     async def _cached_apply(self, *args: Any, **kwargs: Any) -> Any:
         if self._cache is None:
             raise RuntimeError("Redis cache not initialized")
-        key = self._key_builder(self.apply, *args, **kwargs)
-        val = await self._cache.get(key)
-        ctx = self._cache_log_context(args, kwargs)
+        key = self._key_builder(func=self.apply, *args, **kwargs)
+        val = await self._cache.get(key=key)
+        ctx = self._cache_log_context(args=args, kwargs=kwargs)
         if len(ctx) > 72:
             ctx = ctx[:69] + "..."
         suffix = f" | {ctx}" if ctx else ""
@@ -211,7 +203,7 @@ class RedisCacher(ABC):
             return val
         logger.info("Cache miss [%s]%s", self.__class__.__name__, suffix)
         result = await self.apply(*args, **kwargs)
-        await self._cache.set(key, result, ttl=self._cfg.ttl)
+        await self._cache.set(key=key, value=result, ttl=self._redis_ttl)
         return result
 
     async def capply(self, *args: Any, **kwargs: Any) -> Any:
@@ -221,7 +213,9 @@ class RedisCacher(ABC):
         if self._use_cache:
             if self._cache is None:
                 raise RuntimeError("Redis cache not initialized")
-            await self._cache.delete(self._key_builder(self.apply, *args, **kwargs))
+            await self._cache.delete(
+                key=self._key_builder(func=self.apply, *args, **kwargs)
+            )
 
     async def clear_namespace(self) -> None:
         if self._use_cache:

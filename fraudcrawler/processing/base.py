@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Sequence, TypeAlias
 from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
-from fraudcrawler.cache import RedisCacheConfig, RedisCacher
+from fraudcrawler.cache import RedisCacher
 
 logger = logging.getLogger(__name__)
 
@@ -40,18 +40,13 @@ class Workflow(RedisCacher):
     def __init__(
         self,
         name: str,
-        *,
-        config: RedisCacheConfig | None = None,
-        use_cache: bool | None = None,
     ):
         """Abstract base class for defining a classification workflow.
 
         Args:
             name: Name of the classification workflow.
-            config: Redis cache config; resolved from env when None.
-            use_cache: Whether to use cache; resolved from env when None.
         """
-        super().__init__(config=config, use_cache=use_cache)
+        super().__init__()
         self.name = name
 
     async def apply(self, *args: Any, **kwargs: Any) -> Any:

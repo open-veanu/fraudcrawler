@@ -10,7 +10,7 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
 from fraudcrawler.base.base import Location, Language
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.cache import RedisCacheConfig, RedisCacher
+from fraudcrawler.cache import RedisCacher
 
 
 logger = logging.getLogger(__name__)
@@ -36,9 +36,7 @@ class Enricher(RedisCacher):
         http_client: httpx.AsyncClient,
         user: str,
         pwd: str,
-        *,
-        config: RedisCacheConfig | None = None,
-        use_cache: bool | None = None,
+        redis_use_cache: bool,
     ):
         """Initializes the DataForSeoApiClient with the given username and password.
 
@@ -46,10 +44,9 @@ class Enricher(RedisCacher):
             http_client: An httpx.AsyncClient to use for the async requests.
             user: The username for DataForSEO API.
             pwd: The password for DataForSEO API.
-            config: Redis cache config; resolved from env when None.
-            use_cache: Whether to use cache; resolved from env when None.
+            redis_use_cache: Whether to use cache.
         """
-        super().__init__(config=config, use_cache=use_cache)
+        super().__init__(redis_use_cache=redis_use_cache)
         self._http_client = http_client
         self._user = user
         self._pwd = pwd
