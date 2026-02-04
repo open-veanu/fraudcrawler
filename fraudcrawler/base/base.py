@@ -49,10 +49,6 @@ class Setup(BaseSettings):
 
     # Redis cache
     redis_use_cache: bool
-    redis_url: str
-    redis_ttl: int
-    redis_namespace: str
-    redis_lease: int
 
     class Config:
         env_file = ".env"

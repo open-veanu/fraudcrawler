@@ -38,6 +38,7 @@ class OpenAIWorkflow(Workflow):
         name: str,
         api_key: str,
         model: str,
+        redis_use_cache: bool = False,
     ):
         """(Abstract) OpenAI Workflow.
 
@@ -46,9 +47,11 @@ class OpenAIWorkflow(Workflow):
             name: Name of the node (unique identifier)
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
+            redis_use_cache: Whether to use Redis cache.
         """
         super().__init__(
             name=name,
+            redis_use_cache=redis_use_cache,
         )
         self._http_client = http_client
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
@@ -369,6 +372,7 @@ class OpenAIClassification(OpenAIWorkflow):
         product_item_fields: List[str],
         system_prompt: str,
         allowed_classes: List[int],
+        redis_use_cache: bool = False,
     ):
         """Open AI classification workflow.
 
@@ -380,12 +384,14 @@ class OpenAIClassification(OpenAIWorkflow):
             product_item_fields: Product item fields used to construct the user prompt.
             system_prompt: System prompt for the AI model.
             allowed_classes: Allowed classes for model output (must be positive).
+            redis_use_cache: Whether to use Redis cache.
         """
         super().__init__(
             http_client=http_client,
             name=name,
             api_key=api_key,
             model=model,
+            redis_use_cache=redis_use_cache,
         )
         self._product_item_fields = product_item_fields
         self._system_prompt = system_prompt
@@ -488,6 +494,7 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
         system_prompt: str,
         allowed_classes: List[int],
         user_inputs: UserInputs,
+        redis_use_cache: bool = False,
     ):
         """Open AI classification workflow from user input.
 
@@ -500,6 +507,7 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
             system_prompt: System prompt for the AI model.
             allowed_classes: Allowed classes for model output.
             user_inputs: Inputs from the frontend by the user.
+            redis_use_cache: Whether to use Redis cache.
         """
         super().__init__(
             http_client=http_client,
@@ -509,6 +517,7 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
             product_item_fields=product_item_fields,
             system_prompt=system_prompt,
             allowed_classes=allowed_classes,
+            redis_use_cache=redis_use_cache,
         )
         self._user_inputs = user_inputs
 

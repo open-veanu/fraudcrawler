@@ -40,13 +40,15 @@ class Workflow(RedisCacher):
     def __init__(
         self,
         name: str,
+        redis_use_cache: bool = False,
     ):
         """Abstract base class for defining a classification workflow.
 
         Args:
             name: Name of the classification workflow.
+            redis_use_cache: Whether to use Redis cache.
         """
-        super().__init__()
+        super().__init__(redis_use_cache=redis_use_cache)
         self.name = name
 
     async def apply(self, *args: Any, **kwargs: Any) -> Any:

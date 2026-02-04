@@ -439,7 +439,9 @@ class Toppreise(SearchEngine):
 
     _endpoint = "https://www.toppreise.ch/"
 
-    def __init__(self, http_client: httpx.AsyncClient, zyteapi_key: str, redis_use_cache: bool):
+    def __init__(
+        self, http_client: httpx.AsyncClient, zyteapi_key: str, redis_use_cache: bool
+    ):
         """Initializes the Toppreise client.
 
         Args:
@@ -448,7 +450,11 @@ class Toppreise(SearchEngine):
             redis_use_cache: Whether to use cache (passed to internal ZyteAPI).
         """
         super().__init__(http_client=http_client)
-        self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key, redis_use_cache=redis_use_cache)
+        self._zyteapi = ZyteAPI(
+            http_client=http_client,
+            api_key=zyteapi_key,
+            redis_use_cache=redis_use_cache,
+        )
 
     async def http_client_get_with_fallback(self, url: str) -> bytes:
         """Performs a GET request with retries.

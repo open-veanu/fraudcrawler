@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 class _PydanticJsonSerializer(JsonSerializer):
     """JsonSerializer that converts Pydantic models via model_dump() before JSON encoding."""
 
+    @staticmethod
     def _pydantic_json_default(o: Any) -> Any:
         if hasattr(o, "model_dump"):
             return o.model_dump()
@@ -192,7 +193,7 @@ class RedisCacher(ABC):
     async def _cached_apply(self, *args: Any, **kwargs: Any) -> Any:
         if self._cache is None:
             raise RuntimeError("Redis cache not initialized")
-        key = self._key_builder(func=self.apply, *args, **kwargs)
+        key = self._key_builder(self.apply, *args, **kwargs)
         val = await self._cache.get(key=key)
         ctx = self._cache_log_context(args=args, kwargs=kwargs)
         if len(ctx) > 72:
@@ -213,9 +214,7 @@ class RedisCacher(ABC):
         if self._use_cache:
             if self._cache is None:
                 raise RuntimeError("Redis cache not initialized")
-            await self._cache.delete(
-                key=self._key_builder(func=self.apply, *args, **kwargs)
-            )
+            await self._cache.delete(key=self._key_builder(self.apply, *args, **kwargs))
 
     async def clear_namespace(self) -> None:
         if self._use_cache:
