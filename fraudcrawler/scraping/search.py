@@ -17,7 +17,7 @@ from fraudcrawler.settings import (
 )
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.cache import RedisCacher
+from fraudcrawler.cache.cacher import RedisCacher
 from fraudcrawler.scraping.zyte import ZyteAPI
 
 logger = logging.getLogger(__name__)

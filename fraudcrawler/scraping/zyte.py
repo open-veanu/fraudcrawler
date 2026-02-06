@@ -9,7 +9,7 @@ from tenacity import RetryCallState
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
 from fraudcrawler.base.base import DomainUtils, ProductItem
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.cache import RedisCacher
+from fraudcrawler.cache.cacher import RedisCacher
 
 logger = logging.getLogger(__name__)
 

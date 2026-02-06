@@ -8,7 +8,6 @@ from fraudcrawler.base.base import (
     Language,
     HttpxAsyncClient,
 )
-from fraudcrawler.cache import RedisCacheConfig
 from fraudcrawler.scraping.search import (
     Searcher,
     SearchResult,
@@ -40,10 +39,11 @@ async def serpapi_google_shopping():
 async def toppreise():
     setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
-        yield Toppreise(http_client=httpx_client, zyteapi_key=setup.zyteapi_key)
-
-
-_cache_cfg = RedisCacheConfig(redis_url="redis://localhost:6379/0")
+        yield Toppreise(
+            http_client=httpx_client,
+            zyteapi_key=setup.zyteapi_key,
+            redis_use_cache=False,
+        )
 
 
 @pytest_asyncio.fixture
@@ -54,8 +54,7 @@ async def searcher():
             http_client=httpx_client,
             serpapi_key=setup.serpapi_key,
             zyteapi_key=setup.zyteapi_key,
-            config=_cache_cfg,
-            use_cache=False,
+            redis_use_cache=False,
         )
 
 
@@ -67,8 +66,7 @@ async def enricher():
             http_client=httpx_client,
             user=setup.dataforseo_user,
             pwd=setup.dataforseo_pwd,
-            config=_cache_cfg,
-            use_cache=False,
+            redis_use_cache=False,
         )
 
 
@@ -114,8 +112,7 @@ async def zyteapi():
         yield ZyteAPI(
             http_client=httpx_client,
             api_key=setup.zyteapi_key,
-            config=_cache_cfg,
-            use_cache=False,
+            redis_use_cache=False,
         )
 
 
