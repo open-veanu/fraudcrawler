@@ -318,12 +318,12 @@ async def test_enricher_get_related_keywords(enricher):
 
 
 @pytest.mark.asyncio
-async def test_enricher_enrich(enricher):
+async def test_enricher_apply(enricher):
     search_term = "sildenafil"
     location = Location(name="Switzerland", code="ch")
     language = Language(name="German", code="de")
     n_terms = 5
-    terms = await enricher.enrich(
+    terms = await enricher.apply(
         search_term=search_term,
         location=location,
         language=language,
@@ -438,10 +438,10 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
 
 
 @pytest.mark.asyncio
-async def test_zyteapi_details(zyteapi):
+async def test_zyteapi_apply(zyteapi):
     # url = "https://www.interdiscount.ch/it/product/liebherr-tp1410-136-l-bianco-0005000183"
     url = "https://www.toppreise.ch/preisvergleich/Siebtraegermaschinen/DELONGHI-La-Specialista-Maestro-Cold-Brew-EC9885-M-p807974"
-    product = await zyteapi.details(url=url)
+    product = await zyteapi.apply(url=url)
     assert product
 
     prod_url = product.get("url").replace("://www.", "://")
