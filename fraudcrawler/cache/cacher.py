@@ -8,7 +8,7 @@ import uuid
 
 from aiocache import Cache
 from aiocache.backends.redis import RedisCache
-from aiocache.serializers import JsonSerializer
+from aiocache.serializers import PickleSerializer
 
 from fraudcrawler.settings import (
     REDIS_USE_CACHE,
@@ -19,21 +19,6 @@ from fraudcrawler.settings import (
 
 
 logger = logging.getLogger(__name__)
-
-
-class _PydanticJsonSerializer(JsonSerializer):
-    """JsonSerializer that converts Pydantic models via model_dump() before JSON encoding."""
-
-    @staticmethod
-    def _pydantic_json_default(obj: Any) -> Any:
-        if isinstance(obj, BaseModel):
-            return obj.model_dump()
-        raise TypeError(
-            f"Object of type {obj.__class__.__name__} is not JSON serializable"
-        )
-
-    def dumps(self, value: Any) -> str:
-        return json.dumps(value, default=self._pydantic_json_default)
 
 
 class RedisCacher(ABC):
@@ -50,7 +35,7 @@ class RedisCacher(ABC):
     identical results.
     """
 
-    _default_host = 'localhost'
+    _default_host = "localhost"
     _default_port = 6379
     _default_db = 0
 
@@ -76,15 +61,17 @@ class RedisCacher(ABC):
 
         # Parameters for caching
         self._cache: RedisCache | None = None
-        self._serializer = _PydanticJsonSerializer()
         if self._use_cache:
             redis_kwargs = self._get_redis_kwargs(url=url)
-            self._cache = cast(RedisCache, Cache(
-                cache_class=Cache.REDIS,    # type: ignore[reportArgumentType]
-                serializer=self._serializer,
-                namespace=self._namespace,
-                **redis_kwargs,
-            ))
+            self._cache = cast(
+                RedisCache,
+                Cache(
+                    cache_class=Cache.REDIS,  # type: ignore[reportArgumentType]
+                    serializer=PickleSerializer(),
+                    namespace=self._namespace,
+                    **redis_kwargs,
+                ),
+            )
 
     def _get_redis_kwargs(self, url: str) -> Dict[str, str | int | None]:
         """Get redis parameters as endpoint, port, password and db"""
@@ -93,13 +80,13 @@ class RedisCacher(ABC):
         u = urlparse(url)
         if u.scheme not in {"redis", "rediss"}:
             raise ValueError("redis_url must start with redis:// or rediss://")
-        
+
         # Create and return redis kwargs
         return {
             "endpoint": u.hostname or self._default_host,
             "port": u.port or self._default_port,
             "password": u.password,
-            "db": int(up) if (up := u.path.lstrip("/")) else self._default_db
+            "db": int(up) if (up := u.path.lstrip("/")) else self._default_db,
         }
 
     @staticmethod
@@ -109,7 +96,7 @@ class RedisCacher(ABC):
     @staticmethod
     def _serialize_object(obj: Any) -> Any:
         """Recursively serialize args/kwargs for cache keys.
-        
+
         Uses model_dump() for pydantic.BaseModels, recurses into list and dict,
         leaves the rest unchanged.
         """
@@ -139,22 +126,28 @@ class RedisCacher(ABC):
         # Check if self._cache has been defined
         if self._cache is None:
             raise RuntimeError("Redis cache not initialized")
-    
+
         # Get caching key from arguments
         key = self._build_key(*args, **kwargs)
 
         # Check if key exists in the cacher; otherwise compute the response
         exists = await self._cache.exists(key=key)
         if exists:
-            logger.debug(f"Found cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})")
+            logger.debug(
+                f"Found cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})"
+            )
             result = await self._cache.get(key=key)
         else:
-            logger.debug(f"No cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})")
+            logger.debug(
+                f"No cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})"
+            )
             result = await self.apply(*args, **kwargs)
 
-            logger.debug(f'Set cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})')
+            logger.debug(
+                f"Set cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})"
+            )
             await self._cache.set(key=key, value=result, ttl=self._ttl)
-        
+
         return result
 
     @abstractmethod
@@ -169,12 +162,12 @@ class RedisCacher(ABC):
         if self._use_cache:
             logger.debug(f"Running cached apply() for {self.__class__.__name__}")
             result = await self._cached_apply(*args, **kwargs)
-        
+
         # No cacher, simply run self.apply() method
         else:
             logger.debug(f"Running not-cached apply() for {self.__class__.__name__}")
             result = await self.apply(*args, **kwargs)
-        
+
         return result
 
     # ---------------------------------
@@ -205,18 +198,18 @@ class RedisCacher(ABC):
 
         # Try to set dummy key-value pair
         try:
-            logger.debug('test to set dummy key-value pair in cacher')
+            logger.debug("test to set dummy key-value pair in cacher")
             await self._cache.set(key=key, value=value, ttl=test_ttl)
         except Exception:
             logger.error("failed to set dummy key-value pair in cacher", exc_info=True)
             return False
-        
+
         # Try to read dummy key-value pair and compare it
         try:
-            logger.debug('read written dummy value')
+            logger.debug("read written dummy value")
             obtained = await self._cache.get(key=key)
             await self._cache.delete(key=key)
             return obtained == value
         except Exception:
-            logger.error('failed to read dummy key-value pair in cacher', exc_info=True)
+            logger.error("failed to read dummy key-value pair in cacher", exc_info=True)
             return False
