@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import json
 import logging
 from pydantic import BaseModel
-from typing import Any, Callable, cast, Dict, List
+from typing import Any, cast, Dict, Sequence
 from urllib.parse import urlparse
 import uuid
 
@@ -15,7 +15,6 @@ from fraudcrawler.settings import (
     REDIS_URL,
     REDIS_TTL,
     REDIS_NAMESPACE,
-    REDIS_LEASE,
 )
 
 
@@ -46,14 +45,14 @@ class RedisCacher(ABC):
     Any subclass of RedisCacher must implement `apply()` with their core logic.
     The function `capply()` is a wrapper taking care of caching.
 
-    Cache keys are built deterministically from the class name, method name, and
-    serialized arguments (including Pydantic models), so identical calls produce
+    Cache keys are built deterministically from the class name and serialized
+    arguments (including Pydantic models), so identical calls produce
     identical results.
     """
 
     _default_host = 'localhost'
     _default_port = 6379
-    _default_db = '0'
+    _default_db = 0
 
     def __init__(
         self,
@@ -61,7 +60,6 @@ class RedisCacher(ABC):
         url: str = REDIS_URL,
         ttl: int = REDIS_TTL,
         namespace: str = REDIS_NAMESPACE,
-        lease: int = REDIS_LEASE,
     ) -> None:
         """Initialize the cacher, optionally connecting to Redis.
 
@@ -70,13 +68,11 @@ class RedisCacher(ABC):
             url: Redis connection URL (redis:// or rediss://).
             ttl: Time-to-live in seconds for cached entries.
             namespace: Key namespace to isolate entries in shared Redis instances.
-            lease: Lease timeout in seconds for distributed locking.
         """
-        # Input parameteras
+        # Input parameters
         self._use_cache = use_cache
         self._ttl = ttl
         self._namespace = namespace
-        self._lease = lease
 
         # Parameters for caching
         self._cache: RedisCache | None = None
@@ -91,7 +87,7 @@ class RedisCacher(ABC):
             ))
 
     def _get_redis_kwargs(self, url: str) -> Dict[str, str | int | None]:
-        """Get redis paramters as endpoint, port, password and db"""
+        """Get redis parameters as endpoint, port, password and db"""
 
         # Parse and check url
         u = urlparse(url)
@@ -103,11 +99,11 @@ class RedisCacher(ABC):
             "endpoint": u.hostname or self._default_host,
             "port": u.port or self._default_port,
             "password": u.password,
-            "db": int((u.path or "/0").lstrip("/") or self._default_db),
+            "db": int(up) if (up := u.path.lstrip("/")) else self._default_db
         }
 
     @staticmethod
-    def _stable_key(payload: dict[str, Any]) -> str:
+    def _stable_key(payload: Dict[str, Any]) -> str:
         return json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
 
     @staticmethod
@@ -119,14 +115,14 @@ class RedisCacher(ABC):
         """
         if isinstance(obj, BaseModel):
             return obj.model_dump()
-        if isinstance(obj, List):
+        if isinstance(obj, Sequence):
             return [RedisCacher._serialize_object(x) for x in obj]
-        if isinstance(obj, dict):
+        if isinstance(obj, Dict):
             return {k: RedisCacher._serialize_object(v) for k, v in obj.items()}
         return obj
 
     def _build_key(self, *args: Any, **kwargs: Any) -> str:
-        """Builds caching key based on function name, args and kwargs."""
+        """Builds caching key based on class name, args and kwargs."""
         args_ = tuple(self._serialize_object(a) for a in args)
         kwargs_ = {k: self._serialize_object(v) for k, v in kwargs.items()}
         return self._stable_key(
@@ -147,28 +143,28 @@ class RedisCacher(ABC):
         # Get caching key from arguments
         key = self._build_key(*args, **kwargs)
 
-        # Check if key exists in the cacher
-        result = await self._cache.get(key=key)
-
-        # If result was not found from the key, compute it
-        if result is None:
+        # Check if key exists in the cacher; otherwise compute the response
+        exists = await self._cache.exists(key=key)
+        if exists:
+            logger.debug(f"Found cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})")
+            result = await self._cache.get(key=key)
+        else:
             logger.debug(f"No cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})")
             result = await self.apply(*args, **kwargs)
 
-            logger.debug(f'Set cached resposnse for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})')
+            logger.debug(f'Set cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})')
             await self._cache.set(key=key, value=result, ttl=self._ttl)
-        else:
-            logger.debug(f"Found cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})")
         
         return result
 
     @abstractmethod
     async def apply(self, *args: Any, **kwargs: Any) -> Any:
         """The cached function that each child of :class:`RedisCacher` must implement."""
-        raise NotImplementedError
+        pass
 
     async def capply(self, *args: Any, **kwargs: Any) -> Any:
-        """(Cached) apply method."""
+        """Calls the method `apply()` with Redis caching if enabled. Otherwise it calls `apply()` directly."""
+
         # Cacher wrapped around self.apply() method
         if self._use_cache:
             logger.debug(f"Running cached apply() for {self.__class__.__name__}")
@@ -181,9 +177,9 @@ class RedisCacher(ABC):
         
         return result
 
-    # --------------------------------
-    # Utils for managing Redis remotly
-    # --------------------------------
+    # ---------------------------------
+    # Utils for managing Redis remotely
+    # ---------------------------------
     async def utils_clear_namespace(self) -> None:
         if self._use_cache:
             if self._cache is None:
@@ -217,7 +213,7 @@ class RedisCacher(ABC):
         
         # Try to read dummy key-value pair and compare it
         try:
-            logger.debug(f'read written dummy value')
+            logger.debug('read written dummy value')
             obtained = await self._cache.get(key=key)
             await self._cache.delete(key=key)
             return obtained == value
