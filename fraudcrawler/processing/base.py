@@ -7,6 +7,7 @@ from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.cache.cacher import RedisCacher
+from fraudcrawler.settings import REDIS_USE_CACHE
 
 logger = logging.getLogger(__name__)
 
@@ -40,15 +41,15 @@ class Workflow(RedisCacher):
     def __init__(
         self,
         name: str,
-        redis_use_cache: bool = False,
+        redis_use_cache: bool = REDIS_USE_CACHE,
     ):
         """Abstract base class for defining a classification workflow.
 
         Args:
             name: Name of the classification workflow.
-            redis_use_cache: Whether to use Redis cache.
+            redis_use_cache: Whether to use caching by a redis instance or not.
         """
-        super().__init__(redis_use_cache=redis_use_cache)
+        super().__init__(use_cache=redis_use_cache)
         self.name = name
 
     @abstractmethod

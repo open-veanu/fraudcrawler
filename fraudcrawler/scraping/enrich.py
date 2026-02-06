@@ -7,7 +7,7 @@ from typing import Dict, Iterator, List
 import httpx
 from tenacity import RetryCallState
 
-from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
+from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT, REDIS_USE_CACHE
 from fraudcrawler.base.base import Location, Language
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.cacher import RedisCacher
@@ -36,7 +36,7 @@ class Enricher(RedisCacher):
         http_client: httpx.AsyncClient,
         user: str,
         pwd: str,
-        redis_use_cache: bool,
+        redis_use_cache: bool = REDIS_USE_CACHE,
     ):
         """Initializes the DataForSeoApiClient with the given username and password.
 
@@ -44,9 +44,10 @@ class Enricher(RedisCacher):
             http_client: An httpx.AsyncClient to use for the async requests.
             user: The username for DataForSEO API.
             pwd: The password for DataForSEO API.
-            redis_use_cache: Whether to use cache.
+            redis_use_cache: Whether to use caching by a redis instance or not.
         """
-        super().__init__(redis_use_cache=redis_use_cache)
+        super().__init__(use_cache=redis_use_cache)
+
         self._http_client = http_client
         self._user = user
         self._pwd = pwd
@@ -368,18 +369,3 @@ class Enricher(RedisCacher):
         terms = [kw.text for kw in keywords[:n_terms]]
         logger.info(f"Produced {len(terms)} additional search_terms.")
         return terms
-
-    async def enrich(
-        self,
-        search_term: str,
-        language: Language,
-        location: Location,
-        n_terms: int,
-    ) -> List[str]:
-        """Applies the enrichment to a search_term (cached via capply)."""
-        return await self.capply(
-            search_term=search_term,
-            language=language,
-            location=location,
-            n_terms=n_terms,
-        )

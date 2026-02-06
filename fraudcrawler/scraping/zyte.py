@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 import httpx
 from tenacity import RetryCallState
 
-from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
+from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD, REDIS_USE_CACHE
 from fraudcrawler.base.base import DomainUtils, ProductItem
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.cacher import RedisCacher
@@ -34,15 +34,17 @@ class ZyteAPI(RedisCacher, DomainUtils):
         self,
         http_client: httpx.AsyncClient,
         api_key: str,
-        redis_use_cache: bool,
+        redis_use_cache: bool = REDIS_USE_CACHE,
     ):
         """Initializes the ZyteApiClient with the given API key and retry configurations.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for Zyte API.
+            redis_use_cache: Whether to use caching by a redis instance or not.
         """
-        super().__init__(redis_use_cache=redis_use_cache)
+        super().__init__(use_cache=redis_use_cache)
+
         self._http_client = http_client
         self._api_key = api_key
 

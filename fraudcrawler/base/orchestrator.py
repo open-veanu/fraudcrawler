@@ -405,7 +405,7 @@ class Orchestrator(ABC):
         if enrichment:
             # Call DataForSEO to get additional terms
             n_terms = enrichment.additional_terms
-            terms = await self._enricher.enrich(
+            terms = await self._enricher.capply(
                 search_term=search_term,
                 language=language,
                 location=location,
