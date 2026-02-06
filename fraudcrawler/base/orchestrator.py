@@ -176,7 +176,7 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Fetch and enrich the product context from Zyte API
-                    details = await self._zyteapi.details(url=product.url)
+                    details = await self._zyteapi.capply(url=product.url)
                     product = self._zyteapi.enrich_context(
                         product=product, details=details
                     )

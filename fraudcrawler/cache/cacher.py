@@ -60,12 +60,16 @@ class RedisCacher(ABC):
 
         self._cache_kwargs = self._redis_kwargs()
 
-        self._cache = Cache(
+        from aiocache.backends.redis import RedisCache
+        from typing import cast
+        if Cache.REDIS is None:
+            raise ValueError
+        self._cache = cast(RedisCache, Cache(
             cache_class=Cache.REDIS,
             serializer=self._serializer,
             namespace=self._redis_namespace,
             **self._cache_kwargs,
-        )
+        ))
 
         self._wrapped = self._cached_apply
         self._assert_redis_available()

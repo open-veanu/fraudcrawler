@@ -255,7 +255,7 @@ class ZyteAPI(RedisCacher, DomainUtils):
             url: The URL to fetch using Zyte proxy mode.
         """
         logger.debug(f'Unblock URL content using Zyte proxy for url="{url}"')
-        details = await self.details(url)
+        details = await self.capply(url)
 
         if not details or "httpResponseBody" not in details:
             raise httpx.HTTPError("No httpResponseBody in Zyte response")
@@ -286,7 +286,3 @@ class ZyteAPI(RedisCacher, DomainUtils):
                 response.raise_for_status()
 
         return response.json()
-
-    async def details(self, url: str) -> dict:
-        """Fetches product details for a single URL (cached via capply)."""
-        return await self.capply(url)

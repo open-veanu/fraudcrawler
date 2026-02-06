@@ -882,7 +882,7 @@ class Searcher(RedisCacher, DomainUtils):
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
-    ) -> List[dict]:
+    ) -> List[SearchResult]:
         """Performs a search and returns list of dicts (model_dump) for cache serialization."""
         logger.info(
             f'Performing search for term="{search_term}" using engine="{search_engine}".'
@@ -951,4 +951,4 @@ class Searcher(RedisCacher, DomainUtils):
         logger.info(
             f'Search for term="{search_term}" using engine="{search_engine}" produced {len(results)} results.'
         )
-        return [r.model_dump() for r in results]
+        return results
