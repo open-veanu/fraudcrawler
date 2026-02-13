@@ -14,9 +14,11 @@ from fraudcrawler.settings import (
     SEARCH_DEFAULT_COUNTRY_CODES,
     TOPPREISE_SEARCH_PATHS,
     TOPPREISE_COMPARISON_PATHS,
+    REDIS_USE_CACHE,
 )
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache.cacher import RedisCacher
 from fraudcrawler.scraping.zyte import ZyteAPI
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,7 @@ class SearchEngine(ABC, DomainUtils):
             http_client: An httpx.AsyncClient to use for the async requests.
         """
         self._http_client = http_client
+        super().__init__()
 
     @property
     @abstractmethod
@@ -437,15 +440,22 @@ class Toppreise(SearchEngine):
 
     _endpoint = "https://www.toppreise.ch/"
 
-    def __init__(self, http_client: httpx.AsyncClient, zyteapi_key: str):
+    def __init__(
+        self, http_client: httpx.AsyncClient, zyteapi_key: str, redis_use_cache: bool
+    ):
         """Initializes the Toppreise client.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
+            redis_use_cache: Whether to use cache (passed to internal ZyteAPI).
         """
         super().__init__(http_client=http_client)
-        self._zyteapi = ZyteAPI(http_client=http_client, api_key=zyteapi_key)
+        self._zyteapi = ZyteAPI(
+            http_client=http_client,
+            api_key=zyteapi_key,
+            redis_use_cache=redis_use_cache,
+        )
 
     async def http_client_get_with_fallback(self, url: str) -> bytes:
         """Performs a GET request with retries.
@@ -512,10 +522,12 @@ class Toppreise(SearchEngine):
             href
             for link in links
             if (
-                hasattr(link, "get")  # Ensure we have a Tag object with href attribute
-                and (href := link.get("href"))  # Ensure href is not None
+                hasattr(link, "get")
+                and (href := link.get("href"))  # type: ignore[attributeAccessIssue]
+                and isinstance(
+                    href, str
+                )  # Ensure href is a string (excludes AttributeValueList)
                 and not href.startswith("javascript:")  # Skip javascript links
-                and isinstance(href, str)  # Ensure href is a string
                 # Make sure the link is either an external product link (href contains 'ext_')
                 # or is a search result link (href contains 'preisvergleich', 'comparison-prix', or 'price-comparison')
                 and (
@@ -632,13 +644,17 @@ class Toppreise(SearchEngine):
         return results
 
 
-class Searcher(DomainUtils):
+class Searcher(RedisCacher, DomainUtils):
     """Class to perform searches using different search engines."""
 
     _post_search_retry_stop_after = 3
 
     def __init__(
-        self, http_client: httpx.AsyncClient, serpapi_key: str, zyteapi_key: str
+        self,
+        http_client: httpx.AsyncClient,
+        serpapi_key: str,
+        zyteapi_key: str,
+        redis_use_cache: bool = REDIS_USE_CACHE,
     ):
         """Initializes the Search class with the given SerpAPI key.
 
@@ -646,7 +662,10 @@ class Searcher(DomainUtils):
             http_client: An httpx.AsyncClient to use for the async requests.
             serpapi_key: The API key for SERP API.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
+            redis_use_cache: Whether to use caching by a redis instance or not.
         """
+        RedisCacher.__init__(self=self, use_cache=redis_use_cache)
+
         self._http_client = http_client
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
         self._google_shopping = SerpAPIGoogleShopping(
@@ -656,6 +675,7 @@ class Searcher(DomainUtils):
         self._toppreise = Toppreise(
             http_client=http_client,
             zyteapi_key=zyteapi_key,
+            redis_use_cache=redis_use_cache,
         )
 
     async def _post_search_google_shopping_immersive(self, url: str) -> List[str]:
@@ -843,17 +863,7 @@ class Searcher(DomainUtils):
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
     ) -> List[SearchResult]:
-        """Performs a search and returns SearchResults.
-
-        Args:
-            search_term: The search term to use for the query.
-            search_engine: The search engine to use for the search.
-            language: The language to use for the query ('hl' parameter).
-            location: The location to use for the query ('gl' parameter).
-            num_results: Max number of results per search engine.
-            marketplaces: The marketplaces to include in the search.
-            excluded_urls: The URLs to exclude from the search.
-        """
+        """Performs a search from given search engine."""
         logger.info(
             f'Performing search for term="{search_term}" using engine="{search_engine}".'
         )

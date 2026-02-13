@@ -102,3 +102,9 @@ DEFAULT_HTTPX_LIMITS = {
     "max_keepalive_connections": 100,
 }
 DEFAULT_HTTPX_REDIRECTS = True
+
+# Redis cache settings
+REDIS_USE_CACHE = False
+REDIS_URL = "redis://localhost:6379"
+REDIS_TTL = 3600
+REDIS_NAMESPACE = "fraudcrawler"

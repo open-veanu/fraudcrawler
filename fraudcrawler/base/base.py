@@ -47,6 +47,9 @@ class Setup(BaseSettings):
     openaiapi_key: str
     pypy_token: str
 
+    # Redis cache
+    redis_use_cache: bool
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

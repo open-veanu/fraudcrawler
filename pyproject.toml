@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "fraudcrawler"
-version = "0.7.28"
+version = "0.8.3"
 description = "Intelligent Market Monitoring"
 authors = [
     "Domingo Bertus <hello@veanu.ch>",
@@ -20,6 +20,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.11"
+aiocache = {extras = ["redis"], version = "^0.12.0"}
 requests = "^2.32.3"
 pandas = "^2.2.3"
 pydantic-settings = "^2.8.1"

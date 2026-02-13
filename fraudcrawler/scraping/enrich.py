@@ -7,9 +7,10 @@ from typing import Dict, Iterator, List
 import httpx
 from tenacity import RetryCallState
 
-from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT
+from fraudcrawler.settings import ENRICHMENT_DEFAULT_LIMIT, REDIS_USE_CACHE
 from fraudcrawler.base.base import Location, Language
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache.cacher import RedisCacher
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class Keyword(BaseModel):
     volume: int
 
 
-class Enricher:
+class Enricher(RedisCacher):
     """A client to interact with the DataForSEO API for enhancing searches (producing alternative search_terms)."""
 
     _auth_encoding = "ascii"
@@ -30,14 +31,23 @@ class Enricher:
     _suggestions_endpoint = "/v3/dataforseo_labs/google/keyword_suggestions/live"
     _keywords_endpoint = "/v3/dataforseo_labs/google/related_keywords/live"
 
-    def __init__(self, http_client: httpx.AsyncClient, user: str, pwd: str):
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        user: str,
+        pwd: str,
+        redis_use_cache: bool = REDIS_USE_CACHE,
+    ):
         """Initializes the DataForSeoApiClient with the given username and password.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             user: The username for DataForSEO API.
             pwd: The password for DataForSEO API.
+            redis_use_cache: Whether to use caching by a redis instance or not.
         """
+        super().__init__(use_cache=redis_use_cache)
+
         self._http_client = http_client
         self._user = user
         self._pwd = pwd
@@ -298,14 +308,14 @@ class Enricher:
         logger.debug(f"Found {len(keywords)} related keywords from DataForSEO search.")
         return keywords
 
-    async def enrich(
+    async def apply(
         self,
         search_term: str,
         language: Language,
         location: Location,
         n_terms: int,
     ) -> List[str]:
-        """Applies the enrichment to a search_term.
+        """Applies the enrichment to a search_term. (cacheable via capply).
 
         Args:
             search_term: The search term to use for the query.
@@ -313,10 +323,10 @@ class Enricher:
             language: The language to use for the search.
             n_terms: The number of additional terms
         """
+
         logger.info(
             f'Applying enrichment for search_term="{search_term}" and n_terms="{n_terms}".'
         )
-        # Get the additional suggested keywords
         try:
             suggested = await self._get_suggested_keywords(
                 search_term=search_term,

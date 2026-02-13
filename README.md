@@ -115,6 +115,8 @@ previously_collected_urls = [
 await client.run(..., previously_collected_urls=previously_collected_urls)
 ```
 
+**Redis cache** – Set `REDIS_USE_CACHE=true` and run Redis to cache API and scrape calls (Searcher, Enricher, Zyte, Workflow).
+
 **View all results** from a client instance:
 ```python
 client.print_available_results()

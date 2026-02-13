@@ -22,11 +22,14 @@ from fraudcrawler import (
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
 LOG_LVL = "INFO"
 DATE_FMT = "%Y-%m-%d %H:%M:%S"
+REDIS_USE_CACHE = True
 SETUP = Setup()  # type: ignore[call-arg]
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
 
-def _setup_workflows(http_client: HttpxAsyncClient) -> Sequence[Workflow]:
+def _setup_workflows(
+    http_client: HttpxAsyncClient, redis_use_cache: bool
+) -> Sequence[Workflow]:
     """Sets up the set of workflows to be run iteratively."""
     _AVAILABILITY_SYSTEM_PROMPT = (
         "You are a helpful and intelligent assistant helping an organization that is interested in checking the availability of certain products."
@@ -58,6 +61,7 @@ def _setup_workflows(http_client: HttpxAsyncClient) -> Sequence[Workflow]:
             product_item_fields=["product_name", "html_clean"],
             system_prompt=_AVAILABILITY_SYSTEM_PROMPT,
             allowed_classes=[0, 1],
+            redis_use_cache=redis_use_cache,
         ),
         OpenAIClassification(
             http_client=http_client,
@@ -67,6 +71,7 @@ def _setup_workflows(http_client: HttpxAsyncClient) -> Sequence[Workflow]:
             product_item_fields=["product_name", "product_description"],
             system_prompt=_SERIOUSNESS_SYSTEM_PROMPT,
             allowed_classes=[0, 1],
+            redis_use_cache=redis_use_cache,
         ),
     ]
 
@@ -100,18 +105,23 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
         http_client=http_client,
         serpapi_key=SETUP.serpapi_key,
         zyteapi_key=SETUP.zyteapi_key,
+        redis_use_cache=REDIS_USE_CACHE,
     )
     enricher = Enricher(
         http_client=http_client,
         user=SETUP.dataforseo_user,
         pwd=SETUP.dataforseo_pwd,
+        redis_use_cache=REDIS_USE_CACHE,
     )
     url_collector = URLCollector()
     zyteapi = ZyteAPI(
         http_client=http_client,
         api_key=SETUP.zyteapi_key,
+        redis_use_cache=REDIS_USE_CACHE,
     )
-    workflows = _setup_workflows(http_client=http_client)
+    workflows = _setup_workflows(
+        http_client=http_client, redis_use_cache=REDIS_USE_CACHE
+    )
     processor = Processor(workflows=workflows)
 
     # Setup the client

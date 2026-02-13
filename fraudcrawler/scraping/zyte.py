@@ -6,14 +6,15 @@ from bs4 import BeautifulSoup
 import httpx
 from tenacity import RetryCallState
 
-from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD
+from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD, REDIS_USE_CACHE
 from fraudcrawler.base.base import DomainUtils, ProductItem
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache.cacher import RedisCacher
 
 logger = logging.getLogger(__name__)
 
 
-class ZyteAPI(DomainUtils):
+class ZyteAPI(RedisCacher, DomainUtils):
     """A client to interact with the Zyte API for fetching product details."""
 
     _endpoint = "https://api.zyte.com/v1/extract"
@@ -33,13 +34,17 @@ class ZyteAPI(DomainUtils):
         self,
         http_client: httpx.AsyncClient,
         api_key: str,
+        redis_use_cache: bool = REDIS_USE_CACHE,
     ):
         """Initializes the ZyteApiClient with the given API key and retry configurations.
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
             api_key: The API key for Zyte API.
+            redis_use_cache: Whether to use caching by a redis instance or not.
         """
+        super().__init__(use_cache=redis_use_cache)
+
         self._http_client = http_client
         self._api_key = api_key
 
@@ -252,39 +257,15 @@ class ZyteAPI(DomainUtils):
             url: The URL to fetch using Zyte proxy mode.
         """
         logger.debug(f'Unblock URL content using Zyte proxy for url="{url}"')
-        details = await self.details(url)
+        details = await self.capply(url)
 
         if not details or "httpResponseBody" not in details:
             raise httpx.HTTPError("No httpResponseBody in Zyte response")
 
         return b64decode(details["httpResponseBody"])
 
-    async def details(self, url: str) -> dict:
-        """Fetches product details for a single URL.
-
-        Args:
-            url: The URL to fetch product details from.
-
-        Returns:
-            A dictionary containing the product details, fields include:
-            (c.f. https://docs.zyte.com/zyte-api/usage/reference.html#operation/extract/response/200/product)
-            {
-                "url": str,
-                "statusCode": str,
-                "product": {
-                    "name": str,
-                    "price": str,
-                    "mainImage": {"url": str},
-                    "images": [{"url": str}],
-                    "description": str,
-                    "gtin": [{"type": str, "value": str}],
-                    "metadata": {
-                        "probability": float,
-                    },
-                },
-                "httpResponseBody": base64
-            }
-        """
+    async def apply(self, url: str) -> dict:
+        """Fetches product details for a single URL (cacheable via capply)."""
         logger.info(f"Fetching product details by Zyte for URL {url}.")
 
         # Perform the request and retry if necessary. There is some context aware logging:
@@ -306,5 +287,4 @@ class ZyteAPI(DomainUtils):
                 )
                 response.raise_for_status()
 
-        details = response.json()
-        return details
+        return response.json()

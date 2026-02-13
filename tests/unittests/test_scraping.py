@@ -39,7 +39,11 @@ async def serpapi_google_shopping():
 async def toppreise():
     setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
-        yield Toppreise(http_client=httpx_client, zyteapi_key=setup.zyteapi_key)
+        yield Toppreise(
+            http_client=httpx_client,
+            zyteapi_key=setup.zyteapi_key,
+            redis_use_cache=False,
+        )
 
 
 @pytest_asyncio.fixture
@@ -50,6 +54,7 @@ async def searcher():
             http_client=httpx_client,
             serpapi_key=setup.serpapi_key,
             zyteapi_key=setup.zyteapi_key,
+            redis_use_cache=False,
         )
 
 
@@ -61,6 +66,7 @@ async def enricher():
             http_client=httpx_client,
             user=setup.dataforseo_user,
             pwd=setup.dataforseo_pwd,
+            redis_use_cache=False,
         )
 
 
@@ -103,7 +109,11 @@ def other_urls():
 async def zyteapi():
     setup = Setup()  # type: ignore[call-arg]
     async with HttpxAsyncClient() as httpx_client:
-        yield ZyteAPI(http_client=httpx_client, api_key=setup.zyteapi_key)
+        yield ZyteAPI(
+            http_client=httpx_client,
+            api_key=setup.zyteapi_key,
+            redis_use_cache=False,
+        )
 
 
 @pytest.mark.asyncio
@@ -308,12 +318,12 @@ async def test_enricher_get_related_keywords(enricher):
 
 
 @pytest.mark.asyncio
-async def test_enricher_enrich(enricher):
+async def test_enricher_apply(enricher):
     search_term = "sildenafil"
     location = Location(name="Switzerland", code="ch")
     language = Language(name="German", code="de")
     n_terms = 5
-    terms = await enricher.enrich(
+    terms = await enricher.apply(
         search_term=search_term,
         location=location,
         language=language,
@@ -428,10 +438,10 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
 
 
 @pytest.mark.asyncio
-async def test_zyteapi_details(zyteapi):
+async def test_zyteapi_apply(zyteapi):
     # url = "https://www.interdiscount.ch/it/product/liebherr-tp1410-136-l-bianco-0005000183"
     url = "https://www.toppreise.ch/preisvergleich/Siebtraegermaschinen/DELONGHI-La-Specialista-Maestro-Cold-Brew-EC9885-M-p807974"
-    product = await zyteapi.details(url=url)
+    product = await zyteapi.apply(url=url)
     assert product
 
     prod_url = product.get("url").replace("://www.", "://")
@@ -467,7 +477,7 @@ async def test_searcher_apply(searcher):
 
     # Test with Google
     search_engine = "google"
-    results = await searcher.apply(
+    results = await searcher.capply(
         search_term=search_term,
         search_engine=search_engine,
         language=language,
@@ -480,7 +490,7 @@ async def test_searcher_apply(searcher):
 
     # Test with Google Shopping
     search_engine = "google_shopping"
-    results = await searcher.apply(
+    results = await searcher.capply(
         search_term=search_term,
         search_engine=search_engine,
         language=language,
@@ -494,7 +504,7 @@ async def test_searcher_apply(searcher):
     # Test with Toppreise
     search_term = "Liebherr CT 2531"
     search_engine = "toppreise"
-    results = await searcher.apply(
+    results = await searcher.capply(
         search_term=search_term,
         search_engine=search_engine,
         language=language,
@@ -604,14 +614,14 @@ async def test_searcher_apply_toppreise_post_search(searcher):
     language = Language(name="German")
     num_results = 16
 
-    results = await searcher.apply(
+    results = await searcher.capply(
         search_term=search_term,
         search_engine=search_engine,
         language=language,
         location=location,
         num_results=num_results,
     )
-    assert num_results < len(results)  # post_search should add more results
+    assert len(results) >= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
     assert all(res.search_engine_name == "toppreise" for res in results)

@@ -43,6 +43,7 @@ async def processor():
         product_item_fields=["product_name", "product_description"],
         system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
         allowed_classes=[0, 1],
+        redis_use_cache=False,
     )
     openai_clfc_user_input = OpenAIClassificationUserInputs(
         name="test_openai_clfc_user_input",
@@ -53,6 +54,7 @@ async def processor():
         system_prompt="You are a random classifier. Choose either 0 or 1. But if it is related to a test, always choose 1.",
         allowed_classes=[0, 1],
         user_inputs={"one": ["plus", "two"]},
+        redis_use_cache=False,
     )
     return Processor(workflows=[openai_clfc, openai_clfc_user_input])
 
@@ -101,9 +103,9 @@ async def test_openai_clfc_get_user_prompt(processor: Processor, product: Produc
 
 
 @pytest.mark.asyncio
-async def test_openai_classification_run(processor: Processor, product: ProductItem):
+async def test_openai_classification_apply(processor: Processor, product: ProductItem):
     openai_clfc = cast(OpenAIClassification, processor._workflows[0])
-    clfc = await openai_clfc.run(product=product)
+    clfc = await openai_clfc.apply(product=product)
 
     assert isinstance(clfc, ClassificationResult)
     assert isinstance(clfc.result, int)
