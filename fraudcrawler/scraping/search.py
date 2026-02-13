@@ -14,6 +14,7 @@ from fraudcrawler.settings import (
     SEARCH_DEFAULT_COUNTRY_CODES,
     TOPPREISE_SEARCH_PATHS,
     TOPPREISE_COMPARISON_PATHS,
+    REDIS_USE_CACHE,
 )
 from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
@@ -521,8 +522,8 @@ class Toppreise(SearchEngine):
             href
             for link in links
             if (
-                hasattr(link, "get")  # Ensure we have a Tag object with href attribute
-                and (href := link.get("href"))  # Ensure href is not None
+                hasattr(link, "get")
+                and (href := link.get("href"))  # type: ignore[attributeAccessIssue]
                 and isinstance(
                     href, str
                 )  # Ensure href is a string (excludes AttributeValueList)
@@ -653,7 +654,7 @@ class Searcher(RedisCacher, DomainUtils):
         http_client: httpx.AsyncClient,
         serpapi_key: str,
         zyteapi_key: str,
-        redis_use_cache: bool,
+        redis_use_cache: bool = REDIS_USE_CACHE,
     ):
         """Initializes the Search class with the given SerpAPI key.
 
@@ -661,9 +662,10 @@ class Searcher(RedisCacher, DomainUtils):
             http_client: An httpx.AsyncClient to use for the async requests.
             serpapi_key: The API key for SERP API.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
-            redis_use_cache: Whether to use cache.
+            redis_use_cache: Whether to use caching by a redis instance or not.
         """
-        super().__init__(redis_use_cache=redis_use_cache)
+        RedisCacher.__init__(self=self, use_cache=redis_use_cache)
+
         self._http_client = http_client
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)
         self._google_shopping = SerpAPIGoogleShopping(
@@ -675,28 +677,6 @@ class Searcher(RedisCacher, DomainUtils):
             zyteapi_key=zyteapi_key,
             redis_use_cache=redis_use_cache,
         )
-
-    async def capply(
-        self,
-        search_term: str,
-        search_engine: SearchEngineName | str,
-        language: Language,
-        location: Location,
-        num_results: int,
-        marketplaces: List[Host] | None = None,
-        excluded_urls: List[Host] | None = None,
-    ) -> List[SearchResult]:
-        """Cached search: returns List[SearchResult]. Use this as the public entry."""
-        data = await super().capply(
-            search_term=search_term,
-            search_engine=search_engine,
-            language=language,
-            location=location,
-            num_results=num_results,
-            marketplaces=marketplaces,
-            excluded_urls=excluded_urls,
-        )
-        return [SearchResult.model_validate(d) for d in data]
 
     async def _post_search_google_shopping_immersive(self, url: str) -> List[str]:
         """Post-search for product URLs from a Google Shopping immersive product page.
@@ -882,8 +862,8 @@ class Searcher(RedisCacher, DomainUtils):
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
-    ) -> List[dict]:
-        """Performs a search and returns list of dicts (model_dump) for cache serialization."""
+    ) -> List[SearchResult]:
+        """Performs a search from given search engine."""
         logger.info(
             f'Performing search for term="{search_term}" using engine="{search_engine}".'
         )
@@ -951,4 +931,4 @@ class Searcher(RedisCacher, DomainUtils):
         logger.info(
             f'Search for term="{search_term}" using engine="{search_engine}" produced {len(results)} results.'
         )
-        return [r.model_dump() for r in results]
+        return results

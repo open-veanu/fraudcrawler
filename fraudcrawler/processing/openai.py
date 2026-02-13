@@ -462,18 +462,6 @@ class OpenAIClassification(OpenAIWorkflow):
         )
         return clfn
 
-    async def run(self, product: ProductItem) -> ClassificationResult:
-        """Calls the OpenAI API with the user prompt from the product."""
-        try:
-            raw = await self.capply(product)
-            if isinstance(raw, dict):
-                return ClassificationResult.model_validate(raw)
-            return raw
-        except Exception as e:
-            raise Exception(
-                f'Error classifying product at url="{product.url}" with workflow="{self.name}": {e}'
-            ) from e
-
 
 class OpenAIClassificationUserInputs(OpenAIClassification):
     """Open AI classification workflow with single API call using specific product_item fields plus user_inputs for setting up the context.

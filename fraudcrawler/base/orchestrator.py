@@ -176,7 +176,7 @@ class Orchestrator(ABC):
             if not product.filtered:
                 try:
                     # Fetch and enrich the product context from Zyte API
-                    details = await self._zyteapi.details(url=product.url)
+                    details = await self._zyteapi.capply(url=product.url)
                     product = self._zyteapi.enrich_context(
                         product=product, details=details
                     )
@@ -405,7 +405,7 @@ class Orchestrator(ABC):
         if enrichment:
             # Call DataForSEO to get additional terms
             n_terms = enrichment.additional_terms
-            terms = await self._enricher.enrich(
+            terms = await self._enricher.capply(
                 search_term=search_term,
                 language=language,
                 location=location,

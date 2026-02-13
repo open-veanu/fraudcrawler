@@ -7,6 +7,7 @@ from tenacity import RetryCallState
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.cache.cacher import RedisCacher
+from fraudcrawler.settings import REDIS_USE_CACHE
 
 logger = logging.getLogger(__name__)
 
@@ -40,19 +41,20 @@ class Workflow(RedisCacher):
     def __init__(
         self,
         name: str,
-        redis_use_cache: bool = False,
+        redis_use_cache: bool = REDIS_USE_CACHE,
     ):
         """Abstract base class for defining a classification workflow.
 
         Args:
             name: Name of the classification workflow.
-            redis_use_cache: Whether to use Redis cache.
+            redis_use_cache: Whether to use caching by a redis instance or not.
         """
-        super().__init__(redis_use_cache=redis_use_cache)
+        super().__init__(use_cache=redis_use_cache)
         self.name = name
 
-    async def apply(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("Subclasses that use caching must override apply")
+    @abstractmethod
+    async def apply(self, product: ProductItem) -> WorkflowResult:
+        pass
 
     def _log_before(self, context: Context, retry_state: RetryCallState) -> None:
         """Context aware logging before the request is made."""
@@ -72,11 +74,6 @@ class Workflow(RedisCacher):
                 f"failed with error: {retry_state.outcome.exception()}. "
                 f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
             )
-
-    @abstractmethod
-    async def run(self, product: ProductItem) -> WorkflowResult:
-        """Runs the workflow."""
-        pass
 
 
 class Processor:
@@ -110,7 +107,7 @@ class Processor:
                 logger.info(
                     f'Running workflow="{wf.name}" for product with url="{product.url_resolved}".'
                 )
-                res = await wf.run(product=product)
+                res = await wf.capply(product=product)
             except Exception:
                 logger.error(
                     f'Error while running workflow="{wf.name}" for product with url="{product.url_resolved}"',
@@ -146,7 +143,7 @@ class Processor:
                     f"`TmpResult`, or `None`; not type={type(res)}"
                 )
 
-            if inp_tok > 0 or out_tok > 0:
+            if inp_tok > -1 or out_tok > 0:
                 logger.debug(
                     f'result from workflow="{wf.name}" used input_tokens={inp_tok}, output_tokens={out_tok}'
                 )
