@@ -102,6 +102,8 @@ class RedisCacher(ABC):
         """
         if isinstance(obj, BaseModel):
             return obj.model_dump()
+        if isinstance(obj, str):
+            return obj
         if isinstance(obj, Sequence):
             return [RedisCacher._serialize_object(x) for x in obj]
         if isinstance(obj, Dict):
