@@ -1,0 +1,81 @@
+# CURSOR.md - Project Instructions for Cursor
+
+This file provides project-specific guidance for Cursor. Update this file whenever Cursor does something incorrectly so it learns not to repeat mistakes.
+
+## Project Overview
+
+<!-- Customize this section for your project -->
+
+(Describe your project here)
+
+## Development Workflow
+
+Give Cursor verification loops for 2-3x quality improvement:
+
+1. Make changes
+2. Run typecheck
+3. Run tests
+4. Lint before committing
+5. Before creating PR: run full lint and test suite
+
+## Code Style & Conventions
+
+<!-- Customize these for your project's conventions -->
+
+- Prefer `type` over `interface`; never use `enum` (use string literal unions instead)
+- Use descriptive variable names
+- Keep functions small and focused
+- Write tests for new functionality
+- Handle errors explicitly, don't swallow them
+
+## Commands Reference
+
+```sh
+# Verification loop commands (customize for your project)
+npm run typecheck        # Type checking
+npm run test            # Run tests
+npm run lint            # Lint all files
+npm run format          # Format code
+
+# Git workflow
+git status              # Check current state
+git diff                # Review changes before commit
+```
+
+## Self-Improvement
+
+After every correction or mistake, update this CURSOR.md with a rule to prevent repeating it. Cursor is good at writing rules for itself.
+
+End corrections with: "Now update CURSOR.md so you don't make that mistake again."
+
+Keep iterating until the mistake rate measurably drops.
+
+## Working with Plan Mode
+
+- Start every complex task in plan mode (shift+tab to cycle)
+- Pour energy into the plan so Cursor can 1-shot the implementation
+- When something goes sideways, switch back to plan mode and re-plan. Don't keep pushing.
+- Use plan mode for verification steps too, not just for the build
+
+## Parallel Work
+
+- For tasks that need more compute, use subagents to work in parallel
+- Offload individual tasks to subagents to keep the main context window clean and focused
+- When working in parallel, only one agent should edit a given file at a time
+
+## Things Cursor Should NOT Do
+
+<!-- Add mistakes Cursor makes so it learns -->
+
+- Don't use `any` type in TypeScript without explicit approval
+- Don't skip error handling
+- Don't commit without running tests first
+- Don't make breaking API changes without discussion
+
+## Project-Specific Patterns
+
+<!-- Add patterns as they emerge from your codebase -->
+
+---
+
+_Update this file continuously. Every mistake Cursor makes is a learning opportunity._

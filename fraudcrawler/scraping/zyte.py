@@ -4,6 +4,7 @@ from typing import List
 
 from bs4 import BeautifulSoup
 import httpx
+from pydantic import BaseModel, Field
 from tenacity import RetryCallState
 
 from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD, REDIS_USE_CACHE
@@ -12,6 +13,28 @@ from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.cacher import RedisCacher
 
 logger = logging.getLogger(__name__)
+
+
+class SavedSearchRenderedProductListItem(BaseModel):
+    url: str | None = None
+    name: str | None = None
+    price: str | float | int | None = None
+    currency: str | None = None
+    currency_raw: str | None = Field(default=None, alias="currencyRaw")
+    description: str | None = None
+    main_image: str | None = Field(default=None, alias="mainImage")
+    images: List[str] = Field(default_factory=list)
+
+
+class SavedSearchRenderedPageResult(BaseModel):
+    html: str
+    status_code: int | None = Field(default=None, alias="statusCode")
+    elapsed_ms: int = Field(default=0, alias="elapsedMs")
+    action_statuses: List[str] = Field(default_factory=list, alias="actionStatuses")
+    action_error: str | None = Field(default=None, alias="actionError")
+    product_list_items: List[SavedSearchRenderedProductListItem] = Field(
+        default_factory=list, alias="productListItems"
+    )
 
 
 class ZyteAPI(RedisCacher, DomainUtils):
@@ -288,3 +311,111 @@ class ZyteAPI(RedisCacher, DomainUtils):
                 response.raise_for_status()
 
         return response.json()
+
+    @staticmethod
+    def _as_trimmed_string(value) -> str | None:
+        if not isinstance(value, str):
+            return None
+        value = value.strip()
+        return value or None
+
+    @classmethod
+    def _normalize_product_list_items(
+        cls, payload: dict
+    ) -> List[SavedSearchRenderedProductListItem]:
+        product_list = payload.get("productList")
+        if isinstance(product_list, list):
+            raw_items = product_list
+        elif isinstance(product_list, dict):
+            raw_items = product_list.get("products") or product_list.get("items") or []
+        else:
+            raw_items = []
+        if not isinstance(raw_items, list):
+            return []
+        normalized: List[SavedSearchRenderedProductListItem] = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            raw_images = item.get("images")
+            images = raw_images if isinstance(raw_images, list) else []
+            cleaned_images = [
+                img.strip() for img in images if isinstance(img, str) and img.strip()
+            ]
+            normalized.append(
+                SavedSearchRenderedProductListItem(
+                    url=cls._as_trimmed_string(item.get("url"))
+                    or cls._as_trimmed_string(item.get("href"))
+                    or cls._as_trimmed_string(item.get("relativeUrl")),
+                    name=cls._as_trimmed_string(item.get("name"))
+                    or cls._as_trimmed_string(item.get("title")),
+                    price=item.get("price")
+                    if isinstance(item.get("price"), (str, float, int))
+                    else None,
+                    currency=cls._as_trimmed_string(item.get("currency")),
+                    currencyRaw=cls._as_trimmed_string(item.get("currencyRaw")),
+                    description=cls._as_trimmed_string(item.get("description")),
+                    mainImage=cls._as_trimmed_string(item.get("mainImage")),
+                    images=cleaned_images,
+                )
+            )
+        return normalized
+
+    async def fetch_rendered_page(
+        self,
+        url: str,
+        javascript: bool | None = None,
+        include_iframes: bool | None = None,
+        actions: List[dict] | None = None,
+        network_capture: List[dict] | None = None,
+        request_headers: dict | None = None,
+    ) -> SavedSearchRenderedPageResult:
+        payload = {
+            "url": url,
+            "browserHtml": True,
+            "productList": True,
+            "productListOptions": {"extractFrom": "browserHtml"},
+            "networkCapture": network_capture or [],
+            "javascript": javascript,
+            "includeIframes": include_iframes,
+            "actions": actions or [],
+            "requestHeaders": request_headers or {},
+        }
+        response = await self._http_client.post(
+            url=self._endpoint,
+            json=payload,
+            auth=(self._api_key, ""),
+        )
+        response.raise_for_status()
+        data = response.json()
+        html = data.get("browserHtml")
+        if not isinstance(html, str) or not html.strip():
+            raise httpx.HTTPError("Zyte rendered response has empty browserHtml")
+        action_statuses = []
+        for item in (
+            data.get("actions", []) if isinstance(data.get("actions"), list) else []
+        ):
+            if not isinstance(item, dict):
+                continue
+            action = self._as_trimmed_string(item.get("action"))
+            status = self._as_trimmed_string(item.get("status"))
+            if action and status:
+                action_statuses.append(f"{action}:{status}")
+
+        return SavedSearchRenderedPageResult(
+            html=html.strip(),
+            statusCode=data.get("statusCode")
+            if isinstance(data.get("statusCode"), int)
+            else response.status_code,
+            elapsedMs=0,
+            actionStatuses=action_statuses,
+            actionError=next(
+                (
+                    self._as_trimmed_string(entry.get("error"))
+                    for entry in data.get("actions", [])
+                    if isinstance(entry, dict)
+                    and self._as_trimmed_string(entry.get("error"))
+                ),
+                None,
+            ),
+            productListItems=self._normalize_product_list_items(data),
+        )

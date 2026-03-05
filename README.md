@@ -115,6 +115,39 @@ previously_collected_urls = [
 await client.run(..., previously_collected_urls=previously_collected_urls)
 ```
 
+**Website source search** - Ingest product listings from configured website templates:
+```python
+from fraudcrawler import SearchEngineName
+from fraudcrawler.scraping.utils import build_website_source_profile
+
+source = build_website_source_profile(
+    name="My Shop",
+    base_url="https://shop.example/",
+    searchable_urls=[
+        {
+            "filterUrl": "search?q={search_term}",
+            "includeSubstrings": ["/p/"],
+            "excludeSubstrings": [],
+        }
+    ],
+    render_options={
+        "javascript": True,
+        "includeIframes": False,
+        "actions": [],
+        "networkCapture": [],
+    },
+)
+
+await client.run(
+    ...,
+    search_engines=[SearchEngineName.WEBSITE_SOURCE],
+    website_source_sources=[source],
+)
+```
+Notes:
+- Website-source jobs run for the initial search term only (enrichment terms are not used for website-source ingestion).
+- URL results still pass the regular country-code filtering used by the scraping pipeline.
+
 **Redis cache** – Set `REDIS_USE_CACHE=true` and run Redis to cache API and scrape calls (Searcher, Enricher, Zyte, Workflow).
 
 **View all results** from a client instance:
@@ -133,6 +166,7 @@ Results are saved as CSV files in `data/results/` with the naming pattern:
 Example: `sildenafil_de_ch_20250115143022.csv`
 
 The CSV includes product details, URLs, and classification scores from your workflows.
+Raw page HTML is intentionally excluded from CSV exports to keep result files smaller.
 
 ## Development
 
