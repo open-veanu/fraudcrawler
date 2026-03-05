@@ -18,6 +18,7 @@ from fraudcrawler.base.base import (
 )
 from fraudcrawler.base.orchestrator import Orchestrator
 from fraudcrawler.scraping.search import Searcher, SearchEngineName
+from fraudcrawler.scraping.saved_search_models import SavedSearchSource
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteAPI
@@ -91,7 +92,8 @@ class FraudCrawlerClient(Orchestrator):
                 queue_in.task_done()
                 break
 
-            products.append(product.model_dump())
+            # Persist all product data except raw HTML to keep result files lighter.
+            products.append(product.model_dump(exclude={"html"}))
             queue_in.task_done()
 
         # Convert the list of products to a DataFrame
@@ -112,6 +114,7 @@ class FraudCrawlerClient(Orchestrator):
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
         previously_collected_urls: List[str] | None = None,
+        saved_search_sources: List[SavedSearchSource] | None = None,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
@@ -139,6 +142,7 @@ class FraudCrawlerClient(Orchestrator):
         await super().run(
             search_term=search_term,
             search_engines=search_engines,
+            saved_search_sources=saved_search_sources,
             language=language,
             location=location,
             deepness=deepness,

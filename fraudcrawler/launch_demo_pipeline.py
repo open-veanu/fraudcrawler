@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Sequence
+from typing import Any, Sequence
 
 from fraudcrawler.base.base import Setup
 from fraudcrawler import (
@@ -17,6 +17,12 @@ from fraudcrawler import (
     Processor,
     Workflow,
     OpenAIClassification,
+    SavedSearchSource,
+)
+from fraudcrawler.scraping.search import SavedSearch
+from fraudcrawler.scraping.saved_search_models import (
+    SavedSearchFilterConfig,
+    SavedSearchUrlTemplate,
 )
 
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
@@ -25,6 +31,98 @@ DATE_FMT = "%Y-%m-%d %H:%M:%S"
 REDIS_USE_CACHE = True
 SETUP = Setup()  # type: ignore[call-arg]
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
+
+
+def _build_saved_search_profile(
+    *,
+    name: str,
+    raw_url: str,
+    entry_domain: str,
+    entry_value: str,
+    include_substrings: list[str],
+    exclude_substrings: list[str] | None = None,
+    render_fallback: dict[str, Any] | None = None,
+) -> SavedSearchSource:
+    return SavedSearchSource(
+        name=name,
+        urls=[
+            SavedSearchUrlTemplate.model_validate(
+                {
+                    "rawUrl": raw_url,
+                    "templateParams": {"q": "{search_term}"},
+                }
+            )
+        ],
+        searchFilterConfig=SavedSearchFilterConfig.model_validate(
+            {
+                "version": 1,
+                "mode": "per_source_all_urls",
+                "entries": [
+                    {
+                        "domain": entry_domain,
+                        "value": entry_value,
+                        "enabled": True,
+                    }
+                ],
+                "candidateUrlIncludeSubstrings": include_substrings,
+                "candidateUrlExcludeSubstrings": exclude_substrings or [],
+                **(
+                    {"renderFallback": render_fallback}
+                    if render_fallback is not None
+                    else {}
+                ),
+            }
+        ),
+    )
+
+
+GALAXUS_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
+    name="Boost Galaxus",
+    raw_url="https://www.galaxus.ch/de/search?q=suchbegriff",
+    entry_domain="galaxus",
+    entry_value="21826=892",
+    include_substrings=["/product/"],
+    render_fallback={
+        "enabled": True,
+        "provider": "zyte",
+        "triggerPolicy": "on_zero_candidates",
+        "javascript": True,
+        "includeIframes": False,
+        "requestHeaders": {"referer": "https://www.galaxus.ch/"},
+        "actions": [],
+        "networkCapture": [],
+    },
+)
+
+
+FUST_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
+    name="Fust",
+    raw_url="https://www.fust.ch/search?q={search_term}",
+    entry_domain="fust",
+    entry_value=":relevance:Energieeffizienzklasse:A",
+    include_substrings=["/p/"],
+    render_fallback={
+        "enabled": True,
+        "provider": "zyte",
+        "triggerPolicy": "on_zero_candidates",
+        "javascript": True,
+        "includeIframes": False,
+        "requestHeaders": {"referer": "https://www.fust.ch/"},
+        "actions": [],
+        "networkCapture": [],
+    },
+)
+
+FRANKENSPALTER_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
+    name="Frankenspalter",
+    raw_url="https://www.frankenspalter.ch/de/catalogsearch/result/index?q={search_term}",
+    entry_domain="frankenspalter",
+    entry_value="itg_202303151629545861692577=1818",
+    include_substrings=[],
+    # important: no render fallback because frankenspalter allows direct crawling.
+)
+
+DEFAULT_SAVED_SEARCH_PROFILE = FRANKENSPALTER_SAVED_SEARCH_PROFILE
 
 
 def _setup_workflows(
@@ -89,16 +187,16 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
     # deepness.enrichment = Enrichment(additional_terms=10, additional_urls_per_term=20)
 
     # Optional: Add MARKETPLACES and EXCLUDED_URLS
-    from fraudcrawler import Host
+    # from fraudcrawler import Host
 
     # marketplaces = [
     #     Host(name="International", domains="zavamed.com,apomeds.com"),
     #     # Host(name="National", domains="netdoktor.ch, nobelpharma.ch")
     # ]
-    excluded_urls = [
-        Host(name="Digitec", domains="digitec.ch"),
-        Host(name="Brack", domains="brack.ch"),
-    ]
+    # excluded_urls = [
+    #     Host(name="Digitec", domains="digitec.ch"),
+    #     Host(name="Brack", domains="brack.ch"),
+    # ]
 
     # Setup clients
     searcher = Searcher(
@@ -140,8 +238,9 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
         language=language,
         location=location,
         deepness=deepness,
+        saved_search_sources=[DEFAULT_SAVED_SEARCH_PROFILE],
         # marketplaces=marketplaces,
-        excluded_urls=excluded_urls,
+        # excluded_urls=excluded_urls,
     )
 
     # Show results
@@ -163,10 +262,56 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
     print()
 
 
+async def run_saved_search_demo(http_client: HttpxAsyncClient, search_term: str):
+    saved_search = SavedSearch(
+        http_client=http_client,
+        zyteapi_key=SETUP.zyteapi_key,
+        redis_use_cache=REDIS_USE_CACHE,
+    )
+    result = await saved_search.ingest_source(
+        source=DEFAULT_SAVED_SEARCH_PROFILE,
+        search_term=search_term,
+        max_items=50,
+    )
+    print()
+    title = f'Saved-search results for "{search_term.upper()}"'
+    print(title)
+    print("=" * len(title))
+    print(f"Source: {result.source_name}")
+    print(f"Resolved URLs: {len(result.source_urls)}")
+    print(f"Candidates: {len(result.candidates)}")
+    print("Sample URLs:")
+    for sample in result.samples[:10]:
+        print(f"- {sample.url}")
+    print()
+    print("URL diagnostics:")
+    for diag in result.url_diagnostics:
+        print(
+            (
+                f"- resolved={diag.resolved_url} | "
+                f"strategy={diag.extraction_strategy} | "
+                f"fallback_attempted={diag.render_fallback_attempted} | "
+                f"fallback_used={diag.render_fallback_used} | "
+                f"fallback_provider={diag.render_fallback_provider} | "
+                f"fallback_http={diag.render_fallback_http_status} | "
+                f"product_list_count={diag.product_list_count} | "
+                f"product_list_mapped={diag.product_list_mapped_count} | "
+                f"merged_candidates={diag.merged_candidate_count} | "
+                f"fallback_error={diag.render_fallback_error}"
+            )
+        )
+
+
 async def main(search_term: str):
     async with HttpxAsyncClient() as http_client:
         await run(http_client=http_client, search_term=search_term)
 
 
+async def main_saved_search_demo(search_term: str):
+    async with HttpxAsyncClient() as http_client:
+        await run_saved_search_demo(http_client=http_client, search_term=search_term)
+
+
 if __name__ == "__main__":
-    asyncio.run(main(search_term="Kaffeebohnen"))
+    asyncio.run(main(search_term="Kühlschrank"))
+    # asyncio.run(main_saved_search_demo(search_term="Kühlschrank"))

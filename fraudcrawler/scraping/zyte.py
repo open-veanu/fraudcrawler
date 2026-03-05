@@ -10,6 +10,11 @@ from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD, REDIS_USE_
 from fraudcrawler.base.base import DomainUtils, ProductItem
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.cacher import RedisCacher
+from fraudcrawler.scraping.saved_search_models import (
+    SavedSearchRenderedNetworkCapture,
+    SavedSearchRenderedPageResult,
+    SavedSearchRenderedProductListItem,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -288,3 +293,152 @@ class ZyteAPI(RedisCacher, DomainUtils):
                 response.raise_for_status()
 
         return response.json()
+
+    @staticmethod
+    def _as_trimmed_string(value) -> str | None:
+        if not isinstance(value, str):
+            return None
+        value = value.strip()
+        return value or None
+
+    @classmethod
+    def _normalize_network_captures(
+        cls, payload: dict
+    ) -> List[SavedSearchRenderedNetworkCapture]:
+        raw_entries = payload.get("networkCapture")
+        if not isinstance(raw_entries, list):
+            return []
+        normalized: List[SavedSearchRenderedNetworkCapture] = []
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            headers = entry.get("responseHeaders", {})
+            headers = headers if isinstance(headers, dict) else {}
+            body = (
+                entry.get("httpResponseBody")
+                or entry.get("responseBody")
+                or entry.get("body")
+            )
+            body_text = body if isinstance(body, str) else None
+            if body_text is None and isinstance(body, dict):
+                body_text = str(body)
+            capture = SavedSearchRenderedNetworkCapture(
+                url=cls._as_trimmed_string(entry.get("url"))
+                or cls._as_trimmed_string(entry.get("requestUrl")),
+                statusCode=entry.get("statusCode")
+                if isinstance(entry.get("statusCode"), int)
+                else None,
+                contentType=cls._as_trimmed_string(entry.get("contentType"))
+                or cls._as_trimmed_string(headers.get("content-type"))
+                or cls._as_trimmed_string(headers.get("Content-Type")),
+                bodyText=body_text,
+            )
+            if capture.url or capture.body_text:
+                normalized.append(capture)
+        return normalized
+
+    @classmethod
+    def _normalize_product_list_items(
+        cls, payload: dict
+    ) -> List[SavedSearchRenderedProductListItem]:
+        product_list = payload.get("productList")
+        if isinstance(product_list, list):
+            raw_items = product_list
+        elif isinstance(product_list, dict):
+            raw_items = product_list.get("products") or product_list.get("items") or []
+        else:
+            raw_items = []
+        if not isinstance(raw_items, list):
+            return []
+        normalized: List[SavedSearchRenderedProductListItem] = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            raw_images = item.get("images")
+            images = raw_images if isinstance(raw_images, list) else []
+            cleaned_images = [
+                img.strip() for img in images if isinstance(img, str) and img.strip()
+            ]
+            normalized.append(
+                SavedSearchRenderedProductListItem(
+                    url=cls._as_trimmed_string(item.get("url"))
+                    or cls._as_trimmed_string(item.get("href"))
+                    or cls._as_trimmed_string(item.get("relativeUrl")),
+                    name=cls._as_trimmed_string(item.get("name"))
+                    or cls._as_trimmed_string(item.get("title")),
+                    price=item.get("price")
+                    if isinstance(item.get("price"), (str, float, int))
+                    else None,
+                    currency=cls._as_trimmed_string(item.get("currency")),
+                    currencyRaw=cls._as_trimmed_string(item.get("currencyRaw")),
+                    description=cls._as_trimmed_string(item.get("description")),
+                    mainImage=cls._as_trimmed_string(item.get("mainImage")),
+                    images=cleaned_images,
+                )
+            )
+        return normalized
+
+    async def fetch_rendered_page(
+        self,
+        url: str,
+        provider: str | None = None,
+        javascript: bool | None = None,
+        include_iframes: bool | None = None,
+        actions: List[dict] | None = None,
+        network_capture: List[dict] | None = None,
+        request_headers: dict | None = None,
+    ) -> SavedSearchRenderedPageResult:
+        _ = provider  # compatibility with generic render_fetcher signature
+        payload = {
+            "url": url,
+            "browserHtml": True,
+            "productList": True,
+            "productListOptions": {"extractFrom": "browserHtml"},
+            "networkCapture": network_capture or [],
+            "javascript": javascript,
+            "includeIframes": include_iframes,
+            "actions": actions or [],
+            "requestHeaders": request_headers or {},
+        }
+        response = await self._http_client.post(
+            url=self._endpoint,
+            json=payload,
+            auth=(self._api_key, ""),
+        )
+        response.raise_for_status()
+        data = response.json()
+        html = data.get("browserHtml")
+        if not isinstance(html, str) or not html.strip():
+            raise httpx.HTTPError("Zyte rendered response has empty browserHtml")
+        action_statuses = []
+        for item in (
+            data.get("actions", []) if isinstance(data.get("actions"), list) else []
+        ):
+            if not isinstance(item, dict):
+                continue
+            action = self._as_trimmed_string(item.get("action"))
+            status = self._as_trimmed_string(item.get("status"))
+            if action and status:
+                action_statuses.append(f"{action}:{status}")
+
+        return SavedSearchRenderedPageResult(
+            html=html.strip(),
+            provider="zyte",
+            statusCode=data.get("statusCode")
+            if isinstance(data.get("statusCode"), int)
+            else response.status_code,
+            elapsedMs=0,
+            actionStatuses=action_statuses,
+            actionError=next(
+                (
+                    self._as_trimmed_string(entry.get("error"))
+                    for entry in data.get("actions", [])
+                    if isinstance(entry, dict)
+                    and self._as_trimmed_string(entry.get("error"))
+                ),
+                None,
+            ),
+            networkCaptureCount=len(self._normalize_network_captures(data)),
+            networkCaptures=self._normalize_network_captures(data),
+            productListItems=self._normalize_product_list_items(data),
+        )

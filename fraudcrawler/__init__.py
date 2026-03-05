@@ -3,6 +3,14 @@ from fraudcrawler.scraping.search import Searcher, SearchEngineName
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteAPI
+from fraudcrawler.scraping.saved_search_models import (
+    SavedSearchSource,
+    SavedSearchFilterConfig,
+    SavedSearchIngestResult,
+    SavedSearchCandidate,
+    SavedSearchRenderFallbackConfig,
+)
+from fraudcrawler.scraping.saved_search_ingest import SavedSearchIngestService
 from fraudcrawler.processing.base import (
     UserInputs,
     Workflow,
@@ -34,6 +42,12 @@ __all__ = [
     "Enricher",
     "URLCollector",
     "ZyteAPI",
+    "SavedSearchSource",
+    "SavedSearchFilterConfig",
+    "SavedSearchIngestResult",
+    "SavedSearchCandidate",
+    "SavedSearchRenderFallbackConfig",
+    "SavedSearchIngestService",
     "UserInputs",
     "Workflow",
     "ClassificationResult",

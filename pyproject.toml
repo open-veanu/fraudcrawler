@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "fraudcrawler"
-version = "0.8.3"
+version = "0.8.4"
 description = "Intelligent Market Monitoring"
 authors = [
     "Domingo Bertus <hello@veanu.ch>",
@@ -48,3 +48,13 @@ exclude_dirs = [
     "./.vscode",
     "./.ruff_cache"
 ]
+
+[[tool.mypy.overrides]]
+module = [
+    "aiocache",
+    "aiocache.backends.redis",
+    "aiocache.serializers",
+    "pandas",
+]
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]

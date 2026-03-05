@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 import logging
+import re
 from pydantic import BaseModel
-from typing import Dict, List
+from typing import Awaitable, Callable, Dict, List
+import unicodedata
 from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
@@ -20,6 +22,11 @@ from fraudcrawler.base.base import Host, Language, Location, DomainUtils
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.cacher import RedisCacher
 from fraudcrawler.scraping.zyte import ZyteAPI
+from fraudcrawler.scraping.saved_search_ingest import SavedSearchIngestService
+from fraudcrawler.scraping.saved_search_models import (
+    SavedSearchIngestResult,
+    SavedSearchSource,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +47,7 @@ class SearchEngineName(Enum):
     GOOGLE = "google"
     GOOGLE_SHOPPING = "google_shopping"
     TOPPREISE = "toppreise"
+    SAVED_SEARCH = "saved_search"
 
 
 class SearchEngine(ABC, DomainUtils):
@@ -644,6 +652,84 @@ class Toppreise(SearchEngine):
         return results
 
 
+class SavedSearch(SearchEngine):
+    """Search engine for saved-search source ingestion."""
+
+    @staticmethod
+    def _build_saved_search_engine_name(source_name: str) -> str:
+        """Build a stable engine-like name from a saved-search source name."""
+        ascii_name = (
+            unicodedata.normalize("NFKD", str(source_name or ""))
+            .encode("ascii", "ignore")
+            .decode("ascii")
+        )
+        normalized = re.sub(r"\s+", "_", ascii_name.strip().lower())
+        normalized = re.sub(r"[^a-z0-9_]+", "", normalized)
+        normalized = re.sub(r"_+", "_", normalized).strip("_")
+        slug = normalized or "saved_search"
+        return f"{slug}_search_engine"
+
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        zyteapi_key: str,
+        redis_use_cache: bool = REDIS_USE_CACHE,
+    ):
+        super().__init__(http_client=http_client)
+        self._zyteapi = ZyteAPI(
+            http_client=http_client,
+            api_key=zyteapi_key,
+            redis_use_cache=redis_use_cache,
+        )
+        self._ingest_service = SavedSearchIngestService(http_client=http_client)
+
+    @property
+    def _search_engine_name(self) -> str:
+        return SearchEngineName.SAVED_SEARCH.value
+
+    async def ingest_source(
+        self,
+        source: SavedSearchSource,
+        search_term: str | None = None,
+        max_items: int = 250,
+    ) -> SavedSearchIngestResult:
+        return await self._ingest_service.ingest_source(
+            source=source,
+            search_term=search_term,
+            max_items=max_items,
+            render_fetcher=self._zyteapi.fetch_rendered_page,
+        )
+
+    async def search(
+        self,
+        source: SavedSearchSource,
+        search_term: str | None = None,
+        num_results: int = 250,
+    ) -> List[SearchResult]:
+        ingest_result = await self.ingest_source(
+            source=source,
+            search_term=search_term,
+            max_items=num_results,
+        )
+        search_engine_name = self._build_saved_search_engine_name(
+            ingest_result.source_name
+        )
+        results = [
+            SearchResult(
+                url=candidate.url,
+                domain=self._get_domain(url=candidate.url),
+                search_engine_name=search_engine_name,
+            )
+            for candidate in ingest_result.candidates
+        ]
+        logger.debug(
+            "Saved-search source=%s produced %s result URLs.",
+            ingest_result.source_name,
+            len(results),
+        )
+        return results
+
+
 class Searcher(RedisCacher, DomainUtils):
     """Class to perform searches using different search engines."""
 
@@ -676,6 +762,90 @@ class Searcher(RedisCacher, DomainUtils):
             http_client=http_client,
             zyteapi_key=zyteapi_key,
             redis_use_cache=redis_use_cache,
+        )
+        self._saved_search = SavedSearch(
+            http_client=http_client,
+            zyteapi_key=zyteapi_key,
+            redis_use_cache=redis_use_cache,
+        )
+        self._search_handlers: Dict[
+            SearchEngineName,
+            Callable[..., Awaitable[List[SearchResult]]],
+        ] = {
+            SearchEngineName.GOOGLE: self._search_google,
+            SearchEngineName.GOOGLE_SHOPPING: self._search_google_shopping,
+            SearchEngineName.TOPPREISE: self._search_toppreise,
+            SearchEngineName.SAVED_SEARCH: self._search_saved_search,
+        }
+        self._post_search_enabled_engines = {
+            SearchEngineName.GOOGLE,
+            SearchEngineName.GOOGLE_SHOPPING,
+            SearchEngineName.TOPPREISE,
+        }
+
+    async def _search_google(
+        self,
+        search_term: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        **_: object,
+    ) -> List[SearchResult]:
+        return await self._google.search(
+            search_term=search_term,
+            language=language,
+            location=location,
+            num_results=num_results,
+            marketplaces=marketplaces,
+        )
+
+    async def _search_google_shopping(
+        self,
+        search_term: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        **_: object,
+    ) -> List[SearchResult]:
+        return await self._google_shopping.search(
+            search_term=search_term,
+            language=language,
+            location=location,
+            num_results=num_results,
+            marketplaces=marketplaces,
+        )
+
+    async def _search_toppreise(
+        self,
+        search_term: str,
+        language: Language,
+        num_results: int,
+        **_: object,
+    ) -> List[SearchResult]:
+        return await self._toppreise.search(
+            search_term=search_term,
+            language=language,
+            num_results=num_results,
+        )
+
+    async def _search_saved_search(
+        self,
+        search_term: str,
+        num_results: int,
+        saved_search_source: SavedSearchSource | None = None,
+        **_: object,
+    ) -> List[SearchResult]:
+        if saved_search_source is None:
+            logger.warning(
+                "search_engine='saved_search' called without saved_search_source; skipping."
+            )
+            return []
+        return await self._saved_search.search(
+            source=saved_search_source,
+            search_term=search_term,
+            num_results=num_results,
         )
 
     async def _post_search_google_shopping_immersive(self, url: str) -> List[str]:
@@ -862,6 +1032,7 @@ class Searcher(RedisCacher, DomainUtils):
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
+        saved_search_source: SavedSearchSource | None = None,
     ) -> List[SearchResult]:
         """Performs a search from given search engine."""
         logger.info(
@@ -875,44 +1046,25 @@ class Searcher(RedisCacher, DomainUtils):
         if isinstance(search_engine, str):
             search_engine = SearchEngineName(search_engine)
 
-        # Make SerpAPI google search
-        if search_engine == SearchEngineName.GOOGLE:
-            results = await self._google.search(
-                search_term=search_term,
-                language=language,
-                location=location,
-                num_results=num_results,
-                marketplaces=marketplaces,
-            )
-
-        # Make SerpAPI google shopping search
-        elif search_engine == SearchEngineName.GOOGLE_SHOPPING:
-            results = await self._google_shopping.search(
-                search_term=search_term,
-                language=language,
-                location=location,
-                num_results=num_results,
-                marketplaces=marketplaces,
-            )
-
-        # Make Toppreise search
-        elif search_engine == SearchEngineName.TOPPREISE:
-            results = await self._toppreise.search(
-                search_term=search_term,
-                language=language,
-                num_results=num_results,
-            )
-
-        # Other search engines can be added here (raise unknown engine error otherwise)
-        else:
+        search_handler = self._search_handlers.get(search_engine)
+        if search_handler is None:
             raise ValueError(f"Unknown search engine: {search_engine}")
+        results = await search_handler(
+            search_term=search_term,
+            language=language,
+            location=location,
+            num_results=num_results,
+            marketplaces=marketplaces,
+            saved_search_source=saved_search_source,
+        )
 
         # -------------------------------
         # POST-SEARCH URL EXTRACTION
         # -------------------------------
-        post_search_results = await self._post_search(results=results)
-        post_search_results = post_search_results[:num_results]
-        results.extend(post_search_results)
+        if search_engine in self._post_search_enabled_engines:
+            post_search_results = await self._post_search(results=results)
+            post_search_results = post_search_results[:num_results]
+            results.extend(post_search_results)
 
         # -------------------------------
         # FILTERS
