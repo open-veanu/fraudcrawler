@@ -1,9 +1,18 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 import logging
-from pydantic import BaseModel
-from typing import Dict, List
-from urllib.parse import quote_plus
+import re
+from pydantic import BaseModel, Field
+from typing import Awaitable, Callable, Dict, List, Optional, Sequence
+import unicodedata
+from urllib.parse import (
+    ParseResult,
+    parse_qsl,
+    quote_plus,
+    urlencode,
+    urlparse,
+    urlunparse,
+)
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -16,10 +25,25 @@ from fraudcrawler.settings import (
     TOPPREISE_COMPARISON_PATHS,
     REDIS_USE_CACHE,
 )
-from fraudcrawler.base.base import Host, Language, Location, DomainUtils
+from fraudcrawler.base.base import (
+    Host,
+    Language,
+    Location,
+    DomainUtils,
+    WebsiteSourceMetadata,
+)
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.cacher import RedisCacher
-from fraudcrawler.scraping.zyte import ZyteAPI
+from fraudcrawler.scraping.url import filter_tracking_query_entries
+from fraudcrawler.scraping.zyte import (
+    SavedSearchRenderedProductListItem,
+    ZyteAPI,
+)
+from fraudcrawler.scraping.saved_search_models import (
+    WebsiteSource,
+    WebsiteSourceSearchableUrl,
+    WebsiteSourceUrlTemplate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +56,41 @@ class SearchResult(BaseModel):
     search_engine_name: str
     filtered: bool = False
     filtered_at_stage: str | None = None
+    website_source: WebsiteSourceMetadata | None = None
+    candidate_title: str | None = None
+    candidate_price: str | None = None
+    candidate_images: List[str] | None = None
+
+
+class SavedSearchCandidate(BaseModel):
+    url: str
+    title: str
+    image_urls: List[str] = Field(default_factory=list, alias="imageUrls")
+    price: str | None = None
+
+
+class SavedSearchUrlDiagnostic(BaseModel):
+    url: str
+    resolved_url: str | None = Field(default=None, alias="resolvedUrl")
+    render_http_status: int | None = Field(default=None, alias="renderHttpStatus")
+    render_error: str | None = Field(default=None, alias="renderError")
+    fetched: int = 0
+    parsed: int = 0
+    deduped: int = 0
+    error: str | None = None
+
+
+class SavedSearchIngestResult(BaseModel):
+    source_name: str = Field(alias="sourceName")
+    source_urls: List[str] = Field(default_factory=list, alias="sourceUrls")
+    candidates: List[SavedSearchCandidate] = Field(default_factory=list)
+    samples: List[SavedSearchCandidate] = Field(default_factory=list)
+    fetched: int = 0
+    parsed: int = 0
+    deduped: int = 0
+    url_diagnostics: List[SavedSearchUrlDiagnostic] = Field(
+        default_factory=list, alias="urlDiagnostics"
+    )
 
 
 class SearchEngineName(Enum):
@@ -40,6 +99,7 @@ class SearchEngineName(Enum):
     GOOGLE = "google"
     GOOGLE_SHOPPING = "google_shopping"
     TOPPREISE = "toppreise"
+    WEBSITE_SOURCE = "website_source"
 
 
 class SearchEngine(ABC, DomainUtils):
@@ -644,6 +704,395 @@ class Toppreise(SearchEngine):
         return results
 
 
+class WebsiteSearch(SearchEngine):
+    """Search engine for website-source ingestion."""
+
+    _saved_search_query_param_keys = ["q", "query", "keyword", "search"]
+    _max_image_urls_per_candidate = 5
+
+    @staticmethod
+    def _build_website_source_engine_name(source_name: str) -> str:
+        """Build a stable engine-like name from a website-source name."""
+        ascii_name = (
+            unicodedata.normalize("NFKD", str(source_name or ""))
+            .encode("ascii", "ignore")
+            .decode("ascii")
+        )
+        normalized = re.sub(r"\s+", "_", ascii_name.strip().lower())
+        normalized = re.sub(r"[^a-z0-9_]+", "", normalized)
+        normalized = re.sub(r"_+", "_", normalized).strip("_")
+        slug = normalized or "website_source"
+        return f"{slug}_search_engine"
+
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        zyteapi_key: str,
+        redis_use_cache: bool = REDIS_USE_CACHE,
+    ):
+        super().__init__(http_client=http_client)
+        self._zyteapi = ZyteAPI(
+            http_client=http_client,
+            api_key=zyteapi_key,
+            redis_use_cache=redis_use_cache,
+        )
+
+    @property
+    def _search_engine_name(self) -> str:
+        return SearchEngineName.WEBSITE_SOURCE.value
+
+    @classmethod
+    def _get_search_param_order(cls, param_key: str) -> int:
+        try:
+            return cls._saved_search_query_param_keys.index(param_key.lower())
+        except ValueError:
+            return 10_000
+
+    @classmethod
+    def _canonicalize_url(cls, raw_url: str) -> str:
+        parsed = urlparse(raw_url.strip())
+        host = parsed.hostname.lower() if parsed.hostname else ""
+        netloc = host
+        if parsed.port and not (
+            (parsed.scheme == "https" and parsed.port == 443)
+            or (parsed.scheme == "http" and parsed.port == 80)
+        ):
+            netloc = f"{host}:{parsed.port}"
+
+        query_entries = [
+            entry for entry in parse_qsl(parsed.query, keep_blank_values=True)
+        ]
+        query_entries = filter_tracking_query_entries(query_entries)
+        query_entries = sorted(
+            query_entries,
+            key=lambda item: (
+                cls._get_search_param_order(item[0]),
+                item[0].lower(),
+                item[1],
+            ),
+        )
+        query = urlencode(query_entries, quote_via=quote_plus)
+        cleaned = ParseResult(
+            scheme=parsed.scheme,
+            netloc=netloc,
+            path=parsed.path,
+            params=parsed.params,
+            query=query,
+            fragment="",
+        )
+        return urlunparse(cleaned)
+
+    @classmethod
+    def _normalize_url(cls, base_url: str, href: str) -> Optional[str]:
+        try:
+            base = httpx.URL(base_url)
+            joined = base.join(href)
+        except (ValueError, httpx.InvalidURL):
+            logger.debug(
+                f"Failed to join URL base={base_url} href={href}", exc_info=True
+            )
+            return None
+        try:
+            return cls._canonicalize_url(str(joined))
+        except (ValueError, httpx.InvalidURL):
+            logger.debug(f"Failed to canonicalize URL {joined}", exc_info=True)
+            return None
+
+    @staticmethod
+    def _interpolate_search_term(value: str, search_term: Optional[str]) -> str:
+        if "{search_term}" not in value:
+            return value
+        encoded = quote_plus(search_term or "")
+        return value.replace("{search_term}", encoded)
+
+    def _build_searchable_url(
+        self,
+        template: WebsiteSourceUrlTemplate,
+        searchable_url: WebsiteSourceSearchableUrl,
+        search_term: Optional[str],
+    ) -> Optional[str]:
+        interpolated = self._interpolate_search_term(
+            searchable_url.filter_url,
+            search_term,
+        )
+        return self._normalize_url(base_url=template.base_url, href=interpolated)
+
+    @classmethod
+    def _extract_candidates_from_product_list(
+        cls,
+        *,
+        items: List[SavedSearchRenderedProductListItem],
+        source_url: str,
+        max_items: int,
+    ) -> List[SavedSearchCandidate]:
+        candidates: List[SavedSearchCandidate] = []
+        seen = set()
+        for item in items:
+            normalized = cls._normalize_url(source_url, item.url or "")
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+
+            image_urls: List[str] = []
+            for raw in [item.main_image, *(item.images or [])]:
+                token = str(raw or "").strip()
+                if not token or token.startswith(
+                    ("data:", "blob:", "javascript:", "#")
+                ):
+                    continue
+                normalized_image = cls._normalize_url(source_url, token)
+                if not normalized_image or not normalized_image.startswith(
+                    ("http://", "https://")
+                ):
+                    continue
+                if normalized_image in image_urls:
+                    continue
+                image_urls.append(normalized_image)
+                if len(image_urls) >= cls._max_image_urls_per_candidate:
+                    break
+
+            price_value: str | None = None
+            if isinstance(item.price, (int, float)) and item.price > 0:
+                price_value = str(item.price)
+            elif isinstance(item.price, str):
+                cleaned_price = re.sub(r"\s+", " ", item.price).strip()
+                if re.search(r"\d", cleaned_price):
+                    price_value = cleaned_price[:128]
+
+            title = (item.name or "").strip() or "Recovered from Zyte product list"
+
+            candidates.append(
+                SavedSearchCandidate(
+                    url=normalized,
+                    title=title,
+                    imageUrls=image_urls,
+                    price=price_value,
+                )
+            )
+            if len(candidates) >= max_items:
+                break
+        return candidates
+
+    @staticmethod
+    def _apply_url_pattern_filters(
+        candidates: Sequence[SavedSearchCandidate],
+        include_substrings: Sequence[str],
+        exclude_substrings: Sequence[str],
+    ) -> List[SavedSearchCandidate]:
+        include_tokens = [
+            str(token).strip().lower()
+            for token in include_substrings
+            if str(token).strip()
+        ]
+        exclude_tokens = [
+            str(token).strip().lower()
+            for token in exclude_substrings
+            if str(token).strip()
+        ]
+        if not include_tokens and not exclude_tokens:
+            return list(candidates)
+        filtered: List[SavedSearchCandidate] = []
+        for candidate in candidates:
+            lowered_url = candidate.url.lower()
+            if include_tokens and not all(
+                token in lowered_url for token in include_tokens
+            ):
+                continue
+            if exclude_tokens and any(token in lowered_url for token in exclude_tokens):
+                continue
+            filtered.append(candidate)
+        return filtered
+
+    async def ingest_source(
+        self,
+        source: WebsiteSource,
+        search_term: str | None = None,
+        max_items: int = 250,
+    ) -> SavedSearchIngestResult:
+        combined: List[SavedSearchCandidate] = []
+        seen: dict[str, int] = {}
+        diagnostics: List[SavedSearchUrlDiagnostic] = []
+        resolved_urls: List[str] = []
+        remaining = max(0, max_items)
+
+        for template in source.urls:
+            if remaining <= 0:
+                break
+            for searchable_url in template.searchable_urls:
+                if remaining <= 0:
+                    break
+                resolved: str | None = None
+                try:
+                    resolved = self._build_searchable_url(
+                        template=template,
+                        searchable_url=searchable_url,
+                        search_term=search_term,
+                    )
+                    logger.info(f"Resolved URL: {resolved}")
+                    if resolved is None:
+                        raise ValueError(
+                            f"Failed to resolve searchableUrl='{searchable_url.filter_url}' against baseUrl='{template.base_url}'."
+                        )
+                    resolved_urls.append(resolved)
+                    if source.search_filter_config is None:
+                        raise ValueError(
+                            f"Website-source '{source.name}' requires searchFilterConfig.renderOptions."
+                        )
+                    render_options = source.search_filter_config.render_options
+                    rendered = await self._zyteapi.fetch_rendered_page(
+                        url=resolved,
+                        javascript=render_options.javascript,
+                        include_iframes=render_options.include_iframes,
+                        actions=render_options.actions or [],
+                        network_capture=render_options.network_capture or [],
+                        request_headers=(
+                            render_options.request_headers.model_dump(exclude_none=True)
+                            if render_options.request_headers
+                            else None
+                        ),
+                    )
+                    filtered = self._apply_url_pattern_filters(
+                        candidates=self._extract_candidates_from_product_list(
+                            items=rendered.product_list_items,
+                            source_url=resolved,
+                            max_items=remaining,
+                        ),
+                        include_substrings=searchable_url.include_substrings,
+                        exclude_substrings=searchable_url.exclude_substrings,
+                    )
+                    deduped_count = 0
+                    for candidate in filtered:
+                        if candidate.url in seen:
+                            idx = seen[candidate.url]
+                            existing = combined[idx]
+                            merged_images = list(existing.image_urls)
+                            for image in candidate.image_urls:
+                                if image in merged_images:
+                                    continue
+                                merged_images.append(image)
+                                if (
+                                    len(merged_images)
+                                    >= self._max_image_urls_per_candidate
+                                ):
+                                    break
+                            combined[idx] = SavedSearchCandidate(
+                                url=existing.url,
+                                title=existing.title or candidate.title,
+                                imageUrls=merged_images,
+                                price=candidate.price or existing.price,
+                            )
+                            deduped_count += 1
+                            continue
+                        seen[candidate.url] = len(combined)
+                        combined.append(candidate)
+                        remaining = max(0, remaining - 1)
+                        if remaining <= 0:
+                            break
+
+                    diagnostics.append(
+                        SavedSearchUrlDiagnostic(
+                            url=searchable_url.filter_url,
+                            resolvedUrl=resolved,
+                            renderHttpStatus=rendered.status_code,
+                            renderError=None,
+                            fetched=1
+                            if rendered.status_code
+                            and 200 <= rendered.status_code < 300
+                            else 0,
+                            parsed=len(filtered),
+                            deduped=deduped_count,
+                        )
+                    )
+                except Exception as err:
+                    logger.warning(
+                        "Website-source render failed | source=%s | filter_url=%s | resolved=%s | error=%s",
+                        source.name,
+                        searchable_url.filter_url,
+                        resolved,
+                        err,
+                    )
+                    diagnostics.append(
+                        SavedSearchUrlDiagnostic(
+                            url=searchable_url.filter_url,
+                            resolvedUrl=resolved,
+                            renderHttpStatus=None,
+                            renderError=str(err),
+                            fetched=0,
+                            parsed=0,
+                            deduped=0,
+                            error=str(err),
+                        )
+                    )
+
+        combined = combined[:max_items]
+        return SavedSearchIngestResult(
+            sourceName=source.name,
+            sourceUrls=resolved_urls,
+            candidates=combined,
+            samples=combined[:10],
+            fetched=sum(item.fetched for item in diagnostics),
+            parsed=len(combined),
+            deduped=sum(item.deduped for item in diagnostics),
+            urlDiagnostics=diagnostics,
+        )
+
+    async def search(
+        self,
+        source: WebsiteSource,
+        search_term: str | None = None,
+        num_results: int = 250,
+    ) -> List[SearchResult]:
+        ingest_result = await self.ingest_source(
+            source=source,
+            search_term=search_term,
+            max_items=num_results,
+        )
+        search_engine_name = self._build_website_source_engine_name(
+            ingest_result.source_name
+        )
+
+        def _candidate_metadata(candidate_url: str) -> WebsiteSourceMetadata:
+            diagnostics: List[SavedSearchUrlDiagnostic] = ingest_result.url_diagnostics
+            selected: SavedSearchUrlDiagnostic | None = None
+            candidate_domain = self._get_domain(url=candidate_url)
+            for diag in diagnostics:
+                if not diag.resolved_url:
+                    continue
+                if self._get_domain(url=diag.resolved_url) != candidate_domain:
+                    continue
+                selected = diag
+                if (diag.parsed or 0) > 0:
+                    break
+            if selected is None and diagnostics:
+                selected = diagnostics[0]
+
+            return WebsiteSourceMetadata(
+                source_name=ingest_result.source_name,
+                resolved_url=selected.resolved_url if selected else None,
+                render_http_status=selected.render_http_status if selected else None,
+                render_error=selected.render_error if selected else None,
+            )
+
+        results = [
+            SearchResult(
+                url=candidate.url,
+                domain=self._get_domain(url=candidate.url),
+                search_engine_name=search_engine_name,
+                website_source=_candidate_metadata(candidate.url),
+                candidate_title=candidate.title,
+                candidate_price=candidate.price,
+                candidate_images=candidate.image_urls,
+            )
+            for candidate in ingest_result.candidates
+        ]
+        logger.debug(
+            "Website-source=%s produced %s result URLs.",
+            ingest_result.source_name,
+            len(results),
+        )
+        return results
+
+
 class Searcher(RedisCacher, DomainUtils):
     """Class to perform searches using different search engines."""
 
@@ -676,6 +1125,90 @@ class Searcher(RedisCacher, DomainUtils):
             http_client=http_client,
             zyteapi_key=zyteapi_key,
             redis_use_cache=redis_use_cache,
+        )
+        self._saved_search_engine = WebsiteSearch(
+            http_client=http_client,
+            zyteapi_key=zyteapi_key,
+            redis_use_cache=redis_use_cache,
+        )
+        self._search_handlers: Dict[
+            SearchEngineName,
+            Callable[..., Awaitable[List[SearchResult]]],
+        ] = {
+            SearchEngineName.GOOGLE: self._search_google,
+            SearchEngineName.GOOGLE_SHOPPING: self._search_google_shopping,
+            SearchEngineName.TOPPREISE: self._search_toppreise,
+            SearchEngineName.WEBSITE_SOURCE: self._search_website_source,
+        }
+        self._post_search_enabled_engines = {
+            SearchEngineName.GOOGLE,
+            SearchEngineName.GOOGLE_SHOPPING,
+            SearchEngineName.TOPPREISE,
+        }
+
+    async def _search_google(
+        self,
+        search_term: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        **_: object,
+    ) -> List[SearchResult]:
+        return await self._google.search(
+            search_term=search_term,
+            language=language,
+            location=location,
+            num_results=num_results,
+            marketplaces=marketplaces,
+        )
+
+    async def _search_google_shopping(
+        self,
+        search_term: str,
+        language: Language,
+        location: Location,
+        num_results: int,
+        marketplaces: List[Host] | None = None,
+        **_: object,
+    ) -> List[SearchResult]:
+        return await self._google_shopping.search(
+            search_term=search_term,
+            language=language,
+            location=location,
+            num_results=num_results,
+            marketplaces=marketplaces,
+        )
+
+    async def _search_toppreise(
+        self,
+        search_term: str,
+        language: Language,
+        num_results: int,
+        **_: object,
+    ) -> List[SearchResult]:
+        return await self._toppreise.search(
+            search_term=search_term,
+            language=language,
+            num_results=num_results,
+        )
+
+    async def _search_website_source(
+        self,
+        search_term: str,
+        num_results: int,
+        website_source_source: WebsiteSource | None = None,
+        **_: object,
+    ) -> List[SearchResult]:
+        if website_source_source is None:
+            logger.warning(
+                "search_engine='website_source' called without website_source_source; skipping."
+            )
+            return []
+        return await self._saved_search_engine.search(
+            source=website_source_source,
+            search_term=search_term,
+            num_results=num_results,
         )
 
     async def _post_search_google_shopping_immersive(self, url: str) -> List[str]:
@@ -862,8 +1395,20 @@ class Searcher(RedisCacher, DomainUtils):
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
+        website_source_source: WebsiteSource | None = None,
+        saved_search_source: WebsiteSource | None = None,
     ) -> List[SearchResult]:
         """Performs a search from given search engine."""
+        if saved_search_source is not None:
+            if website_source_source is not None:
+                raise ValueError(
+                    "Provide only one of website_source_source or saved_search_source."
+                )
+            logger.warning(
+                "saved_search_source is deprecated; use website_source_source instead."
+            )
+            website_source_source = saved_search_source
+
         logger.info(
             f'Performing search for term="{search_term}" using engine="{search_engine}".'
         )
@@ -875,44 +1420,25 @@ class Searcher(RedisCacher, DomainUtils):
         if isinstance(search_engine, str):
             search_engine = SearchEngineName(search_engine)
 
-        # Make SerpAPI google search
-        if search_engine == SearchEngineName.GOOGLE:
-            results = await self._google.search(
-                search_term=search_term,
-                language=language,
-                location=location,
-                num_results=num_results,
-                marketplaces=marketplaces,
-            )
-
-        # Make SerpAPI google shopping search
-        elif search_engine == SearchEngineName.GOOGLE_SHOPPING:
-            results = await self._google_shopping.search(
-                search_term=search_term,
-                language=language,
-                location=location,
-                num_results=num_results,
-                marketplaces=marketplaces,
-            )
-
-        # Make Toppreise search
-        elif search_engine == SearchEngineName.TOPPREISE:
-            results = await self._toppreise.search(
-                search_term=search_term,
-                language=language,
-                num_results=num_results,
-            )
-
-        # Other search engines can be added here (raise unknown engine error otherwise)
-        else:
+        search_handler = self._search_handlers.get(search_engine)
+        if search_handler is None:
             raise ValueError(f"Unknown search engine: {search_engine}")
+        results = await search_handler(
+            search_term=search_term,
+            language=language,
+            location=location,
+            num_results=num_results,
+            marketplaces=marketplaces,
+            website_source_source=website_source_source,
+        )
 
         # -------------------------------
         # POST-SEARCH URL EXTRACTION
         # -------------------------------
-        post_search_results = await self._post_search(results=results)
-        post_search_results = post_search_results[:num_results]
-        results.extend(post_search_results)
+        if search_engine in self._post_search_enabled_engines:
+            post_search_results = await self._post_search(results=results)
+            post_search_results = post_search_results[:num_results]
+            results.extend(post_search_results)
 
         # -------------------------------
         # FILTERS

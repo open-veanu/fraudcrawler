@@ -1,24 +1,41 @@
+from urllib.parse import parse_qsl, urlparse
+
 import pytest
 import pytest_asyncio
 
+from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.base.base import (
     Setup,
     Host,
     Location,
     Language,
     HttpxAsyncClient,
+    WebsiteSourceMetadata,
 )
+from fraudcrawler.scraping.enrich import Keyword
+from fraudcrawler.scraping.saved_search_models import WebsiteSource
 from fraudcrawler.scraping.search import (
+    SavedSearchCandidate,
+    SavedSearchIngestResult,
+    SavedSearchUrlDiagnostic,
     Searcher,
+    SearchEngineName,
     SearchResult,
+    SerpAPI,
     SerpAPIGoogle,
     SerpAPIGoogleShopping,
     Toppreise,
+    WebsiteSearch,
 )
-from fraudcrawler import Enricher, URLCollector, ZyteAPI
-from fraudcrawler.scraping.enrich import Keyword
-from fraudcrawler.scraping.search import SerpAPI
+from fraudcrawler.scraping.url import filter_tracking_query_entries
 from fraudcrawler.settings import ROOT_DIR
+
+
+def _skip_if_empty_live_results(results, *, context: str) -> None:
+    if len(results) == 0:
+        pytest.skip(
+            f"Live upstream returned zero results ({context}); skipping flaky live assertion."
+        )
 
 
 @pytest_asyncio.fixture
@@ -128,6 +145,9 @@ async def test_serpapi_google_search(serpapi_google):
         location=location,
         num_results=num_results,
     )
+    _skip_if_empty_live_results(
+        results, context="engine=google query=Kaffee location=CH"
+    )
     assert 0 < len(results) <= num_results
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
@@ -158,6 +178,7 @@ def test_search_engine_create_search_result(serpapi_google):
     assert isinstance(result, SearchResult)
     assert result.url == url
     assert result.domain == "example.ch"
+    assert result.website_source is None
 
 
 def test_serpapi_get_google_domain():
@@ -437,6 +458,53 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
         )
 
 
+def test_filter_tracking_query_entries_matches_url_cleaning_behavior():
+    url = "https://www.ricardo.ch/product/?utm_source=test&param1=value1&srsltid=abc"
+    queries = parse_qsl(urlparse(url).query, keep_blank_values=True)
+
+    filtered = filter_tracking_query_entries(queries=queries)
+    assert filtered == [("param1", "value1")]
+
+    filtered_remove_all = filter_tracking_query_entries(
+        queries=queries, remove_all=True
+    )
+    assert filtered_remove_all == []
+
+
+def test_canonicalize_url_lowercases_host():
+    result = WebsiteSearch._canonicalize_url("https://WWW.SHOP.TEST/path")
+    assert result == "https://www.shop.test/path"
+
+
+def test_canonicalize_url_strips_default_ports():
+    assert "443" not in WebsiteSearch._canonicalize_url("https://shop.test:443/p")
+    assert "80" not in WebsiteSearch._canonicalize_url("http://shop.test:80/p")
+
+
+def test_canonicalize_url_keeps_non_default_port():
+    result = WebsiteSearch._canonicalize_url("https://shop.test:8080/p")
+    assert ":8080" in result
+
+
+def test_canonicalize_url_strips_fragment():
+    result = WebsiteSearch._canonicalize_url("https://shop.test/p#section")
+    assert "#" not in result
+
+
+def test_canonicalize_url_removes_tracking_params():
+    result = WebsiteSearch._canonicalize_url(
+        "https://shop.test/p?color=red&utm_source=google&size=M"
+    )
+    assert "utm_source" not in result
+    assert "color=red" in result
+    assert "size=M" in result
+
+
+def test_canonicalize_url_sorts_query_params():
+    result = WebsiteSearch._canonicalize_url("https://shop.test/p?z=1&a=2&q=term")
+    assert result == "https://shop.test/p?q=term&a=2&z=1"
+
+
 @pytest.mark.asyncio
 async def test_zyteapi_apply(zyteapi):
     # url = "https://www.interdiscount.ch/it/product/liebherr-tp1410-136-l-bianco-0005000183"
@@ -484,6 +552,9 @@ async def test_searcher_apply(searcher):
         location=location,
         num_results=num_results,
     )
+    _skip_if_empty_live_results(
+        results, context="searcher.apply engine=google query=Kaffee location=CH"
+    )
     assert 0 < len(results)
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
@@ -514,6 +585,190 @@ async def test_searcher_apply(searcher):
     assert 0 < len(results)
     assert all(isinstance(res, SearchResult) for res in results)
     assert all(res.url.startswith("http") for res in results)
+
+
+@pytest.mark.asyncio
+async def test_searcher_apply_saved_search_without_source_returns_empty(
+    searcher, monkeypatch
+):
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+
+    async def _unexpected_call(**kwargs):  # pragma: no cover - assertion helper
+        raise AssertionError(
+            "WebsiteSearch.search should not be called without source."
+        )
+
+    monkeypatch.setattr(searcher._saved_search_engine, "search", _unexpected_call)
+
+    results = await searcher.capply(
+        search_term="Kaffee",
+        search_engine=SearchEngineName.WEBSITE_SOURCE,
+        language=language,
+        location=location,
+        num_results=5,
+    )
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_searcher_apply_saved_search_dispatches_via_engine(searcher, monkeypatch):
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+    source = WebsiteSource(
+        name="Boost Galaxus",
+        urls=[
+            {
+                "baseUrl": "https://www.galaxus.ch/",
+                "searchableUrls": [
+                    {
+                        "filterUrl": "de/search?q={search_term}",
+                        "includeSubstrings": [],
+                        "excludeSubstrings": [],
+                    }
+                ],
+            }
+        ],
+    )
+
+    async def _fake_saved_search(**kwargs):
+        assert kwargs["source"] == source
+        assert kwargs["search_term"] == "Kaffee"
+        assert kwargs["num_results"] == 5
+        return [
+            SearchResult(
+                url="https://www.galaxus.ch/de/product/123",
+                domain="galaxus.ch",
+                search_engine_name="boost_galaxus_search_engine",
+            )
+        ]
+
+    async def _fail_post_search(results):  # pragma: no cover - assertion helper
+        raise AssertionError(
+            "Post-search should not run for saved-search engine results."
+        )
+
+    monkeypatch.setattr(searcher._saved_search_engine, "search", _fake_saved_search)
+    monkeypatch.setattr(searcher, "_post_search", _fail_post_search)
+
+    results = await searcher.capply(
+        search_term="Kaffee",
+        search_engine=SearchEngineName.WEBSITE_SOURCE,
+        language=language,
+        location=location,
+        num_results=5,
+        website_source_source=source,
+    )
+
+    assert len(results) == 1
+    assert results[0].search_engine_name == "boost_galaxus_search_engine"
+    assert results[0].domain == "galaxus.ch"
+
+
+@pytest.mark.asyncio
+async def test_websitesearch_search_attaches_website_source_metadata(
+    searcher, monkeypatch
+):
+    source = WebsiteSource(
+        name="Boost Galaxus",
+        urls=[
+            {
+                "baseUrl": "https://www.galaxus.ch/",
+                "searchableUrls": [
+                    {
+                        "filterUrl": "de/search?q={search_term}",
+                        "includeSubstrings": [],
+                        "excludeSubstrings": [],
+                    }
+                ],
+            }
+        ],
+        searchFilterConfig={
+            "renderOptions": {
+                "javascript": True,
+                "includeIframes": False,
+                "actions": [],
+                "networkCapture": [],
+            }
+        },
+    )
+
+    async def _fake_ingest_source(**kwargs):
+        return SavedSearchIngestResult(
+            sourceName="Boost Galaxus",
+            sourceUrls=["https://www.galaxus.ch/de/search?q=kaffee"],
+            candidates=[
+                SavedSearchCandidate(
+                    url="https://www.galaxus.ch/de/p/coffee-123",
+                    title="Coffee 123",
+                )
+            ],
+            urlDiagnostics=[
+                SavedSearchUrlDiagnostic(
+                    url="de/search?q={search_term}",
+                    resolvedUrl="https://www.galaxus.ch/de/search?q=kaffee",
+                    renderHttpStatus=200,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(
+        searcher._saved_search_engine, "ingest_source", _fake_ingest_source
+    )
+    results = await searcher._saved_search_engine.search(
+        source=source, search_term="kaffee", num_results=5
+    )
+
+    assert len(results) == 1
+    assert isinstance(results[0].website_source, WebsiteSourceMetadata)
+    assert results[0].website_source is not None
+    assert results[0].website_source.source_name == "Boost Galaxus"
+    assert (
+        results[0].website_source.resolved_url
+        == "https://www.galaxus.ch/de/search?q=kaffee"
+    )
+    assert results[0].website_source.render_http_status == 200
+
+
+@pytest.mark.asyncio
+async def test_searcher_apply_accepts_legacy_saved_search_source_keyword(
+    searcher, monkeypatch
+):
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+    source = WebsiteSource(
+        name="Boost Galaxus",
+        urls=[
+            {
+                "baseUrl": "https://www.galaxus.ch/",
+                "searchableUrls": [
+                    {
+                        "filterUrl": "de/search?q={search_term}",
+                        "includeSubstrings": [],
+                        "excludeSubstrings": [],
+                    }
+                ],
+            }
+        ],
+    )
+
+    async def _fake_saved_search(**kwargs):
+        assert kwargs["source"] == source
+        return []
+
+    monkeypatch.setattr(searcher._saved_search_engine, "search", _fake_saved_search)
+
+    results = await searcher.capply(
+        search_term="Kaffee",
+        search_engine=SearchEngineName.WEBSITE_SOURCE,
+        language=language,
+        location=location,
+        num_results=5,
+        saved_search_source=source,
+    )
+
+    assert results == []
 
 
 def test_searcher_apply_filters(searcher):
