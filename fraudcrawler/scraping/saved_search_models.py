@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -8,28 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 SavedSearchRenderTriggerPolicy = Literal["on_zero_candidates", "always", "on_http_403"]
 SavedSearchRenderProvider = Literal["generic", "zyte"]
 SavedSearchExtractionStrategy = Literal["adapter", "generic"]
-
-
-class SavedSearchFilterEntry(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    domain: str = "generic"
-    value: str
-    enabled: bool = True
-
-    @field_validator("domain", mode="before")
-    @classmethod
-    def _normalize_domain(cls, value: Any) -> str:
-        normalized = str(value or "").strip()
-        return normalized or "generic"
-
-    @field_validator("value", mode="before")
-    @classmethod
-    def _normalize_value(cls, value: Any) -> str:
-        normalized = str(value or "").strip()
-        if not normalized:
-            raise ValueError("Saved-search filter entry value must not be empty.")
-        return normalized
 
 
 class SavedSearchRenderFallbackRequestHeaders(BaseModel):
@@ -47,33 +25,32 @@ class SavedSearchRenderFallbackConfig(BaseModel):
     request_headers: Optional[SavedSearchRenderFallbackRequestHeaders] = Field(
         default=None, alias="requestHeaders"
     )
-    actions: Optional[List[Dict[str, Any]]] = None
-    network_capture: Optional[List[Dict[str, Any]]] = Field(
+    actions: Optional[List[dict[str, Any]]] = None
+    network_capture: Optional[List[dict[str, Any]]] = Field(
         default=None, alias="networkCapture"
     )
 
 
-class SavedSearchFilterConfig(BaseModel):
+class SavedSearchSearchableUrl(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    version: int = 1
-    mode: str = "per_source_all_urls"
-    entries: List[SavedSearchFilterEntry] = Field(default_factory=list)
-    candidate_url_include_substrings: List[str] = Field(
-        default_factory=list, alias="candidateUrlIncludeSubstrings"
+    filter_url: str = Field(alias="filterUrl")
+    include_substrings: List[str] = Field(
+        default_factory=list, alias="includeSubstrings"
     )
-    candidate_url_exclude_substrings: List[str] = Field(
-        default_factory=list, alias="candidateUrlExcludeSubstrings"
-    )
-    render_fallback: Optional[SavedSearchRenderFallbackConfig] = Field(
-        default=None, alias="renderFallback"
+    exclude_substrings: List[str] = Field(
+        default_factory=list, alias="excludeSubstrings"
     )
 
-    @field_validator(
-        "candidate_url_include_substrings",
-        "candidate_url_exclude_substrings",
-        mode="before",
-    )
+    @field_validator("filter_url", mode="before")
+    @classmethod
+    def _normalize_filter_url(cls, value: Any) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("Saved-search filterUrl must not be empty.")
+        return normalized
+
+    @field_validator("include_substrings", "exclude_substrings", mode="before")
     @classmethod
     def _normalize_tokens(cls, value: Any) -> List[str]:
         if not isinstance(value, list):
@@ -93,26 +70,28 @@ class SavedSearchFilterConfig(BaseModel):
 
 
 class SavedSearchUrlTemplate(BaseModel):
-    raw_url: str = Field(alias="rawUrl")
-    template_params: Dict[str, str] = Field(
-        default_factory=dict, alias="templateParams"
-    )
-    # Legacy field kept for backward compatibility with existing payloads.
-    search_param_key: Optional[str] = Field(default=None, alias="searchParamKey")
+    model_config = ConfigDict(extra="forbid")
 
-    @field_validator("template_params", mode="before")
+    base_url: str = Field(alias="baseUrl")
+    searchable_urls: List[SavedSearchSearchableUrl] = Field(alias="searchableUrls")
+
+    @field_validator("base_url", mode="before")
     @classmethod
-    def _normalize_template_params(cls, value: Any) -> Dict[str, str]:
-        if not isinstance(value, dict):
-            return {}
-        normalized: Dict[str, str] = {}
-        for key, raw_value in value.items():
-            key_txt = str(key).strip()
-            if not key_txt:
-                continue
-            value_txt = str(raw_value).strip()
-            normalized[key_txt] = value_txt
+    def _normalize_base_url(cls, value: Any) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("Saved-search baseUrl must not be empty.")
         return normalized
+
+
+class SavedSearchFilterConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = 1
+    mode: str = "per_source_all_urls"
+    render_fallback: Optional[SavedSearchRenderFallbackConfig] = Field(
+        default=None, alias="renderFallback"
+    )
 
 
 class SavedSearchSource(BaseModel):

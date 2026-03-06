@@ -4,7 +4,6 @@ from typing import Iterable, List
 
 from fraudcrawler.scraping.saved_search_models import (
     SavedSearchCandidate,
-    SavedSearchFilterConfig,
     SavedSearchPatternFilterResult,
 )
 
@@ -26,22 +25,11 @@ def _normalize_tokens(tokens: Iterable[str]) -> List[str]:
 
 def apply_candidate_url_pattern_filters(
     candidates: List[SavedSearchCandidate],
-    search_filter_config: SavedSearchFilterConfig | None,
+    include_substrings: Iterable[str] | None = None,
+    exclude_substrings: Iterable[str] | None = None,
 ) -> SavedSearchPatternFilterResult:
-    include_tokens = _normalize_tokens(
-        (
-            search_filter_config.candidate_url_include_substrings
-            if search_filter_config
-            else []
-        )
-    )
-    exclude_tokens = _normalize_tokens(
-        (
-            search_filter_config.candidate_url_exclude_substrings
-            if search_filter_config
-            else []
-        )
-    )
+    include_tokens = _normalize_tokens(include_substrings or [])
+    exclude_tokens = _normalize_tokens(exclude_substrings or [])
 
     result = SavedSearchPatternFilterResult(
         filteredCandidates=[],

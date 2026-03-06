@@ -53,8 +53,14 @@ def _saved_source(name: str) -> SavedSearchSource:
         urls=[
             SavedSearchUrlTemplate.model_validate(
                 {
-                    "rawUrl": "https://example.com/search?q={search_term}",
-                    "templateParams": {"q": "{search_term}"},
+                    "baseUrl": "https://example.com/",
+                    "searchableUrls": [
+                        {
+                            "filterUrl": "search?q={search_term}",
+                            "includeSubstrings": [],
+                            "excludeSubstrings": [],
+                        }
+                    ],
                 }
             )
         ],

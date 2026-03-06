@@ -36,52 +36,41 @@ logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 def _build_saved_search_profile(
     *,
     name: str,
-    raw_url: str,
-    entry_domain: str,
-    entry_value: str,
-    include_substrings: list[str],
-    exclude_substrings: list[str] | None = None,
+    base_url: str,
+    searchable_urls: list[dict[str, Any]],
     render_fallback: dict[str, Any] | None = None,
 ) -> SavedSearchSource:
+    filter_config: dict[str, Any] = {
+        "version": 1,
+        "mode": "per_source_all_urls",
+    }
+    if render_fallback is not None:
+        filter_config["renderFallback"] = render_fallback
+
     return SavedSearchSource(
         name=name,
         urls=[
             SavedSearchUrlTemplate.model_validate(
                 {
-                    "rawUrl": raw_url,
-                    "templateParams": {"q": "{search_term}"},
+                    "baseUrl": base_url,
+                    "searchableUrls": searchable_urls,
                 }
             )
         ],
-        searchFilterConfig=SavedSearchFilterConfig.model_validate(
-            {
-                "version": 1,
-                "mode": "per_source_all_urls",
-                "entries": [
-                    {
-                        "domain": entry_domain,
-                        "value": entry_value,
-                        "enabled": True,
-                    }
-                ],
-                "candidateUrlIncludeSubstrings": include_substrings,
-                "candidateUrlExcludeSubstrings": exclude_substrings or [],
-                **(
-                    {"renderFallback": render_fallback}
-                    if render_fallback is not None
-                    else {}
-                ),
-            }
-        ),
+        searchFilterConfig=SavedSearchFilterConfig.model_validate(filter_config),
     )
 
 
 GALAXUS_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
     name="Boost Galaxus",
-    raw_url="https://www.galaxus.ch/de/search?q={search_term}",
-    entry_domain="galaxus",
-    entry_value="21826=892",
-    include_substrings=["/product/"],
+    base_url="https://www.galaxus.ch/",
+    searchable_urls=[
+        {
+            "filterUrl": "de/search?q={search_term}&filter=21826=892",
+            "includeSubstrings": ["/product/"],
+            "excludeSubstrings": [],
+        }
+    ],
     render_fallback={
         "enabled": True,
         "provider": "zyte",
@@ -97,10 +86,14 @@ GALAXUS_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
 
 FUST_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
     name="Fust",
-    raw_url="https://www.fust.ch/search?q={search_term}",
-    entry_domain="fust",
-    entry_value=":relevance:Energieeffizienzklasse:A",
-    include_substrings=["/p/"],
+    base_url="https://www.fust.ch/",
+    searchable_urls=[
+        {
+            "filterUrl": "search?q={search_term}:relevance:Energieeffizienzklasse:A",
+            "includeSubstrings": ["/p/"],
+            "excludeSubstrings": [],
+        }
+    ],
     render_fallback={
         "enabled": True,
         "provider": "zyte",
@@ -115,10 +108,14 @@ FUST_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
 
 FRANKENSPALTER_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
     name="Frankenspalter",
-    raw_url="https://www.frankenspalter.ch/de/catalogsearch/result/index?q={search_term}",
-    entry_domain="frankenspalter",
-    entry_value="itg_202303151629545861692577=1818",
-    include_substrings=[],
+    base_url="https://www.frankenspalter.ch/",
+    searchable_urls=[
+        {
+            "filterUrl": "de/catalogsearch/result/index/?q={search_term}&itg_202303151629545861692577=1818",
+            "includeSubstrings": [],
+            "excludeSubstrings": [],
+        }
+    ],
     # important: no render fallback because frankenspalter allows direct crawling.
 )
 
@@ -313,5 +310,5 @@ async def main_saved_search_demo(search_term: str):
 
 
 if __name__ == "__main__":
-    #asyncio.run(main(search_term="Kühlschrank"))
+    # asyncio.run(main(search_term="Kühlschrank"))
     asyncio.run(main_saved_search_demo(search_term="Kühlschrank"))

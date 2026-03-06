@@ -577,8 +577,14 @@ async def test_searcher_apply_saved_search_dispatches_via_engine(searcher, monke
         name="Boost Galaxus",
         urls=[
             {
-                "rawUrl": "https://www.galaxus.ch/de/search?q={search_term}",
-                "templateParams": {"q": "{search_term}"},
+                "baseUrl": "https://www.galaxus.ch/",
+                "searchableUrls": [
+                    {
+                        "filterUrl": "de/search?q={search_term}",
+                        "includeSubstrings": [],
+                        "excludeSubstrings": [],
+                    }
+                ],
             }
         ],
     )
