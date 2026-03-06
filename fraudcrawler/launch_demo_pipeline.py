@@ -78,7 +78,7 @@ def _build_saved_search_profile(
 
 GALAXUS_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
     name="Boost Galaxus",
-    raw_url="https://www.galaxus.ch/de/search?q=suchbegriff",
+    raw_url="https://www.galaxus.ch/de/search?q={search_term}",
     entry_domain="galaxus",
     entry_value="21826=892",
     include_substrings=["/product/"],
@@ -122,7 +122,7 @@ FRANKENSPALTER_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
     # important: no render fallback because frankenspalter allows direct crawling.
 )
 
-DEFAULT_SAVED_SEARCH_PROFILE = FRANKENSPALTER_SAVED_SEARCH_PROFILE
+DEFAULT_SAVED_SEARCH_PROFILE = GALAXUS_SAVED_SEARCH_PROFILE
 
 
 def _setup_workflows(
@@ -313,5 +313,5 @@ async def main_saved_search_demo(search_term: str):
 
 
 if __name__ == "__main__":
-    asyncio.run(main(search_term="Kühlschrank"))
-    # asyncio.run(main_saved_search_demo(search_term="Kühlschrank"))
+    #asyncio.run(main(search_term="Kühlschrank"))
+    asyncio.run(main_saved_search_demo(search_term="Kühlschrank"))
