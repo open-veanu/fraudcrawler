@@ -18,7 +18,7 @@ from fraudcrawler.base.base import (
 )
 from fraudcrawler.base.orchestrator import Orchestrator
 from fraudcrawler.scraping.search import Searcher, SearchEngineName
-from fraudcrawler.scraping.saved_search_models import SavedSearchSource
+from fraudcrawler.scraping.saved_search_models import WebsiteSource
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteAPI
@@ -114,7 +114,7 @@ class FraudCrawlerClient(Orchestrator):
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
         previously_collected_urls: List[str] | None = None,
-        saved_search_sources: List[SavedSearchSource] | None = None,
+        website_source_sources: List[WebsiteSource] | None = None,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
@@ -142,7 +142,7 @@ class FraudCrawlerClient(Orchestrator):
         await super().run(
             search_term=search_term,
             search_engines=search_engines,
-            saved_search_sources=saved_search_sources,
+            website_source_sources=website_source_sources,
             language=language,
             location=location,
             deepness=deepness,

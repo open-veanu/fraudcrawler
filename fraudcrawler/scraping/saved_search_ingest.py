@@ -27,10 +27,10 @@ from fraudcrawler.scraping.saved_search_models import (
     SavedSearchCandidate,
     SavedSearchIngestResult,
     SavedSearchRenderedPageResult,
-    SavedSearchSearchableUrl,
+    WebsiteSourceSearchableUrl,
     SavedSearchRenderTriggerPolicy,
-    SavedSearchSource,
-    SavedSearchUrlTemplate,
+    WebsiteSource,
+    WebsiteSourceUrlTemplate,
     SavedSearchUrlDiagnostic,
 )
 
@@ -95,8 +95,8 @@ def _interpolate_search_term(value: str, search_term: Optional[str]) -> str:
 
 
 def build_searchable_url(
-    template: SavedSearchUrlTemplate,
-    searchable_url: SavedSearchSearchableUrl,
+    template: WebsiteSourceUrlTemplate,
+    searchable_url: WebsiteSourceSearchableUrl,
     search_term: Optional[str],
 ) -> Optional[str]:
     interpolated = _interpolate_search_term(searchable_url.filter_url, search_term)
@@ -207,7 +207,7 @@ class SavedSearchIngestService:
 
     async def ingest_source(
         self,
-        source: SavedSearchSource,
+        source: WebsiteSource,
         search_term: Optional[str],
         max_items: int,
         render_fetcher: Optional[

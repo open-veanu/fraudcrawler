@@ -28,7 +28,7 @@ from fraudcrawler import (
     URLCollector,
     Processor,
 )
-from fraudcrawler.scraping.saved_search_models import SavedSearchSource
+from fraudcrawler.scraping.saved_search_models import WebsiteSource
 
 logger = logging.getLogger(__name__)
 
@@ -359,7 +359,7 @@ class Orchestrator(ABC):
         queue: asyncio.Queue[dict | None],
         search_term: str,
         search_engines: List[SearchEngineName],
-        saved_search_sources: List[SavedSearchSource] | None,
+        website_source_sources: List[WebsiteSource] | None,
         language: Language,
         location: Location,
         deepness: Deepness,
@@ -394,7 +394,7 @@ class Orchestrator(ABC):
         async def _add_initial_items_for_engine(
             search_engine: SearchEngineName,
         ) -> None:
-            if search_engine != SearchEngineName.SAVED_SEARCH:
+            if search_engine != SearchEngineName.WEBSITE_SOURCE:
                 await self._add_search_items_for_search_term(
                     search_term=search_term,
                     search_term_type="initial",
@@ -404,11 +404,11 @@ class Orchestrator(ABC):
                 )
                 return
 
-            sources = saved_search_sources or []
+            sources = website_source_sources or []
             if not sources:
                 logger.warning(
-                    "Search engine '%s' selected without saved_search_sources; skipping.",
-                    SearchEngineName.SAVED_SEARCH.value,
+                    "Search engine '%s' selected without website_source_sources; skipping.",
+                    SearchEngineName.WEBSITE_SOURCE.value,
                 )
                 return
 
@@ -416,15 +416,15 @@ class Orchestrator(ABC):
                 item = {
                     "search_term": search_term,
                     "search_term_type": "initial",
-                    "search_engine": SearchEngineName.SAVED_SEARCH,
+                    "search_engine": SearchEngineName.WEBSITE_SOURCE,
                     "language": language,
                     "location": location,
                     "num_results": deepness.num_results,
                     "marketplaces": marketplaces,
                     "excluded_urls": excluded_urls,
-                    "saved_search_source": source,
+                    "website_source_source": source,
                 }
-                logger.debug(f'Adding saved-search item="{item}" to srch_queue')
+                logger.debug(f'Adding website-source item="{item}" to srch_queue')
                 await queue.put(item)
 
         # Add initial items to the queue
@@ -446,7 +446,7 @@ class Orchestrator(ABC):
             # Add the enriched search terms to the queue
             for trm in terms:
                 for se in search_engines:
-                    if se == SearchEngineName.SAVED_SEARCH:
+                    if se == SearchEngineName.WEBSITE_SOURCE:
                         continue
                     await self._add_search_items_for_search_term(
                         search_term=trm,
@@ -534,7 +534,7 @@ class Orchestrator(ABC):
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
         previously_collected_urls: List[str] | None = None,
-        saved_search_sources: List[SavedSearchSource] | None = None,
+        website_source_sources: List[WebsiteSource] | None = None,
     ) -> None:
         """Runs the pipeline steps: srch, deduplication, context extraction, processing, and collect the results.
 
@@ -559,10 +559,13 @@ class Orchestrator(ABC):
             search_engines = list(SearchEngineName)
 
         # Enforce explicit contract for saved-search execution
-        if saved_search_sources and SearchEngineName.SAVED_SEARCH not in search_engines:
+        if (
+            website_source_sources
+            and SearchEngineName.WEBSITE_SOURCE not in search_engines
+        ):
             raise ValueError(
-                "saved_search_sources provided but search_engines does not include "
-                "SearchEngineName.SAVED_SEARCH"
+                "website_source_sources provided but search_engines does not include "
+                "SearchEngineName.WEBSITE_SOURCE"
             )
 
         # Handle previously collected URLs
@@ -570,12 +573,12 @@ class Orchestrator(ABC):
             self._url_collector.add_previously_collected_urls(urls=pcurls)
 
         # Setup the async framework
-        n_saved_sources = len(saved_search_sources or [])
+        n_saved_sources = len(website_source_sources or [])
         n_non_saved_engines = sum(
-            1 for engine in search_engines if engine != SearchEngineName.SAVED_SEARCH
+            1 for engine in search_engines if engine != SearchEngineName.WEBSITE_SOURCE
         )
         n_saved_engine_jobs = (
-            n_saved_sources if SearchEngineName.SAVED_SEARCH in search_engines else 0
+            n_saved_sources if SearchEngineName.WEBSITE_SOURCE in search_engines else 0
         )
         n_enriched_terms = (
             deepness.enrichment.additional_terms if deepness.enrichment else 0
@@ -618,7 +621,7 @@ class Orchestrator(ABC):
             queue=srch_queue,
             search_term=search_term,
             search_engines=search_engines,
-            saved_search_sources=saved_search_sources,
+            website_source_sources=website_source_sources,
             language=language,
             location=location,
             deepness=deepness,

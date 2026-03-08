@@ -17,12 +17,12 @@ from fraudcrawler import (
     Processor,
     Workflow,
     OpenAIClassification,
-    SavedSearchSource,
+    WebsiteSource,
 )
-from fraudcrawler.scraping.search import SavedSearch
+from fraudcrawler.scraping.search import WebsiteSearch
 from fraudcrawler.scraping.saved_search_models import (
-    SavedSearchFilterConfig,
-    SavedSearchUrlTemplate,
+    WebsiteSourceFilterConfig,
+    WebsiteSourceUrlTemplate,
 )
 
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
@@ -33,13 +33,13 @@ SETUP = Setup()  # type: ignore[call-arg]
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
 
-def _build_saved_search_profile(
+def _build_website_source_profile(
     *,
     name: str,
     base_url: str,
     searchable_urls: list[dict[str, Any]],
     render_fallback: dict[str, Any] | None = None,
-) -> SavedSearchSource:
+) -> WebsiteSource:
     filter_config: dict[str, Any] = {
         "version": 1,
         "mode": "per_source_all_urls",
@@ -47,21 +47,21 @@ def _build_saved_search_profile(
     if render_fallback is not None:
         filter_config["renderFallback"] = render_fallback
 
-    return SavedSearchSource(
+    return WebsiteSource(
         name=name,
         urls=[
-            SavedSearchUrlTemplate.model_validate(
+            WebsiteSourceUrlTemplate.model_validate(
                 {
                     "baseUrl": base_url,
                     "searchableUrls": searchable_urls,
                 }
             )
         ],
-        searchFilterConfig=SavedSearchFilterConfig.model_validate(filter_config),
+        searchFilterConfig=WebsiteSourceFilterConfig.model_validate(filter_config),
     )
 
 
-GALAXUS_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
+GALAXUS_WEBSITE_SOURCE_PROFILE = _build_website_source_profile(
     name="Boost Galaxus",
     base_url="https://www.galaxus.ch/",
     searchable_urls=[
@@ -84,7 +84,7 @@ GALAXUS_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
 )
 
 
-FUST_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
+FUST_WEBSITE_SOURCE_PROFILE = _build_website_source_profile(
     name="Fust",
     base_url="https://www.fust.ch/",
     searchable_urls=[
@@ -106,7 +106,7 @@ FUST_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
     },
 )
 
-FRANKENSPALTER_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
+FRANKENSPALTER_WEBSITE_SOURCE_PROFILE = _build_website_source_profile(
     name="Frankenspalter",
     base_url="https://www.frankenspalter.ch/",
     searchable_urls=[
@@ -119,7 +119,7 @@ FRANKENSPALTER_SAVED_SEARCH_PROFILE = _build_saved_search_profile(
     # important: no render fallback because frankenspalter allows direct crawling.
 )
 
-DEFAULT_SAVED_SEARCH_PROFILE = GALAXUS_SAVED_SEARCH_PROFILE
+DEFAULT_WEBSITE_SOURCE_PROFILE = GALAXUS_WEBSITE_SOURCE_PROFILE
 
 
 def _setup_workflows(
@@ -235,7 +235,7 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
         language=language,
         location=location,
         deepness=deepness,
-        saved_search_sources=[DEFAULT_SAVED_SEARCH_PROFILE],
+        website_source_sources=[DEFAULT_WEBSITE_SOURCE_PROFILE],
         # marketplaces=marketplaces,
         # excluded_urls=excluded_urls,
     )
@@ -259,19 +259,19 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
     print()
 
 
-async def run_saved_search_demo(http_client: HttpxAsyncClient, search_term: str):
-    saved_search = SavedSearch(
+async def run_website_source_demo(http_client: HttpxAsyncClient, search_term: str):
+    website_search = WebsiteSearch(
         http_client=http_client,
         zyteapi_key=SETUP.zyteapi_key,
         redis_use_cache=REDIS_USE_CACHE,
     )
-    result = await saved_search.ingest_source(
-        source=DEFAULT_SAVED_SEARCH_PROFILE,
+    result = await website_search.ingest_source(
+        source=DEFAULT_WEBSITE_SOURCE_PROFILE,
         search_term=search_term,
         max_items=50,
     )
     print()
-    title = f'Saved-search results for "{search_term.upper()}"'
+    title = f'Website-source results for "{search_term.upper()}"'
     print(title)
     print("=" * len(title))
     print(f"Source: {result.source_name}")
@@ -304,11 +304,11 @@ async def main(search_term: str):
         await run(http_client=http_client, search_term=search_term)
 
 
-async def main_saved_search_demo(search_term: str):
+async def main_website_source_demo(search_term: str):
     async with HttpxAsyncClient() as http_client:
-        await run_saved_search_demo(http_client=http_client, search_term=search_term)
+        await run_website_source_demo(http_client=http_client, search_term=search_term)
 
 
 if __name__ == "__main__":
     # asyncio.run(main(search_term="Kühlschrank"))
-    asyncio.run(main_saved_search_demo(search_term="Kühlschrank"))
+    asyncio.run(main_website_source_demo(search_term="Kühlschrank"))

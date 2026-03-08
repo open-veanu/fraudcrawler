@@ -31,7 +31,7 @@ class SavedSearchRenderFallbackConfig(BaseModel):
     )
 
 
-class SavedSearchSearchableUrl(BaseModel):
+class WebsiteSourceSearchableUrl(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     filter_url: str = Field(alias="filterUrl")
@@ -47,7 +47,7 @@ class SavedSearchSearchableUrl(BaseModel):
     def _normalize_filter_url(cls, value: Any) -> str:
         normalized = str(value or "").strip()
         if not normalized:
-            raise ValueError("Saved-search filterUrl must not be empty.")
+            raise ValueError("Website-source filterUrl must not be empty.")
         return normalized
 
     @field_validator("include_substrings", "exclude_substrings", mode="before")
@@ -69,22 +69,22 @@ class SavedSearchSearchableUrl(BaseModel):
         return deduped
 
 
-class SavedSearchUrlTemplate(BaseModel):
+class WebsiteSourceUrlTemplate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     base_url: str = Field(alias="baseUrl")
-    searchable_urls: List[SavedSearchSearchableUrl] = Field(alias="searchableUrls")
+    searchable_urls: List[WebsiteSourceSearchableUrl] = Field(alias="searchableUrls")
 
     @field_validator("base_url", mode="before")
     @classmethod
     def _normalize_base_url(cls, value: Any) -> str:
         normalized = str(value or "").strip()
         if not normalized:
-            raise ValueError("Saved-search baseUrl must not be empty.")
+            raise ValueError("Website-source baseUrl must not be empty.")
         return normalized
 
 
-class SavedSearchFilterConfig(BaseModel):
+class WebsiteSourceFilterConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: int = 1
@@ -94,12 +94,12 @@ class SavedSearchFilterConfig(BaseModel):
     )
 
 
-class SavedSearchSource(BaseModel):
+class WebsiteSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    urls: List[SavedSearchUrlTemplate]
-    search_filter_config: Optional[SavedSearchFilterConfig] = Field(
+    urls: List[WebsiteSourceUrlTemplate]
+    search_filter_config: Optional[WebsiteSourceFilterConfig] = Field(
         default=None, alias="searchFilterConfig"
     )
 

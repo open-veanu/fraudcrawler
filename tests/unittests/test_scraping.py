@@ -19,7 +19,7 @@ from fraudcrawler.scraping.search import (
 )
 from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.scraping.enrich import Keyword
-from fraudcrawler.scraping.saved_search_models import SavedSearchSource
+from fraudcrawler.scraping.saved_search_models import WebsiteSource
 from fraudcrawler.scraping.search import SerpAPI
 from fraudcrawler.scraping.url import filter_tracking_query_entries
 from fraudcrawler.settings import ROOT_DIR
@@ -554,13 +554,15 @@ async def test_searcher_apply_saved_search_without_source_returns_empty(
     location = Location(name="Switzerland")
 
     async def _unexpected_call(**kwargs):  # pragma: no cover - assertion helper
-        raise AssertionError("SavedSearch.search should not be called without source.")
+        raise AssertionError(
+            "WebsiteSearch.search should not be called without source."
+        )
 
-    monkeypatch.setattr(searcher._saved_search, "search", _unexpected_call)
+    monkeypatch.setattr(searcher._saved_search_engine, "search", _unexpected_call)
 
     results = await searcher.capply(
         search_term="Kaffee",
-        search_engine=SearchEngineName.SAVED_SEARCH,
+        search_engine=SearchEngineName.WEBSITE_SOURCE,
         language=language,
         location=location,
         num_results=5,
@@ -573,7 +575,7 @@ async def test_searcher_apply_saved_search_without_source_returns_empty(
 async def test_searcher_apply_saved_search_dispatches_via_engine(searcher, monkeypatch):
     language = Language(name="German")
     location = Location(name="Switzerland")
-    source = SavedSearchSource(
+    source = WebsiteSource(
         name="Boost Galaxus",
         urls=[
             {
@@ -606,21 +608,52 @@ async def test_searcher_apply_saved_search_dispatches_via_engine(searcher, monke
             "Post-search should not run for saved-search engine results."
         )
 
-    monkeypatch.setattr(searcher._saved_search, "search", _fake_saved_search)
+    monkeypatch.setattr(searcher._saved_search_engine, "search", _fake_saved_search)
     monkeypatch.setattr(searcher, "_post_search", _fail_post_search)
 
     results = await searcher.capply(
         search_term="Kaffee",
-        search_engine=SearchEngineName.SAVED_SEARCH,
+        search_engine=SearchEngineName.WEBSITE_SOURCE,
         language=language,
         location=location,
         num_results=5,
-        saved_search_source=source,
+        website_source_source=source,
     )
 
     assert len(results) == 1
     assert results[0].search_engine_name == "boost_galaxus_search_engine"
     assert results[0].domain == "galaxus.ch"
+
+
+@pytest.mark.asyncio
+async def test_searcher_apply_rejects_legacy_saved_search_source_keyword(searcher):
+    language = Language(name="German")
+    location = Location(name="Switzerland")
+    source = WebsiteSource(
+        name="Boost Galaxus",
+        urls=[
+            {
+                "baseUrl": "https://www.galaxus.ch/",
+                "searchableUrls": [
+                    {
+                        "filterUrl": "de/search?q={search_term}",
+                        "includeSubstrings": [],
+                        "excludeSubstrings": [],
+                    }
+                ],
+            }
+        ],
+    )
+
+    with pytest.raises(TypeError, match="saved_search_source"):
+        await searcher.capply(  # type: ignore[call-arg]
+            search_term="Kaffee",
+            search_engine=SearchEngineName.WEBSITE_SOURCE,
+            language=language,
+            location=location,
+            num_results=5,
+            saved_search_source=source,
+        )
 
 
 def test_searcher_apply_filters(searcher):

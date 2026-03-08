@@ -1,11 +1,11 @@
 from fraudcrawler.cache.cacher import RedisCacher
-from fraudcrawler.scraping.search import Searcher, SearchEngineName
+from fraudcrawler.scraping.search import Searcher, SearchEngineName, WebsiteSearch
 from fraudcrawler.scraping.enrich import Enricher
 from fraudcrawler.scraping.url import URLCollector
 from fraudcrawler.scraping.zyte import ZyteAPI
 from fraudcrawler.scraping.saved_search_models import (
-    SavedSearchSource,
-    SavedSearchFilterConfig,
+    WebsiteSource,
+    WebsiteSourceFilterConfig,
     SavedSearchIngestResult,
     SavedSearchCandidate,
     SavedSearchRenderFallbackConfig,
@@ -39,11 +39,12 @@ __all__ = [
     "RedisCacher",
     "Searcher",
     "SearchEngineName",
+    "WebsiteSearch",
     "Enricher",
     "URLCollector",
     "ZyteAPI",
-    "SavedSearchSource",
-    "SavedSearchFilterConfig",
+    "WebsiteSource",
+    "WebsiteSourceFilterConfig",
     "SavedSearchIngestResult",
     "SavedSearchCandidate",
     "SavedSearchRenderFallbackConfig",

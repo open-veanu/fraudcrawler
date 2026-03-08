@@ -5,34 +5,39 @@ import pytest
 from fraudcrawler.base.base import Deepness, Enrichment, Language, Location, ProductItem
 from fraudcrawler.base.orchestrator import Orchestrator
 from fraudcrawler.scraping.saved_search_models import (
-    SavedSearchSource,
-    SavedSearchUrlTemplate,
+    WebsiteSource,
+    WebsiteSourceUrlTemplate,
 )
 from fraudcrawler.scraping.search import (
-    SavedSearch,
+    WebsiteSearch,
     SearchEngineName,
 )
 
 
-def test_build_saved_search_engine_name_slugifies_source_name():
+def test_build_website_source_engine_name_slugifies_source_name():
     assert (
-        SavedSearch._build_saved_search_engine_name("Boost Galaxus")
+        WebsiteSearch._build_website_source_engine_name("Boost Galaxus")
         == "boost_galaxus_search_engine"
     )
 
 
-def test_build_saved_search_engine_name_strips_non_ascii_and_symbols():
+def test_build_website_source_engine_name_strips_non_ascii_and_symbols():
     assert (
-        SavedSearch._build_saved_search_engine_name("  BÖÖS Galaxus!!  ")
+        WebsiteSearch._build_website_source_engine_name("  BÖÖS Galaxus!!  ")
         == "boos_galaxus_search_engine"
     )
 
 
-def test_build_saved_search_engine_name_falls_back_when_empty():
+def test_build_website_source_engine_name_falls_back_when_empty():
     assert (
-        SavedSearch._build_saved_search_engine_name("!!!")
-        == "saved_search_search_engine"
+        WebsiteSearch._build_website_source_engine_name("!!!")
+        == "website_source_search_engine"
     )
+
+
+def test_search_engine_name_rejects_legacy_saved_search_token():
+    with pytest.raises(ValueError):
+        SearchEngineName("saved_search")
 
 
 class _StopAfterSizing(Exception):
@@ -47,11 +52,11 @@ class _DummyOrchestrator(Orchestrator):
         return None
 
 
-def _saved_source(name: str) -> SavedSearchSource:
-    return SavedSearchSource(
+def _saved_source(name: str) -> WebsiteSource:
+    return WebsiteSource(
         name=name,
         urls=[
-            SavedSearchUrlTemplate.model_validate(
+            WebsiteSourceUrlTemplate.model_validate(
                 {
                     "baseUrl": "https://example.com/",
                     "searchableUrls": [
@@ -68,7 +73,7 @@ def _saved_source(name: str) -> SavedSearchSource:
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_sizing_includes_saved_search_sources(monkeypatch):
+async def test_orchestrator_sizing_includes_website_source_sources(monkeypatch):
     orchestrator = _DummyOrchestrator(
         searcher=object(),  # type: ignore[arg-type]
         enricher=object(),  # type: ignore[arg-type]
@@ -99,7 +104,7 @@ async def test_orchestrator_sizing_includes_saved_search_sources(monkeypatch):
             search_engines=[
                 SearchEngineName.GOOGLE,
                 SearchEngineName.TOPPREISE,
-                SearchEngineName.SAVED_SEARCH,
+                SearchEngineName.WEBSITE_SOURCE,
             ],
             language=Language(name="German"),
             location=Location(name="Switzerland"),
@@ -107,7 +112,7 @@ async def test_orchestrator_sizing_includes_saved_search_sources(monkeypatch):
                 num_results=10,
                 enrichment=Enrichment(additional_terms=1, additional_urls_per_term=10),
             ),
-            saved_search_sources=[_saved_source(f"source-{idx}") for idx in range(5)],
+            website_source_sources=[_saved_source(f"source-{idx}") for idx in range(5)],
         )
 
     # estimated items: engines * (initial + enriched_terms) + saved_sources
@@ -150,7 +155,7 @@ async def test_orchestrator_sizing_baseline_without_saved_sources(monkeypatch):
             language=Language(name="German"),
             location=Location(name="Switzerland"),
             deepness=Deepness(num_results=10),
-            saved_search_sources=None,
+            website_source_sources=None,
         )
 
     # estimated items: 1 engine * (1 initial + 0 enriched) + 0 sources = 1
@@ -174,8 +179,8 @@ async def test_add_srch_items_handles_saved_search_in_engine_loop():
     await orchestrator._add_srch_items(
         queue=queue,
         search_term="kuehlschrank",
-        search_engines=[SearchEngineName.GOOGLE, SearchEngineName.SAVED_SEARCH],
-        saved_search_sources=sources,
+        search_engines=[SearchEngineName.GOOGLE, SearchEngineName.WEBSITE_SOURCE],
+        website_source_sources=sources,
         language=Language(name="German"),
         location=Location(name="Switzerland"),
         deepness=Deepness(num_results=10),
@@ -193,12 +198,14 @@ async def test_add_srch_items_handles_saved_search_in_engine_loop():
         item for item in items if item["search_engine"] == SearchEngineName.GOOGLE
     ]
     saved_items = [
-        item for item in items if item["search_engine"] == SearchEngineName.SAVED_SEARCH
+        item
+        for item in items
+        if item["search_engine"] == SearchEngineName.WEBSITE_SOURCE
     ]
 
     assert len(google_items) == 1
     assert len(saved_items) == 2
-    assert {item["saved_search_source"].name for item in saved_items} == {
+    assert {item["website_source_source"].name for item in saved_items} == {
         "source-a",
         "source-b",
     }
@@ -218,8 +225,8 @@ async def test_add_srch_items_saved_search_without_sources_is_graceful():
     await orchestrator._add_srch_items(
         queue=queue,
         search_term="kuehlschrank",
-        search_engines=[SearchEngineName.SAVED_SEARCH],
-        saved_search_sources=None,
+        search_engines=[SearchEngineName.WEBSITE_SOURCE],
+        website_source_sources=None,
         language=Language(name="German"),
         location=Location(name="Switzerland"),
         deepness=Deepness(num_results=10),
@@ -243,13 +250,34 @@ async def test_run_raises_when_sources_given_without_saved_search_engine():
     with pytest.raises(
         ValueError,
         match=(
-            "saved_search_sources provided but search_engines does not include "
-            "SearchEngineName.SAVED_SEARCH"
+            "website_source_sources provided but search_engines does not include "
+            "SearchEngineName.WEBSITE_SOURCE"
         ),
     ):
         await orchestrator.run(
             search_term="kuehlschrank",
             search_engines=[SearchEngineName.GOOGLE],
+            language=Language(name="German"),
+            location=Location(name="Switzerland"),
+            deepness=Deepness(num_results=10),
+            website_source_sources=[_saved_source("source-a")],
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_rejects_legacy_saved_search_sources_keyword():
+    orchestrator = _DummyOrchestrator(
+        searcher=object(),  # type: ignore[arg-type]
+        enricher=object(),  # type: ignore[arg-type]
+        url_collector=object(),  # type: ignore[arg-type]
+        zyteapi=object(),  # type: ignore[arg-type]
+        processor=object(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(TypeError, match="saved_search_sources"):
+        await orchestrator.run(  # type: ignore[call-arg]
+            search_term="kuehlschrank",
+            search_engines=[SearchEngineName.WEBSITE_SOURCE],
             language=Language(name="German"),
             location=Location(name="Switzerland"),
             deepness=Deepness(num_results=10),
@@ -270,7 +298,7 @@ def test_check_exact_search_sets_match_for_quoted_terms():
         search_term_type="initial",
         url="https://shop.test/p/123",
         url_resolved="https://shop.test/p/123",
-        search_engine_name="saved_search",
+        search_engine_name="website_source",
         domain="shop.test",
         product_name="Mini Fridge 120L",
     )

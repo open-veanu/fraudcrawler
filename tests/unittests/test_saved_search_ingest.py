@@ -20,13 +20,13 @@ from fraudcrawler.scraping.saved_search_ingest import (
 from fraudcrawler.scraping.saved_search_models import (
     SavedSearchCandidate,
     SavedSearchRenderedNetworkCapture,
-    SavedSearchSource,
+    WebsiteSource,
 )
 
 
 def test_old_graphql_source_fields_are_rejected():
     with pytest.raises(ValidationError):
-        SavedSearchSource(
+        WebsiteSource(
             name="invalid-source",
             urls=[
                 {
@@ -41,7 +41,7 @@ def test_old_graphql_source_fields_are_rejected():
 
 def test_old_graphql_filter_config_field_is_rejected():
     with pytest.raises(ValidationError):
-        SavedSearchSource(
+        WebsiteSource(
             name="invalid-source",
             urls=[
                 {
@@ -55,7 +55,7 @@ def test_old_graphql_filter_config_field_is_rejected():
 
 def test_old_url_template_fields_are_rejected():
     with pytest.raises(ValidationError):
-        SavedSearchSource(
+        WebsiteSource(
             name="invalid-template",
             urls=[
                 {
@@ -72,7 +72,7 @@ def test_include_exclude_filters_include_all_and_exclude_any():
         SavedSearchCandidate(url="https://shop.test/s1/category/a-123", title="B"),
         SavedSearchCandidate(url="https://shop.test/s1/product/blocked-123", title="C"),
     ]
-    source = SavedSearchSource(
+    source = WebsiteSource(
         name="test",
         urls=[
             {
@@ -226,7 +226,7 @@ async def test_searchable_url_applies_search_term_and_preserves_query_params():
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
         service = SavedSearchIngestService(http_client=client)
-        source = SavedSearchSource(
+        source = WebsiteSource(
             name="frankenspalter-like-source",
             urls=[
                 {
@@ -262,7 +262,7 @@ async def test_extraction_does_not_require_hardcoded_product_path_when_include_e
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
         service = SavedSearchIngestService(http_client=client)
-        source = SavedSearchSource(
+        source = WebsiteSource(
             name="path-agnostic-source",
             urls=[
                 {
@@ -297,7 +297,7 @@ async def test_include_filters_remain_authoritative_after_path_gate_removal():
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
         service = SavedSearchIngestService(http_client=client)
-        source = SavedSearchSource(
+        source = WebsiteSource(
             name="include-authority-source",
             urls=[
                 {
@@ -329,7 +329,7 @@ async def test_failed_http_fetch_is_not_counted_as_fetched():
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
         service = SavedSearchIngestService(http_client=client)
-        source = SavedSearchSource(
+        source = WebsiteSource(
             name="http-failure-source",
             urls=[
                 {
@@ -365,7 +365,7 @@ async def test_ingest_continues_after_one_template_transport_failure():
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
         service = SavedSearchIngestService(http_client=client)
-        source = SavedSearchSource(
+        source = WebsiteSource(
             name="partial-failure-source",
             urls=[
                 {

@@ -25,7 +25,7 @@ from fraudcrawler.scraping.zyte import ZyteAPI
 from fraudcrawler.scraping.saved_search_ingest import SavedSearchIngestService
 from fraudcrawler.scraping.saved_search_models import (
     SavedSearchIngestResult,
-    SavedSearchSource,
+    WebsiteSource,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class SearchEngineName(Enum):
     GOOGLE = "google"
     GOOGLE_SHOPPING = "google_shopping"
     TOPPREISE = "toppreise"
-    SAVED_SEARCH = "saved_search"
+    WEBSITE_SOURCE = "website_source"
 
 
 class SearchEngine(ABC, DomainUtils):
@@ -652,12 +652,12 @@ class Toppreise(SearchEngine):
         return results
 
 
-class SavedSearch(SearchEngine):
-    """Search engine for saved-search source ingestion."""
+class WebsiteSearch(SearchEngine):
+    """Search engine for website-source ingestion."""
 
     @staticmethod
-    def _build_saved_search_engine_name(source_name: str) -> str:
-        """Build a stable engine-like name from a saved-search source name."""
+    def _build_website_source_engine_name(source_name: str) -> str:
+        """Build a stable engine-like name from a website-source name."""
         ascii_name = (
             unicodedata.normalize("NFKD", str(source_name or ""))
             .encode("ascii", "ignore")
@@ -666,7 +666,7 @@ class SavedSearch(SearchEngine):
         normalized = re.sub(r"\s+", "_", ascii_name.strip().lower())
         normalized = re.sub(r"[^a-z0-9_]+", "", normalized)
         normalized = re.sub(r"_+", "_", normalized).strip("_")
-        slug = normalized or "saved_search"
+        slug = normalized or "website_source"
         return f"{slug}_search_engine"
 
     def __init__(
@@ -685,11 +685,11 @@ class SavedSearch(SearchEngine):
 
     @property
     def _search_engine_name(self) -> str:
-        return SearchEngineName.SAVED_SEARCH.value
+        return SearchEngineName.WEBSITE_SOURCE.value
 
     async def ingest_source(
         self,
-        source: SavedSearchSource,
+        source: WebsiteSource,
         search_term: str | None = None,
         max_items: int = 250,
     ) -> SavedSearchIngestResult:
@@ -702,7 +702,7 @@ class SavedSearch(SearchEngine):
 
     async def search(
         self,
-        source: SavedSearchSource,
+        source: WebsiteSource,
         search_term: str | None = None,
         num_results: int = 250,
     ) -> List[SearchResult]:
@@ -711,7 +711,7 @@ class SavedSearch(SearchEngine):
             search_term=search_term,
             max_items=num_results,
         )
-        search_engine_name = self._build_saved_search_engine_name(
+        search_engine_name = self._build_website_source_engine_name(
             ingest_result.source_name
         )
         results = [
@@ -723,7 +723,7 @@ class SavedSearch(SearchEngine):
             for candidate in ingest_result.candidates
         ]
         logger.debug(
-            "Saved-search source=%s produced %s result URLs.",
+            "Website-source=%s produced %s result URLs.",
             ingest_result.source_name,
             len(results),
         )
@@ -763,7 +763,7 @@ class Searcher(RedisCacher, DomainUtils):
             zyteapi_key=zyteapi_key,
             redis_use_cache=redis_use_cache,
         )
-        self._saved_search = SavedSearch(
+        self._saved_search_engine = WebsiteSearch(
             http_client=http_client,
             zyteapi_key=zyteapi_key,
             redis_use_cache=redis_use_cache,
@@ -775,7 +775,7 @@ class Searcher(RedisCacher, DomainUtils):
             SearchEngineName.GOOGLE: self._search_google,
             SearchEngineName.GOOGLE_SHOPPING: self._search_google_shopping,
             SearchEngineName.TOPPREISE: self._search_toppreise,
-            SearchEngineName.SAVED_SEARCH: self._search_saved_search,
+            SearchEngineName.WEBSITE_SOURCE: self._search_website_source,
         }
         self._post_search_enabled_engines = {
             SearchEngineName.GOOGLE,
@@ -830,20 +830,20 @@ class Searcher(RedisCacher, DomainUtils):
             num_results=num_results,
         )
 
-    async def _search_saved_search(
+    async def _search_website_source(
         self,
         search_term: str,
         num_results: int,
-        saved_search_source: SavedSearchSource | None = None,
+        website_source_source: WebsiteSource | None = None,
         **_: object,
     ) -> List[SearchResult]:
-        if saved_search_source is None:
+        if website_source_source is None:
             logger.warning(
-                "search_engine='saved_search' called without saved_search_source; skipping."
+                "search_engine='website_source' called without website_source_source; skipping."
             )
             return []
-        return await self._saved_search.search(
-            source=saved_search_source,
+        return await self._saved_search_engine.search(
+            source=website_source_source,
             search_term=search_term,
             num_results=num_results,
         )
@@ -1032,7 +1032,7 @@ class Searcher(RedisCacher, DomainUtils):
         num_results: int,
         marketplaces: List[Host] | None = None,
         excluded_urls: List[Host] | None = None,
-        saved_search_source: SavedSearchSource | None = None,
+        website_source_source: WebsiteSource | None = None,
     ) -> List[SearchResult]:
         """Performs a search from given search engine."""
         logger.info(
@@ -1055,7 +1055,7 @@ class Searcher(RedisCacher, DomainUtils):
             location=location,
             num_results=num_results,
             marketplaces=marketplaces,
-            saved_search_source=saved_search_source,
+            website_source_source=website_source_source,
         )
 
         # -------------------------------
