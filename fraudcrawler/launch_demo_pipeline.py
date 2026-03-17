@@ -144,7 +144,7 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
         SearchEngineName.GOOGLE_SHOPPING,
         SearchEngineName.TOPPREISE,
         SearchEngineName.WEBSITE_SOURCE,
-    ] or list(SearchEngineName)
+    ]
     language = Language(name="German")
     location = Location(name="Switzerland")
     deepness = Deepness(num_results=10)
