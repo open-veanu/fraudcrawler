@@ -788,7 +788,9 @@ class WebsiteSearch(SearchEngine):
             base = httpx.URL(base_url)
             joined = base.join(href)
         except (ValueError, httpx.InvalidURL):
-            logger.debug(f"Failed to join URL base={base_url} href={href}", exc_info=True)
+            logger.debug(
+                f"Failed to join URL base={base_url} href={href}", exc_info=True
+            )
             return None
         try:
             return cls._canonicalize_url(str(joined))

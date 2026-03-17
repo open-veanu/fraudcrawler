@@ -501,9 +501,7 @@ def test_canonicalize_url_removes_tracking_params():
 
 
 def test_canonicalize_url_sorts_query_params():
-    result = WebsiteSearch._canonicalize_url(
-        "https://shop.test/p?z=1&a=2&q=term"
-    )
+    result = WebsiteSearch._canonicalize_url("https://shop.test/p?z=1&a=2&q=term")
     assert result == "https://shop.test/p?q=term&a=2&z=1"
 
 
