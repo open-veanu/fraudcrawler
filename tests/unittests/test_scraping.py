@@ -1,7 +1,9 @@
-import pytest
-import pytest_asyncio
 from urllib.parse import parse_qsl, urlparse
 
+import pytest
+import pytest_asyncio
+
+from fraudcrawler import Enricher, URLCollector, ZyteAPI
 from fraudcrawler.base.base import (
     Setup,
     Host,
@@ -10,6 +12,8 @@ from fraudcrawler.base.base import (
     HttpxAsyncClient,
     WebsiteSourceMetadata,
 )
+from fraudcrawler.scraping.enrich import Keyword
+from fraudcrawler.scraping.saved_search_models import WebsiteSource
 from fraudcrawler.scraping.search import (
     SavedSearchCandidate,
     SavedSearchIngestResult,
@@ -17,14 +21,12 @@ from fraudcrawler.scraping.search import (
     Searcher,
     SearchEngineName,
     SearchResult,
+    SerpAPI,
     SerpAPIGoogle,
     SerpAPIGoogleShopping,
     Toppreise,
+    WebsiteSearch,
 )
-from fraudcrawler import Enricher, URLCollector, ZyteAPI
-from fraudcrawler.scraping.enrich import Keyword
-from fraudcrawler.scraping.saved_search_models import WebsiteSource
-from fraudcrawler.scraping.search import SerpAPI
 from fraudcrawler.scraping.url import filter_tracking_query_entries
 from fraudcrawler.settings import ROOT_DIR
 
@@ -467,6 +469,42 @@ def test_filter_tracking_query_entries_matches_url_cleaning_behavior():
         queries=queries, remove_all=True
     )
     assert filtered_remove_all == []
+
+
+def test_canonicalize_url_lowercases_host():
+    result = WebsiteSearch._canonicalize_url("https://WWW.SHOP.TEST/path")
+    assert result == "https://www.shop.test/path"
+
+
+def test_canonicalize_url_strips_default_ports():
+    assert "443" not in WebsiteSearch._canonicalize_url("https://shop.test:443/p")
+    assert "80" not in WebsiteSearch._canonicalize_url("http://shop.test:80/p")
+
+
+def test_canonicalize_url_keeps_non_default_port():
+    result = WebsiteSearch._canonicalize_url("https://shop.test:8080/p")
+    assert ":8080" in result
+
+
+def test_canonicalize_url_strips_fragment():
+    result = WebsiteSearch._canonicalize_url("https://shop.test/p#section")
+    assert "#" not in result
+
+
+def test_canonicalize_url_removes_tracking_params():
+    result = WebsiteSearch._canonicalize_url(
+        "https://shop.test/p?color=red&utm_source=google&size=M"
+    )
+    assert "utm_source" not in result
+    assert "color=red" in result
+    assert "size=M" in result
+
+
+def test_canonicalize_url_sorts_query_params():
+    result = WebsiteSearch._canonicalize_url(
+        "https://shop.test/p?z=1&a=2&q=term"
+    )
+    assert result == "https://shop.test/p?q=term&a=2&z=1"
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,7 @@ import httpx
 from pydantic import BaseModel, Field
 from tenacity import RetryCallState
 
-from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD, REDIS_USE_CACHE
+from fraudcrawler.settings import ZYTE_DEFALUT_PROBABILITY_THRESHOLD, ZYTE_RENDER_TIMEOUT, REDIS_USE_CACHE
 from fraudcrawler.base.base import DomainUtils, ProductItem
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.cacher import RedisCacher
@@ -384,6 +384,7 @@ class ZyteAPI(RedisCacher, DomainUtils):
             url=self._endpoint,
             json=payload,
             auth=(self._api_key, ""),
+            timeout=ZYTE_RENDER_TIMEOUT,
         )
         response.raise_for_status()
         data = response.json()

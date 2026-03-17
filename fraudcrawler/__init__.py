@@ -8,7 +8,6 @@ from fraudcrawler.scraping.saved_search_models import (
     WebsiteSourceFilterConfig,
     SavedSearchRenderOptionsConfig,
 )
-from fraudcrawler.scraping.saved_search_ingest import SavedSearchIngestService
 from fraudcrawler.processing.base import (
     UserInputs,
     Workflow,
@@ -44,7 +43,6 @@ __all__ = [
     "WebsiteSource",
     "WebsiteSourceFilterConfig",
     "SavedSearchRenderOptionsConfig",
-    "SavedSearchIngestService",
     "UserInputs",
     "Workflow",
     "ClassificationResult",

@@ -787,11 +787,13 @@ class WebsiteSearch(SearchEngine):
         try:
             base = httpx.URL(base_url)
             joined = base.join(href)
-        except Exception:
+        except (ValueError, httpx.InvalidURL):
+            logger.debug(f"Failed to join URL base={base_url} href={href}", exc_info=True)
             return None
         try:
             return cls._canonicalize_url(str(joined))
-        except Exception:
+        except (ValueError, httpx.InvalidURL):
+            logger.debug(f"Failed to canonicalize URL {joined}", exc_info=True)
             return None
 
     @staticmethod
@@ -1194,19 +1196,8 @@ class Searcher(RedisCacher, DomainUtils):
         search_term: str,
         num_results: int,
         website_source_source: WebsiteSource | None = None,
-        saved_search_source: WebsiteSource | None = None,
         **_: object,
     ) -> List[SearchResult]:
-        if saved_search_source is not None:
-            if website_source_source is not None:
-                raise ValueError(
-                    "Provide only one of website_source_source or saved_search_source."
-                )
-            logger.warning(
-                "saved_search_source is deprecated; use website_source_source instead."
-            )
-            website_source_source = saved_search_source
-
         if website_source_source is None:
             logger.warning(
                 "search_engine='website_source' called without website_source_source; skipping."
