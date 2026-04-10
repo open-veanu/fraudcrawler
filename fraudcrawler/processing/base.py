@@ -144,12 +144,19 @@ class Processor:
                 )
 
             if inp_tok > -1 or out_tok > 0:
-                logger.debug(
-                    f'result from workflow="{wf.name}" used input_tokens={inp_tok}, output_tokens={out_tok}'
-                )
-                product.usage[wf.name] = {
-                    "input_tokens": inp_tok,
-                    "output_tokens": out_tok,
-                }
+                if hasattr(wf, "model"):
+                    logger.debug(
+                        f'result from workflow="{wf.name}" used input_tokens={inp_tok}, output_tokens={out_tok}'
+                    )
+                    product.usage[wf.name] = {
+                        "input_tokens": inp_tok,
+                        "output_tokens": out_tok,
+                        "model": wf.model,
+                    }
+                else:
+                    raise ValueError(
+                        f'workflow="{wf.name}" reports input_tokens={inp_tok}, output_tokens={out_tok} '
+                        f'but has no "model" attribute defined'
+                    )
 
         return product
