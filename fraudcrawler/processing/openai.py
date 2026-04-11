@@ -55,7 +55,7 @@ class OpenAIWorkflow(Workflow):
         )
         self._http_client = http_client
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
-        self._model = model
+        self.model = model
 
     async def _chat_completions_create(
         self,
@@ -89,7 +89,7 @@ class OpenAIWorkflow(Workflow):
         async for attempt in retry:
             with attempt:
                 response = await self._client.chat.completions.create(
-                    model=self._model,
+                    model=self.model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -130,7 +130,7 @@ class OpenAIWorkflow(Workflow):
         async for attempt in retry:
             with attempt:
                 response = await self._client.chat.completions.parse(
-                    model=self._model,
+                    model=self.model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -227,7 +227,7 @@ class OpenAIWorkflow(Workflow):
         async for attempt in retry:
             with attempt:
                 response = await self._client.responses.create(
-                    model=self._model,
+                    model=self.model,
                     input=input_param,
                     **kwargs,
                 )
@@ -279,7 +279,7 @@ class OpenAIWorkflow(Workflow):
         async for attempt in retry:
             with attempt:
                 response = await self._client.responses.parse(
-                    model=self._model,
+                    model=self.model,
                     input=input_param,
                     text_format=text_format,
                     **kwargs,

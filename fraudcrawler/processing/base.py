@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 Context: TypeAlias = Dict[str, str]
-UserInputs: TypeAlias = Dict[str, List[str]]
+_JsonPrimitive: TypeAlias = str | int | float | bool | None
+_JsonValue: TypeAlias = _JsonPrimitive | List["_JsonValue"] | Dict[str, "_JsonValue"]
+UserInputs: TypeAlias = Dict[str, _JsonValue]
 
 
 class ClassificationResult(BaseModel):
@@ -143,7 +145,7 @@ class Processor:
                     f"`TmpResult`, or `None`; not type={type(res)}"
                 )
 
-            if inp_tok > -1 or out_tok > 0:
+            if inp_tok > 0 or out_tok > 0:
                 if hasattr(wf, "model"):
                     logger.debug(
                         f'result from workflow="{wf.name}" used input_tokens={inp_tok}, output_tokens={out_tok}'
