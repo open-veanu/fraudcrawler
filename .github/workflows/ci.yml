@@ -34,7 +34,7 @@ jobs:
 
     - name: Format with Ruff
       run: |
-        poetry run ruff format
+        poetry run ruff format --check
 
     # - name: Run Unit Tests
     #   run: |

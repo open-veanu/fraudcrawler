@@ -126,6 +126,15 @@ class Deepness(BaseModel):
     enrichment: Enrichment | None = None
 
 
+class WebsiteSourceMetadata(BaseModel):
+    """Website-source provenance and diagnostics attached to pipeline items."""
+
+    source_name: str
+    resolved_url: str | None = None
+    render_http_status: int | None = None
+    render_error: str | None = None
+
+
 class ProductItem(BaseModel):
     """Model representing a product item."""
 
@@ -160,6 +169,7 @@ class ProductItem(BaseModel):
     # Filtering parameters
     filtered: bool = False
     filtered_at_stage: str | None = None
+    website_source: WebsiteSourceMetadata | None = None
 
 
 class HttpxAsyncClient(httpx.AsyncClient):

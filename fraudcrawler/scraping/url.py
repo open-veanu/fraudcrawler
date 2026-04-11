@@ -8,6 +8,25 @@ from fraudcrawler.base.base import ProductItem
 logger = logging.getLogger(__name__)
 
 
+def should_drop_tracking_query_parameter(param_key: str) -> bool:
+    """Returns True if a query parameter key is considered a tracker."""
+    key = str(param_key or "").lower()
+    return any(key.startswith(tracker) for tracker in KNOWN_TRACKERS)
+
+
+def filter_tracking_query_entries(
+    queries: List[Tuple[str, str]],
+    *,
+    remove_all: bool = False,
+) -> List[Tuple[str, str]]:
+    """Filter tracking query entries from an already parsed query list."""
+    if remove_all:
+        return []
+    return [
+        query for query in queries if not should_drop_tracking_query_parameter(query[0])
+    ]
+
+
 class URLCollector:
     """A class to collect and de-duplicate URLs."""
 
@@ -45,14 +64,9 @@ class URLCollector:
         remove_all = url.startswith(
             "https://www.ebay"
         )  # eBay URLs have all query parameters as tracking parameters
-        if remove_all:
-            filtered_queries = []
-        else:
-            filtered_queries = [
-                q
-                for q in queries
-                if not any(q[0].startswith(tracker) for tracker in KNOWN_TRACKERS)
-            ]
+        filtered_queries = filter_tracking_query_entries(
+            queries=queries, remove_all=remove_all
+        )
 
         # Rebuild the URL without tracking parameters
         clean_url = ParseResult(
