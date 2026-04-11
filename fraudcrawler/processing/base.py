@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 Context: TypeAlias = Dict[str, str]
-UserInputs: TypeAlias = Dict[str, List[str]]
+_JsonPrimitive: TypeAlias = str | int | float | bool | None
+_JsonValue: TypeAlias = _JsonPrimitive | List["_JsonValue"] | Dict[str, "_JsonValue"]
+UserInputs: TypeAlias = dict[str, _JsonValue]
 
 
 class ClassificationResult(BaseModel):
