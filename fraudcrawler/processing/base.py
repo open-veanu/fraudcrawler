@@ -145,7 +145,7 @@ class Processor:
                     f"`TmpResult`, or `None`; not type={type(res)}"
                 )
 
-            if inp_tok > -1 or out_tok > 0:
+            if inp_tok > 0 or out_tok > 0:
                 if hasattr(wf, "model"):
                     logger.debug(
                         f'result from workflow="{wf.name}" used input_tokens={inp_tok}, output_tokens={out_tok}'

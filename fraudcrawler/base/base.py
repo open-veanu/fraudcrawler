@@ -164,7 +164,7 @@ class ProductItem(BaseModel):
     insights: Dict[str, Any] | None = Field(default=None)
 
     # Usage parameters
-    usage: Dict[str, Dict[str, int]] = Field(default_factory=dict)
+    usage: Dict[str, Dict[str, int | str]] = Field(default_factory=dict)
 
     # Filtering parameters
     filtered: bool = False
