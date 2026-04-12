@@ -317,9 +317,7 @@ class SerpAPI(SearchEngine):
         logger.debug(f"SerpAPI search with params: {params}")
 
         # Extract urls for the first page
-        response = await self.http_client_get(
-            url=self._endpoint, params=params
-        )
+        response = await self.http_client_get(url=self._endpoint, params=params)
         data = response.json()
         urls = self._extract_search_results_urls(data=data)
         if len(urls) >= num_results:
@@ -335,8 +333,8 @@ class SerpAPI(SearchEngine):
                 )
             except Exception:
                 logger.warning(
-                    f"SerpAPI pagination request failed on page {page} for q=\"{search_string}\" "
-                    f"and engine=\"{engine}\". Returning {len(urls)} URLs collected so far."
+                    f'SerpAPI pagination request failed on page {page} for q="{search_string}" '
+                    f'and engine="{engine}". Returning {len(urls)} URLs collected so far.'
                 )
                 break
 
@@ -349,7 +347,7 @@ class SerpAPI(SearchEngine):
             urls.extend(page_urls)
             logger.debug(
                 f"SerpAPI page {page}: found {len(page_urls)} URLs "
-                f"({len(urls)} total) for q=\"{search_string}\" and engine=\"{engine}\"."
+                f'({len(urls)} total) for q="{search_string}" and engine="{engine}".'
             )
 
             # Update next_page and page
