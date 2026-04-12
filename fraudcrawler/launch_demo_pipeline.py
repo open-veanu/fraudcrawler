@@ -281,5 +281,5 @@ async def main_website_source_demo(search_term: str):
 
 
 if __name__ == "__main__":
-    asyncio.run(main(search_term="Kibernetik KS340L Kühlschrank 331 Liter"))
+    asyncio.run(main(search_term="Kibernetik KS340L"))
     # asyncio.run(main_website_source_demo(search_term="kühlschrank"))

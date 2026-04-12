@@ -279,8 +279,13 @@ class SerpAPI(SearchEngine):
             cr: The country code to limit the search to (e.g. 'countryCH').
             gl: The country code to use for the search.
             hl: The language code to use for the search.
-            num: The number of results to return.
             api_key: The API key to use for the search.
+
+        Pagination:
+            The 'num' parameter is not reliably supported by SerpAPI for google
+            and google_shopping engines. Instead, we paginate using
+            'serpapi_pagination.next_link' until num_results is reached or there
+            are no more pages.
         """
         engine = self._engine
 
@@ -307,19 +312,49 @@ class SerpAPI(SearchEngine):
             "cr": f"country{country_code.upper()}",
             "gl": country_code,
             "hl": language.code,
-            "num": num_results,
             "api_key": self._api_key,
         }
         logger.debug(f"SerpAPI search with params: {params}")
 
-        # Perform the search request
-        response: httpx.Response = await self.http_client_get(
+        # Extract urls for the first page
+        response = await self.http_client_get(
             url=self._endpoint, params=params
         )
-
-        # Extract the URLs from the response
         data = response.json()
         urls = self._extract_search_results_urls(data=data)
+        if len(urls) >= num_results:
+            return urls
+
+        # Paginate through SerpAPI results until num_results is reached or no more pages
+        next_url: str | None = data.get("serpapi_pagination", {}).get("next_link")
+        page = 2
+        while len(urls) < num_results and next_url:
+            try:
+                response = await self.http_client_get(
+                    url=f"{next_url}&api_key={self._api_key}"
+                )
+            except Exception:
+                logger.warning(
+                    f"SerpAPI pagination request failed on page {page} for q=\"{search_string}\" "
+                    f"and engine=\"{engine}\". Returning {len(urls)} URLs collected so far."
+                )
+                break
+
+            data = response.json()
+            page_urls = self._extract_search_results_urls(data=data)
+
+            if not page_urls:
+                break
+
+            urls.extend(page_urls)
+            logger.debug(
+                f"SerpAPI page {page}: found {len(page_urls)} URLs "
+                f"({len(urls)} total) for q=\"{search_string}\" and engine=\"{engine}\"."
+            )
+
+            # Update next_page and page
+            next_url = data.get("serpapi_pagination", {}).get("next_link")
+            page += 1
 
         logger.debug(
             f'Found total of {len(urls)} URLs from SerpAPI search for q="{search_string}" and engine="{engine}".'
@@ -391,6 +426,7 @@ class SerpAPIGoogle(SerpAPI):
             location=location,
             num_results=num_results,
         )
+        urls = urls[:num_results]
 
         # Create and return SearchResult objects from the URLs
         results = [self._create_search_result(url=url) for url in urls]
