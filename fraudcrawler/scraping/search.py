@@ -399,7 +399,7 @@ class SerpAPIGoogle(SerpAPI):
         images = data.get("inline_images")
         if images is not None:
             inline_urls = [url for img in images if (url := img.get("source"))]
-            
+
         return organic_urls + inline_urls
 
     async def search(
