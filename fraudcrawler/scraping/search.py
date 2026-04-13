@@ -275,7 +275,6 @@ class SerpAPI(SearchEngine):
             q: The search string (with potentially added site: parameters).
             google_domain: The Google domain to use for the search (e.g. google.[com]).
             location_[requested|used]: The location to use for the search.
-            tbs: The to-be-searched  parameters (e.g. 'ctr:CH').
             cr: The country code to limit the search to (e.g. 'countryCH').
             gl: The country code to use for the search.
             hl: The language code to use for the search.
@@ -308,7 +307,6 @@ class SerpAPI(SearchEngine):
             "google_domain": google_domain,
             "location_requested": location.name,
             "location_used": location.name,
-            "tbs": f"ctr:{country_code.upper()}",
             "cr": f"country{country_code.upper()}",
             "gl": country_code,
             "hl": language.code,
@@ -384,15 +382,25 @@ class SerpAPIGoogle(SerpAPI):
 
     @staticmethod
     def _extract_search_results_urls(data: dict) -> List[str]:
-        """Extracts search results urls from the response data.
+        """Extracts all search result URLs by composing `organic_results` and `inline_images`.
 
         Args:
             data: The json data from the SerpApi search response.
         """
+
+        # Extract URLs from `organic_results`
+        organic_urls = []
         results = data.get("organic_results")
         if results is not None:
-            return [url for res in results if (url := res.get("link"))]
-        return []
+            organic_urls = [url for res in results if (url := res.get("link"))]
+
+        # Extract URLs from `inline_images`
+        inline_urls = []
+        images = data.get("inline_images")
+        if images is not None:
+            inline_urls = [url for img in images if (url := img.get("source"))]
+
+        return organic_urls + inline_urls
 
     async def search(
         self,
