@@ -1,7 +1,11 @@
 from fraudcrawler.cache.cacher import RedisCacher
 from fraudcrawler.scraping.search import Searcher, SearchEngineName, WebsiteSearch
 from fraudcrawler.scraping.enrich import Enricher
-from fraudcrawler.scraping.url import URLCollector
+from fraudcrawler.scraping.url import (
+    URLCollector,
+    LocalURLCollector,
+    DistributedURLCollector,
+)
 from fraudcrawler.scraping.zyte import ZyteAPI
 from fraudcrawler.scraping.saved_search_models import (
     WebsiteSource,
@@ -40,6 +44,8 @@ __all__ = [
     "WebsiteSearch",
     "Enricher",
     "URLCollector",
+    "LocalURLCollector",
+    "DistributedURLCollector",
     "ZyteAPI",
     "WebsiteSource",
     "WebsiteSourceFilterConfig",

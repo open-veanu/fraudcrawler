@@ -8,7 +8,8 @@ from fraudcrawler import (
     HttpxAsyncClient,
     Searcher,
     Enricher,
-    URLCollector,
+    # LocalURLCollector,
+    DistributedURLCollector,
     ZyteAPI,
     SearchEngineName,
     Language,
@@ -24,7 +25,7 @@ from fraudcrawler.scraping.utils import build_website_source_profile
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
 LOG_LVL = "INFO"
 DATE_FMT = "%Y-%m-%d %H:%M:%S"
-REDIS_USE_CACHE = False
+REDIS_USE_CACHE = True
 SETUP = Setup()  # type: ignore[call-arg]
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
@@ -179,7 +180,10 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
         pwd=SETUP.dataforseo_pwd,
         redis_use_cache=REDIS_USE_CACHE,
     )
-    url_collector = URLCollector()
+    # url_collector = LocalURLCollector()
+    url_collector = DistributedURLCollector(
+        url=SETUP.redis_url,
+    )
     zyteapi = ZyteAPI(
         http_client=http_client,
         api_key=SETUP.zyteapi_key,

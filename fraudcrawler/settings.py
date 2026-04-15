@@ -106,6 +106,8 @@ DEFAULT_HTTPX_REDIRECTS = True
 
 # Redis cache settings
 REDIS_USE_CACHE = False
-REDIS_URL = "redis://localhost:6379"
+REDIS_DEFAULT_URL = "redis://localhost:6379"
 REDIS_TTL = 3600
 REDIS_NAMESPACE = "fraudcrawler"
+REDIS_CACHE_NAMESPACE = f"{REDIS_NAMESPACE}:cache:"
+REDIS_URL_COLLECTOR_NAMESPACE = f"{REDIS_NAMESPACE}:urls:"

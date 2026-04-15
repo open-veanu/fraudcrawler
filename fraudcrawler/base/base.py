@@ -24,6 +24,7 @@ from fraudcrawler.settings import (
     DEFAULT_HTTPX_LIMITS,
     DEFAULT_HTTPX_REDIRECTS,
 )
+from fraudcrawler.settings import REDIS_DEFAULT_URL
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class Setup(BaseSettings):
 
     # Redis cache
     redis_use_cache: bool
+    redis_url: str = REDIS_DEFAULT_URL
 
     class Config:
         env_file = ".env"

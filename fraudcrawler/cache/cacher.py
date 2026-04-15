@@ -11,40 +11,65 @@ from aiocache.backends.redis import RedisCache
 from aiocache.serializers import PickleSerializer
 
 from fraudcrawler.settings import (
-    REDIS_USE_CACHE,
-    REDIS_URL,
+    REDIS_CACHE_NAMESPACE,
+    REDIS_DEFAULT_URL,
     REDIS_TTL,
-    REDIS_NAMESPACE,
+    REDIS_USE_CACHE,
 )
 
 
 logger = logging.getLogger(__name__)
 
 
-class RedisCacher(ABC):
-    """Abstract base class that adds Redis caching.
+_DEFAULT_REDIS_HOST = "localhost"
+_DEFAULT_REDIS_PORT = 6379
+_DEFAULT_REDIS_DB = 0
 
-    :class:`RedisCacher` is used as a parent class for a subclass with an
-    `apply()` method that should be wrapped inside a caching mechanism.
 
-    Any subclass of RedisCacher must implement `apply()` with their core logic.
-    The function `capply()` is a wrapper taking care of caching.
+def parse_redis_url(url: str) -> Dict[str, str | int | None]:
+    """Parse a redis:// or rediss:// URL into aiocache connection kwargs.
 
-    Cache keys are built deterministically from the class name and serialized
-    arguments (including Pydantic models), so identical calls produce
-    identical results.
+    Args:
+        url: Redis connection URL (redis:// or rediss://).
+
+    Returns:
+        Dict with keys ``endpoint`` (str), ``port`` (int), ``password``
+        (str | None), and ``db`` (int), suitable for passing as kwargs to
+        aiocache Redis backends.
+
+    Raises:
+        ValueError: If ``url`` does not start with ``redis://`` or ``rediss://``.
     """
+    u = urlparse(url)
+    if u.scheme not in {"redis", "rediss"}:
+        raise ValueError("redis_url must start with redis:// or rediss://")
+    return {
+        "endpoint": u.hostname or _DEFAULT_REDIS_HOST,
+        "port": u.port or _DEFAULT_REDIS_PORT,
+        "password": u.password,
+        "db": int(up) if (up := u.path.lstrip("/")) else _DEFAULT_REDIS_DB,
+    }
 
-    _default_host = "localhost"
-    _default_port = 6379
-    _default_db = 0
+
+class RedisCacher(ABC):
+    """Abstract base class that adds Redis caching to a subclass.
+
+    RedisCacher wraps a subclass's apply() method with a transparent cache
+    layer. Subclasses implement apply() with their core logic and call
+    capply() as the public entry point, which handles cache lookup, result
+    storage, and bypassing Redis when use_cache is False.
+
+    Cache keys are built deterministically from the class name and the
+    serialized call arguments (including Pydantic models), so identical
+    calls always map to the same cache entry.
+    """
 
     def __init__(
         self,
         use_cache: bool = REDIS_USE_CACHE,
-        url: str = REDIS_URL,
+        url: str = REDIS_DEFAULT_URL,
         ttl: int = REDIS_TTL,
-        namespace: str = REDIS_NAMESPACE,
+        namespace: str = REDIS_CACHE_NAMESPACE,
     ) -> None:
         """Initialize the cacher, optionally connecting to Redis.
 
@@ -54,15 +79,13 @@ class RedisCacher(ABC):
             ttl: Time-to-live in seconds for cached entries.
             namespace: Key namespace to isolate entries in shared Redis instances.
         """
-        # Input parameters
         self._use_cache = use_cache
         self._ttl = ttl
         self._namespace = namespace
 
-        # Parameters for caching
         self._cache: RedisCache | None = None
         if self._use_cache:
-            redis_kwargs = self._get_redis_kwargs(url=url)
+            redis_kwargs = parse_redis_url(url=url)
             self._cache = cast(
                 RedisCache,
                 Cache(
@@ -73,32 +96,24 @@ class RedisCacher(ABC):
                 ),
             )
 
-    def _get_redis_kwargs(self, url: str) -> Dict[str, str | int | None]:
-        """Get redis parameters as endpoint, port, password and db"""
-
-        # Parse and check url
-        u = urlparse(url)
-        if u.scheme not in {"redis", "rediss"}:
-            raise ValueError("redis_url must start with redis:// or rediss://")
-
-        # Create and return redis kwargs
-        return {
-            "endpoint": u.hostname or self._default_host,
-            "port": u.port or self._default_port,
-            "password": u.password,
-            "db": int(up) if (up := u.path.lstrip("/")) else self._default_db,
-        }
-
     @staticmethod
     def _stable_key(payload: Dict[str, Any]) -> str:
+        """Serialize a payload dict to a compact, deterministic JSON string.
+
+        Args:
+            payload: Dict to serialize as a cache key.
+        """
         return json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
 
     @staticmethod
     def _serialize_object(obj: Any) -> Any:
-        """Recursively serialize args/kwargs for cache keys.
+        """Recursively convert a value to a JSON-serializable representation.
 
-        Uses model_dump() for pydantic.BaseModels, recurses into list and dict,
-        leaves the rest unchanged.
+        Converts pydantic BaseModel instances via model_dump(), recurses into
+        lists and dicts, and returns all other values unchanged.
+
+        Args:
+            obj: Value to serialize.
         """
         if isinstance(obj, BaseModel):
             return obj.model_dump()
@@ -111,7 +126,12 @@ class RedisCacher(ABC):
         return obj
 
     def _build_key(self, *args: Any, **kwargs: Any) -> str:
-        """Builds caching key based on class name, args and kwargs."""
+        """Build a deterministic cache key from the class name and call arguments.
+
+        Args:
+            *args: Positional arguments passed to apply().
+            **kwargs: Keyword arguments passed to apply().
+        """
         args_ = tuple(self._serialize_object(a) for a in args)
         kwargs_ = {k: self._serialize_object(v) for k, v in kwargs.items()}
         return self._stable_key(
@@ -123,16 +143,26 @@ class RedisCacher(ABC):
         )
 
     async def _cached_apply(self, *args: Any, **kwargs: Any) -> Any:
-        """Cached wrapper around self.apply() method."""
+        """Execute apply() with a Redis cache lookup.
 
-        # Check if self._cache has been defined
+        Returns the cached result on a hit; otherwise calls apply(), stores
+        the result, and returns it.
+
+        Args:
+            *args: Positional arguments forwarded to apply().
+            **kwargs: Keyword arguments forwarded to apply().
+
+        Returns:
+            Result of apply(), either retrieved from cache or freshly computed.
+
+        Raises:
+            RuntimeError: If the Redis cache has not been initialized.
+        """
         if self._cache is None:
             raise RuntimeError("Redis cache not initialized")
 
-        # Get caching key from arguments
         key = self._build_key(*args, **kwargs)
 
-        # Check if key exists in the cacher; otherwise compute the response
         exists = await self._cache.exists(key=key)
         if exists:
             logger.debug(
@@ -154,18 +184,33 @@ class RedisCacher(ABC):
 
     @abstractmethod
     async def apply(self, *args: Any, **kwargs: Any) -> Any:
-        """The cached function that each child of :class:`RedisCacher` must implement."""
+        """Core logic that each subclass must implement.
+
+        Called by capply() and, when caching is enabled, by _cached_apply().
+        Subclasses should not call this method directly; use capply() instead.
+
+        Args:
+            *args: Positional arguments specific to the subclass.
+            **kwargs: Keyword arguments specific to the subclass.
+
+        Returns:
+            Subclass-defined result that will be cached under the call key.
+        """
         pass
 
     async def capply(self, *args: Any, **kwargs: Any) -> Any:
-        """Calls the method `apply()` with Redis caching if enabled. Otherwise it calls `apply()` directly."""
+        """Call apply() with Redis caching when enabled, or directly otherwise.
 
-        # Cacher wrapped around self.apply() method
+        Args:
+            *args: Positional arguments forwarded to apply().
+            **kwargs: Keyword arguments forwarded to apply().
+
+        Returns:
+            Result of apply(), either retrieved from cache or freshly computed.
+        """
         if self._use_cache:
             logger.debug(f"Running cached apply() for {self.__class__.__name__}")
             result = await self._cached_apply(*args, **kwargs)
-
-        # No cacher, simply run self.apply() method
         else:
             logger.debug(f"Running not-cached apply() for {self.__class__.__name__}")
             result = await self.apply(*args, **kwargs)
@@ -175,30 +220,50 @@ class RedisCacher(ABC):
     # ---------------------------------
     # Utils for managing Redis remotely
     # ---------------------------------
+
     async def utils_clear_namespace(self) -> None:
+        """Delete all cache entries in this instance's namespace.
+
+        No-op when caching is disabled.
+
+        Raises:
+            RuntimeError: If caching is enabled but the cache is not initialized.
+        """
         if self._use_cache:
             if self._cache is None:
                 raise RuntimeError("Redis cache not initialized")
             await self._cache.clear()
 
     async def utils_invalidate(self, *args: Any, **kwargs: Any) -> None:
+        """Delete the cache entry for a specific set of call arguments.
+
+        No-op when caching is disabled.
+
+        Args:
+            *args: Positional arguments identifying the cache entry to remove.
+            **kwargs: Keyword arguments identifying the cache entry to remove.
+
+        Raises:
+            RuntimeError: If caching is enabled but the cache is not initialized.
+        """
         if self._use_cache:
             if self._cache is None:
                 raise RuntimeError("Redis cache not initialized")
             await self._cache.delete(key=self._build_key(*args, **kwargs))
 
     async def utils_redis_is_available(self) -> bool:
-        """Works with aiocache backends: does a small SET/GET/DEL roundtrip."""
-        # Dummy key-value pair
+        """Check Redis availability with a SET/GET/DEL health-check roundtrip.
+
+        Raises:
+            RuntimeError: If the Redis cache has not been initialized.
+        """
         key = f"__healthcheck__:{self.__class__.__name__}:{uuid.uuid4().hex}"
         value = "1337"
         test_ttl = 5
 
-        # Check if cache is defined at all
         if self._cache is None:
             raise RuntimeError("Redis cache not initialized")
 
-        # Try to set dummy key-value pair
         try:
             logger.debug("test to set dummy key-value pair in cacher")
             await self._cache.set(key=key, value=value, ttl=test_ttl)
@@ -206,7 +271,6 @@ class RedisCacher(ABC):
             logger.error("failed to set dummy key-value pair in cacher", exc_info=True)
             return False
 
-        # Try to read dummy key-value pair and compare it
         try:
             logger.debug("read written dummy value")
             obtained = await self._cache.get(key=key)

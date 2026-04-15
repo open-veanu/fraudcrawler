@@ -3,13 +3,16 @@ from urllib.parse import parse_qsl, urlparse
 import pytest
 import pytest_asyncio
 
-from fraudcrawler import Enricher, URLCollector, ZyteAPI
+from aiocache import Cache
+
+from fraudcrawler import DistributedURLCollector, Enricher, LocalURLCollector, ZyteAPI
 from fraudcrawler.base.base import (
     Setup,
     Host,
     Location,
     Language,
     HttpxAsyncClient,
+    ProductItem,
     WebsiteSourceMetadata,
 )
 from fraudcrawler.scraping.enrich import Keyword
@@ -27,7 +30,6 @@ from fraudcrawler.scraping.search import (
     Toppreise,
     WebsiteSearch,
 )
-from fraudcrawler.scraping.url import filter_tracking_query_entries
 from fraudcrawler.settings import ROOT_DIR
 
 
@@ -89,7 +91,7 @@ async def enricher():
 
 @pytest.fixture
 def url_collector():
-    return URLCollector()
+    return LocalURLCollector()
 
 
 @pytest.fixture
@@ -439,6 +441,119 @@ def test_remove_tracking_parameters_edge_cases(url_collector):
         assert cleaned == expected, f"Failed to clean edge case URL: {url}"
 
 
+def _make_product(url: str) -> ProductItem:
+    return ProductItem(
+        search_term="test",
+        search_term_type="seed",
+        url=url,
+        url_resolved=url,
+        search_engine_name="test",
+        domain="test.example",
+    )
+
+
+@pytest_asyncio.fixture
+async def shared_memory_cache():
+    """Provides a per-test aiocache in-memory cache and cleans it up afterwards."""
+    import uuid
+
+    namespace = f"test-dedup-{uuid.uuid4().hex}"
+    cache = Cache(cache_class=Cache.MEMORY, namespace=namespace)
+    yield cache
+    await cache.clear()
+
+
+def _attach_cache(collector: DistributedURLCollector, cache) -> DistributedURLCollector:
+    collector._cache = cache
+    return collector
+
+
+@pytest.mark.asyncio
+async def test_distributed_collector_marks_duplicate_within_instance(
+    shared_memory_cache,
+):
+    collector = _attach_cache(DistributedURLCollector(), shared_memory_cache)
+    url = "https://www.ricardo.ch/p/123"
+
+    first = await collector.apply(product=_make_product(url))
+    assert first.filtered is False
+    assert first.filtered_at_stage is None
+
+    second = await collector.apply(product=_make_product(url))
+    assert second.filtered is True
+    assert second.filtered_at_stage == "URL collection (current run deduplication)"
+
+
+@pytest.mark.asyncio
+async def test_distributed_collector_marks_duplicate_across_instances(
+    shared_memory_cache,
+):
+    url = "https://www.ricardo.ch/p/456"
+
+    first_collector = _attach_cache(DistributedURLCollector(), shared_memory_cache)
+    await first_collector.apply(product=_make_product(url))
+
+    second_collector = _attach_cache(DistributedURLCollector(), shared_memory_cache)
+    result = await second_collector.apply(product=_make_product(url))
+
+    assert result.filtered is True
+    assert result.filtered_at_stage == "URL collection (previous run deduplication)"
+
+
+@pytest.mark.asyncio
+async def test_distributed_collector_different_id_suffix_does_not_share(
+    shared_memory_cache,
+):
+    url = "https://www.ricardo.ch/p/789"
+
+    collector_a = _attach_cache(
+        DistributedURLCollector(id_suffix="tenant-a"), shared_memory_cache
+    )
+    await collector_a.apply(product=_make_product(url))
+
+    collector_b = _attach_cache(
+        DistributedURLCollector(id_suffix="tenant-b"), shared_memory_cache
+    )
+    result = await collector_b.apply(product=_make_product(url))
+
+    assert result.filtered is False
+    assert result.filtered_at_stage is None
+
+
+@pytest.mark.asyncio
+async def test_distributed_collector_add_previously_collected_urls(
+    shared_memory_cache,
+):
+    seed_url = "https://www.ricardo.ch/p/seeded"
+    seeded = _attach_cache(DistributedURLCollector(), shared_memory_cache)
+    await seeded.add_previously_collected_urls(urls=[seed_url])
+
+    fresh = _attach_cache(DistributedURLCollector(), shared_memory_cache)
+    # Tracking params should be stripped before hashing -> still filtered.
+    product = _make_product(f"{seed_url}?utm_source=foo&srsltid=bar")
+    result = await fresh.apply(product=product)
+
+    assert result.filtered is True
+    assert result.filtered_at_stage == "URL collection (previous run deduplication)"
+    assert result.url == seed_url  # cleaned URL was written back
+
+
+def test_distributed_collector_hash_is_deterministic():
+    collector = DistributedURLCollector(id_suffix="abc")
+    h1 = collector._hash("https://example.com/p/1")
+    h2 = collector._hash("https://example.com/p/1")
+    h3 = collector._hash("https://example.com/p/2")
+
+    assert h1 == h2
+    assert h1 != h3
+    assert len(h1) == 32  # md5 hex digest length
+
+
+def test_distributed_collector_rejects_bad_redis_url():
+    with pytest.raises(ValueError):
+        DistributedURLCollector(url="http://not-redis")
+
+
 def test_remove_tracking_parameters_known_trackers(url_collector):
     """Test that all known tracking parameters are removed."""
     known_trackers = [
@@ -458,14 +573,14 @@ def test_remove_tracking_parameters_known_trackers(url_collector):
         )
 
 
-def test_filter_tracking_query_entries_matches_url_cleaning_behavior():
+def test_filter_tracking_query_entries_matches_url_cleaning_behavior(url_collector):
     url = "https://www.ricardo.ch/product/?utm_source=test&param1=value1&srsltid=abc"
     queries = parse_qsl(urlparse(url).query, keep_blank_values=True)
 
-    filtered = filter_tracking_query_entries(queries=queries)
+    filtered = url_collector._filter_tracking_query_entries(queries=queries)
     assert filtered == [("param1", "value1")]
 
-    filtered_remove_all = filter_tracking_query_entries(
+    filtered_remove_all = url_collector._filter_tracking_query_entries(
         queries=queries, remove_all=True
     )
     assert filtered_remove_all == []
