@@ -18,6 +18,7 @@ from fraudcrawler.base.base import (
     Language,
     Location,
     Deepness,
+    FilteredAtStage,
     ProductItem,
 )
 from fraudcrawler import (
@@ -188,9 +189,7 @@ class Orchestrator(ABC):
                     # Filter the product based on the probability threshold
                     if not self._zyteapi.keep_product(details=details):
                         product.filtered = True
-                        product.filtered_at_stage = (
-                            "Context (Zyte probability threshold)"
-                        )
+                        product.filtered_at_stage = FilteredAtStage.CONTEXT_PROBABILITY_THRESHOLD.value
 
                     # Check for exact match inside the full product context
                     product = self._check_exact_search(product=product)
@@ -200,7 +199,7 @@ class Orchestrator(ABC):
                         and not product.exact_search_match
                     ):
                         product.filtered = True
-                        product.filtered_at_stage = "Context (exact search)"
+                        product.filtered_at_stage = FilteredAtStage.CONTEXT_EXACT_SEARCH.value
 
                 except Exception:
                     logger.error(

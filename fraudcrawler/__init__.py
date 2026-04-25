@@ -28,6 +28,7 @@ from fraudcrawler.base.base import (
     Host,
     Language,
     Location,
+    FilteredAtStage,
     ProductItem,
     HttpxAsyncClient,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "OpenAIClassificationUserInputs",
     "Processor",
     "Orchestrator",
+    "FilteredAtStage",
     "ProductItem",
     "FraudCrawlerClient",
     "Language",

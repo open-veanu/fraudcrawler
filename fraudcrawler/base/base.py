@@ -1,3 +1,4 @@
+from enum import Enum
 import json
 import logging
 from pydantic import (
@@ -133,6 +134,14 @@ class WebsiteSourceMetadata(BaseModel):
     resolved_url: str | None = None
     render_http_status: int | None = None
     render_error: str | None = None
+
+
+class FilteredAtStage(Enum):
+    """Enum for search engine names."""
+    URL_COLLECTION_CURRENT = "URL collection (current run deduplication)"
+    URL_COLLECTION_PREVIOUS = "URL collection (previous run deduplication)"
+    CONTEXT_PROBABILITY_THRESHOLD = "Context (Zyte probability threshold)"
+    CONTEXT_EXACT_SEARCH = "Context (exact search)"
 
 
 class ProductItem(BaseModel):
