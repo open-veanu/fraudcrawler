@@ -137,7 +137,8 @@ class WebsiteSourceMetadata(BaseModel):
 
 
 class FilteredAtStage(Enum):
-    """Enum for search engine names."""
+    """Enum for product.filtered_at_stage texts."""
+
     URL_COLLECTION_CURRENT = "URL collection (current run deduplication)"
     URL_COLLECTION_PREVIOUS = "URL collection (previous run deduplication)"
     CONTEXT_PROBABILITY_THRESHOLD = "Context (Zyte probability threshold)"
