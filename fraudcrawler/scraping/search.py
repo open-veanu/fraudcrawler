@@ -30,6 +30,7 @@ from fraudcrawler.base.base import (
     Language,
     Location,
     DomainUtils,
+    FilteredAtStage,
     WebsiteSourceMetadata,
 )
 from fraudcrawler.base.retry import get_async_retry
@@ -1417,13 +1418,13 @@ class Searcher(RedisCacher, DomainUtils):
         # Check if the URL has a relevant country_code
         if not self._relevant_country_code(url=result.url, country_code=location.code):
             result.filtered = True
-            result.filtered_at_stage = "Search (country code filtering)"
+            result.filtered_at_stage = FilteredAtStage.SEARCH_COUNTRY_CODE.value
             return result
 
         # Check if the URL is in the excluded URLs
         if excluded_urls and self._is_excluded_url(result.domain, excluded_urls):
             result.filtered = True
-            result.filtered_at_stage = "Search (excluded URLs filtering)"
+            result.filtered_at_stage = FilteredAtStage.SEARCH_EXCLUDED_URLS.value
             return result
 
         return result
