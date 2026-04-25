@@ -3,7 +3,7 @@ from typing import List, Set, Tuple
 from urllib.parse import urlparse, parse_qsl, urlencode, quote, urlunparse, ParseResult
 
 from fraudcrawler.settings import KNOWN_TRACKERS
-from fraudcrawler.base.base import ProductItem
+from fraudcrawler.base.base import FilteredAtStage, ProductItem
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +94,13 @@ class URLCollector:
         # deduplicate on current run
         if url in self._collected_currently:
             product.filtered = True
-            product.filtered_at_stage = "URL collection (current run deduplication)"
+            product.filtered_at_stage = FilteredAtStage.URL_COLLECTION_CURRENT.value
             logger.debug(f"URL {url} already collected in current run")
 
         # deduplicate on previous runs coming from a db
         elif url in self._collected_previously:
             product.filtered = True
-            product.filtered_at_stage = "URL collection (previous run deduplication)"
+            product.filtered_at_stage = FilteredAtStage.URL_COLLECTION_PREVIOUS.value
             logger.debug(f"URL {url} as already collected in previous run")
 
         # Add to currently collected URLs
