@@ -34,7 +34,7 @@ from fraudcrawler.base.base import (
     WebsiteSourceMetadata,
 )
 from fraudcrawler.base.retry import get_async_retry
-from fraudcrawler.cache.cacher import RedisCacher
+from fraudcrawler.cache.cacher import RedisCacher, RedisConfig
 from fraudcrawler.scraping.url import filter_tracking_query_entries
 from fraudcrawler.scraping.zyte import (
     SavedSearchRenderedProductListItem,
@@ -1147,6 +1147,7 @@ class Searcher(RedisCacher, DomainUtils):
         serpapi_key: str,
         zyteapi_key: str,
         redis_use_cache: bool = REDIS_USE_CACHE,
+        redis_config: RedisConfig | None = None,
     ):
         """Initializes the Search class with the given SerpAPI key.
 
@@ -1155,8 +1156,9 @@ class Searcher(RedisCacher, DomainUtils):
             serpapi_key: The API key for SERP API.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
             redis_use_cache: Whether to use caching by a redis instance or not.
+            redis_config: Redis configuration object (mandatory if redis_use_cache=True).
         """
-        RedisCacher.__init__(self=self, use_cache=redis_use_cache)
+        RedisCacher.__init__(self=self, use_cache=redis_use_cache, config=redis_config)
 
         self._http_client = http_client
         self._google = SerpAPIGoogle(http_client=http_client, api_key=serpapi_key)

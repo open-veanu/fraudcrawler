@@ -2,53 +2,46 @@ from abc import ABC, abstractmethod
 import json
 import logging
 from pydantic import BaseModel
-from typing import Any, cast, Dict, Sequence
-from urllib.parse import urlparse
+from typing import Any, cast, Dict, Self, Sequence
 import uuid
 
 from aiocache import Cache
 from aiocache.backends.redis import RedisCache
 from aiocache.serializers import PickleSerializer
 
-from fraudcrawler.settings import (
-    REDIS_CACHE_NAMESPACE,
-    REDIS_DEFAULT_URL,
-    REDIS_TTL,
-    REDIS_USE_CACHE,
-)
+from fraudcrawler.base.base import Setup
+from fraudcrawler.settings import REDIS_USE_CACHE
 
 
 logger = logging.getLogger(__name__)
+_SETUP = Setup()  # type: ignore
 
 
-_DEFAULT_REDIS_HOST = "localhost"
-_DEFAULT_REDIS_PORT = 6379
-_DEFAULT_REDIS_DB = 0
+class RedisConfig(BaseModel):
+    hostname: str
+    port: int
+    password: str | None
+    db: int
+    namespace: str
+    ttl: int
 
+    @classmethod
+    def from_setup(cls, db: int, namespace: str, ttl: int) -> Self:
 
-def parse_redis_url(url: str) -> Dict[str, str | int | None]:
-    """Parse a redis:// or rediss:// URL into aiocache connection kwargs.
+        if _SETUP.redis_hostname is None:
+            raise ValueError("REDIS_HOSTNAME env variable is missing")
+        elif _SETUP.redis_port is None:
+            raise ValueError("REDIS_PORT env variable is missing")
 
-    Args:
-        url: Redis connection URL (redis:// or rediss://).
-
-    Returns:
-        Dict with keys ``endpoint`` (str), ``port`` (int), ``password``
-        (str | None), and ``db`` (int), suitable for passing as kwargs to
-        aiocache Redis backends.
-
-    Raises:
-        ValueError: If ``url`` does not start with ``redis://`` or ``rediss://``.
-    """
-    u = urlparse(url)
-    if u.scheme not in {"redis", "rediss"}:
-        raise ValueError("redis_url must start with redis:// or rediss://")
-    return {
-        "endpoint": u.hostname or _DEFAULT_REDIS_HOST,
-        "port": u.port or _DEFAULT_REDIS_PORT,
-        "password": u.password,
-        "db": int(up) if (up := u.path.lstrip("/")) else _DEFAULT_REDIS_DB,
-    }
+        kwargs = {
+            "hostname": _SETUP.redis_hostname,
+            "port": _SETUP.redis_port,
+            "password": _SETUP.redis_password,
+            "db": db,
+            "namespace": namespace,
+            "ttl": ttl,
+        }
+        return cls(**kwargs)
 
 
 class RedisCacher(ABC):
@@ -67,32 +60,33 @@ class RedisCacher(ABC):
     def __init__(
         self,
         use_cache: bool = REDIS_USE_CACHE,
-        url: str = REDIS_DEFAULT_URL,
-        ttl: int = REDIS_TTL,
-        namespace: str = REDIS_CACHE_NAMESPACE,
+        config: RedisConfig | None = None,
     ) -> None:
         """Initialize the cacher, optionally connecting to Redis.
 
         Args:
             use_cache: Whether to use Redis cache.
-            url: Redis connection URL (redis:// or rediss://).
-            ttl: Time-to-live in seconds for cached entries.
-            namespace: Key namespace to isolate entries in shared Redis instances.
+            config: Redis configuration object (mandatory if redis_use_cache=True).
         """
-        self._use_cache = use_cache
-        self._ttl = ttl
-        self._namespace = namespace
+        if use_cache and config is None:
+            raise ValueError("redis_config must be provided when use_cache=True")
+        else:
+            self._config = cast(RedisConfig, config)
 
+        self._use_cache = use_cache
         self._cache: RedisCache | None = None
+
         if self._use_cache:
-            redis_kwargs = parse_redis_url(url=url)
             self._cache = cast(
                 RedisCache,
                 Cache(
                     cache_class=Cache.REDIS,  # type: ignore[reportArgumentType]
                     serializer=PickleSerializer(),
-                    namespace=self._namespace,
-                    **redis_kwargs,
+                    hostname=self._config.hostname,
+                    port=self._config.port,
+                    password=self._config.password,
+                    db=self._config.db,
+                    namespace=self._config.namespace,
                 ),
             )
 
@@ -178,7 +172,7 @@ class RedisCacher(ABC):
             logger.debug(
                 f"Set cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})"
             )
-            await self._cache.set(key=key, value=result, ttl=self._ttl)
+            await self._cache.set(key=key, value=result, ttl=self._config.ttl)
 
         return result
 

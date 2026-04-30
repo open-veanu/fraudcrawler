@@ -4,15 +4,11 @@ import logging
 from typing import List, Set, Tuple
 from urllib.parse import urlparse, parse_qsl, urlencode, quote, urlunparse, ParseResult
 
-from fraudcrawler.base.base import FilteredAtStage, ProductItem
 from aiocache.backends.redis import RedisBackend
 
-from fraudcrawler.cache.cacher import parse_redis_url
-from fraudcrawler.settings import (
-    KNOWN_TRACKERS,
-    REDIS_TTL,
-    REDIS_URL_COLLECTOR_NAMESPACE,
-)
+from fraudcrawler.base.base import FilteredAtStage, ProductItem
+from fraudcrawler.cache.cacher import RedisConfig
+from fraudcrawler.settings import KNOWN_TRACKERS
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +44,6 @@ def filter_tracking_query_entries(
 
 class URLCollector(ABC):
     """A class to collect and de-duplicate URLs."""
-
-    _filtered_at_stage_current = "URL collection (current run deduplication)"
-    _filtered_at_stage_previous = "URL collection (previous run deduplication)"
 
     def _filter_tracking_query_entries(
         self,
@@ -178,34 +171,37 @@ class DistributedURLCollector(URLCollector):
 
     def __init__(
         self,
-        url: str,
-        ttl: int = REDIS_TTL,
-        namespace: str = REDIS_URL_COLLECTOR_NAMESPACE,
+        redis_config: RedisConfig,
         id_suffix: str = "",
     ) -> None:
         """Initialize the distributed collector.
 
         Args:
-            url: Redis connection URL (redis:// or rediss://).
-            ttl: Time-to-live in seconds for each stored URL marker.
-            namespace: Redis key namespace to isolate entries.
+            redis_config: Redis configuration object.
             id_suffix: String appended to the URL before hashing to deduplication
         """
         self._id_suffix = id_suffix
-        self._ttl = ttl
-        self._collected_currently: Set[str] = set()
-        redis_kwargs = parse_redis_url(url=url)
-        self._cache: RedisBackend = RedisBackend(namespace=namespace, **redis_kwargs)
+        self._ttl = redis_config.ttl
+        # Uses RedisBackend + default StringSerializer (RedisCacher uses
+        # Cache+PickleSerializer): dedup markers are short strings and stay
+        # inspectable in redis-cli.
+        self._cache: RedisBackend = RedisBackend(
+            endpoint=redis_config.hostname,
+            port=redis_config.port,
+            db=redis_config.db,
+            password=redis_config.password,
+            namespace=redis_config.namespace,
+        )
 
-    def _hash(self, cleaned_url: str) -> str:
+    def _get_redis_key(self, url: str) -> str:
         """Return the MD5 hex digest of the `cleaned_url` concatenated with `id_suffix`.
 
         MD5 is used for deduplication only (not for security).
 
         Args:
-            cleaned_url: Tracking-parameter-free URL to hash.
+            url: Tracking-parameter-free URL to hash.
         """
-        payload = f"{cleaned_url}{self._id_suffix}".encode("utf-8")
+        payload = f"{url}{self._id_suffix}".encode("utf-8")
         return hashlib.md5(payload, usedforsecurity=False).hexdigest()
 
     async def add_previously_collected_urls(self, urls: List[str]) -> None:
@@ -217,10 +213,10 @@ class DistributedURLCollector(URLCollector):
         Args:
             urls: URLs collected in previous runs.
         """
-        for raw in urls:
-            cleaned = self._remove_tracking_parameters(raw)
-            key = self._hash(cleaned)
-            await self._cache.set(key=key, value="1", ttl=self._ttl)
+        for url in urls:
+            key = self._get_redis_key(url)
+            value = FilteredAtStage.URL_COLLECTION_PREVIOUS.value
+            await self._cache.set(key=key, value=value, ttl=self._ttl)
 
     async def apply(self, product: ProductItem) -> ProductItem:
         """De-duplicate product cross-run using Redis.
@@ -228,28 +224,33 @@ class DistributedURLCollector(URLCollector):
         Args:
             product: The product item to process.
         """
-        logger.debug(f'Processing product with url="{product.url}"')
+        logger.debug(f'Processing de-duplication of product with url="{product.url}"')
 
         # Remove tracking parameters from the URL
         url = self._remove_tracking_parameters(product.url)
         product.url = url
-        key = self._hash(url)
 
-        # deduplicate on current run (in-memory)
-        if url in self._collected_currently:
+        key = self._get_redis_key(url)
+        value = await self._cache.get(key=key)
+
+        # already seen in current run
+        if value == FilteredAtStage.URL_COLLECTION_CURRENT.value:
             product.filtered = True
-            product.filtered_at_stage = self._filtered_at_stage_current
+            product.filtered_at_stage = FilteredAtStage.URL_COLLECTION_CURRENT.value
             logger.debug(f"URL {url} already collected in current run")
 
-        # deduplicate on previous runs (Redis, possibly written by another instance)
-        elif await self._cache.exists(key=key):
+        # already seen in a previous run (added via `add_previously_collected_urls`)
+        elif value == FilteredAtStage.URL_COLLECTION_PREVIOUS.value:
             product.filtered = True
-            product.filtered_at_stage = self._filtered_at_stage_previous
+            product.filtered_at_stage = FilteredAtStage.URL_COLLECTION_PREVIOUS.value
             logger.debug(f"URL {url} already collected in previous run (distributed)")
 
-        # Add to both current in-memory set and Redis
+        # first sighting -> mark as current
+        elif value is None:
+            logger.debug(f"Add url={url} to currently collected urls in redis")
+            await self._cache.set(key=key, value=FilteredAtStage.URL_COLLECTION_CURRENT.value, ttl=self._ttl)
+        
         else:
-            self._collected_currently.add(url)
-            await self._cache.set(key=key, value="1", ttl=self._ttl)
+            raise ValueError(f"Redis returned value={value} for key={key} (url={url})")
 
         return product

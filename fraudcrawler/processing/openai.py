@@ -15,12 +15,14 @@ from openai.types.responses import (
 
 from fraudcrawler.base.base import ProductItem
 from fraudcrawler.base.retry import get_async_retry
+from fraudcrawler.cache.cacher import RedisConfig
 from fraudcrawler.processing.base import (
     ClassificationResult,
     UserInputs,
     Workflow,
     Context,
 )
+from fraudcrawler.settings import REDIS_USE_CACHE
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,8 @@ class OpenAIWorkflow(Workflow):
         name: str,
         api_key: str,
         model: str,
-        redis_use_cache: bool = False,
+        redis_use_cache: bool = REDIS_USE_CACHE,
+        redis_config: RedisConfig | None = None,
     ):
         """(Abstract) OpenAI Workflow.
 
@@ -48,10 +51,12 @@ class OpenAIWorkflow(Workflow):
             api_key: The OpenAI API key.
             model: The OpenAI model to use.
             redis_use_cache: Whether to use Redis cache.
+            redis_config: Redis configuration object (mandatory if redis_use_cache=True).
         """
         super().__init__(
             name=name,
             redis_use_cache=redis_use_cache,
+            redis_config=redis_config,
         )
         self._http_client = http_client
         self._client = AsyncOpenAI(http_client=http_client, api_key=api_key)
@@ -256,7 +261,7 @@ class OpenAIWorkflow(Workflow):
         """
         # Prepare variables
         cntx = deepcopy(context)
-        cntx["enpdoint"] = "response.parse"
+        cntx["endpoint"] = "response.parse"
         detail: Literal["low", "high", "auto"] = "high"
         input_param = self._get_input_param(
             image_url=image_url,
@@ -372,7 +377,8 @@ class OpenAIClassification(OpenAIWorkflow):
         product_item_fields: List[str],
         system_prompt: str,
         allowed_classes: List[int],
-        redis_use_cache: bool = False,
+        redis_use_cache: bool = REDIS_USE_CACHE,
+        redis_config: RedisConfig | None = None,
     ):
         """Open AI classification workflow.
 
@@ -385,6 +391,7 @@ class OpenAIClassification(OpenAIWorkflow):
             system_prompt: System prompt for the AI model.
             allowed_classes: Allowed classes for model output (must be positive).
             redis_use_cache: Whether to use Redis cache.
+            redis_config: Redis configuration object (mandatory if redis_use_cache=True).
         """
         super().__init__(
             http_client=http_client,
@@ -392,6 +399,7 @@ class OpenAIClassification(OpenAIWorkflow):
             api_key=api_key,
             model=model,
             redis_use_cache=redis_use_cache,
+            redis_config=redis_config,
         )
         self._product_item_fields = product_item_fields
         self._system_prompt = system_prompt
@@ -482,7 +490,8 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
         system_prompt: str,
         allowed_classes: List[int],
         user_inputs: UserInputs,
-        redis_use_cache: bool = False,
+        redis_use_cache: bool = REDIS_USE_CACHE,
+        redis_config: RedisConfig | None = None,
     ):
         """Open AI classification workflow from user input.
 
@@ -496,6 +505,7 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
             allowed_classes: Allowed classes for model output.
             user_inputs: Inputs from the frontend by the user.
             redis_use_cache: Whether to use Redis cache.
+            redis_config: Redis configuration object (mandatory if redis_use_cache=True).
         """
         super().__init__(
             http_client=http_client,
@@ -506,6 +516,7 @@ class OpenAIClassificationUserInputs(OpenAIClassification):
             system_prompt=system_prompt,
             allowed_classes=allowed_classes,
             redis_use_cache=redis_use_cache,
+            redis_config=redis_config,
         )
         self._user_inputs = user_inputs
 
