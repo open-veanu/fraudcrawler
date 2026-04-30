@@ -203,7 +203,7 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
         ttl=REDIS_URL_COLLECTOR_TTL,
     )
     url_collector = DistributedURLCollector(
-        redis_config=redis_config, 
+        redis_config=redis_config,
     )
     zyteapi = ZyteAPI(
         http_client=http_client,

@@ -486,7 +486,7 @@ async def live_redis_cache():
             fixed namespace prefix (default: random per-test). Useful to
             point all runs at the same prefix in RedisInsight.
     """
-    if (fixed_ns := os.environ.get("REDIS_TEST_NAMESPACE")):
+    if fixed_ns := os.environ.get("REDIS_TEST_NAMESPACE"):
         namespace = fixed_ns if fixed_ns.endswith(":") else f"{fixed_ns}:"
     else:
         namespace = f"test-dedup-{uuid.uuid4().hex}:"
@@ -650,7 +650,9 @@ async def test_distributed_collector_full_state_machine_on_live_redis(
     await collector.add_previously_collected_urls(urls=[seeded_url])
     seeded_result = await collector.apply(product=_make_product(seeded_url))
     assert seeded_result.filtered is True
-    assert seeded_result.filtered_at_stage == FilteredAtStage.URL_COLLECTION_PREVIOUS.value
+    assert (
+        seeded_result.filtered_at_stage == FilteredAtStage.URL_COLLECTION_PREVIOUS.value
+    )
 
     # 2. First sighting of a dirty URL -> cleaned form persisted as CURRENT
     fresh_result = await collector.apply(product=_make_product(dirty_url))

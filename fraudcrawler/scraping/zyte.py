@@ -45,7 +45,7 @@ class ZyteAPI(RedisCacher, DomainUtils):
     """A client to interact with the Zyte API for fetching product details."""
 
     _endpoint = "https://api.zyte.com/v1/extract"
-    _config = {
+    _request_defaults = {
         "javascript": False,
         "browserHtml": False,
         "screenshot": False,
@@ -311,7 +311,7 @@ class ZyteAPI(RedisCacher, DomainUtils):
             with attempt:
                 response = await self._http_client.post(
                     url=self._endpoint,
-                    json={"url": url, **self._config},
+                    json={"url": url, **self._request_defaults},
                     auth=(self._api_key, ""),  # API key as username, empty password
                 )
                 response.raise_for_status()

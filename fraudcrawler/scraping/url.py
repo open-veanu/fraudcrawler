@@ -248,8 +248,12 @@ class DistributedURLCollector(URLCollector):
         # first sighting -> mark as current
         elif value is None:
             logger.debug(f"Add url={url} to currently collected urls in redis")
-            await self._cache.set(key=key, value=FilteredAtStage.URL_COLLECTION_CURRENT.value, ttl=self._ttl)
-        
+            await self._cache.set(
+                key=key,
+                value=FilteredAtStage.URL_COLLECTION_CURRENT.value,
+                ttl=self._ttl,
+            )
+
         else:
             raise ValueError(f"Redis returned value={value} for key={key} (url={url})")
 

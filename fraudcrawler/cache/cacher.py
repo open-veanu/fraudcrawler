@@ -27,21 +27,19 @@ class RedisConfig(BaseModel):
 
     @classmethod
     def from_setup(cls, db: int, namespace: str, ttl: int) -> Self:
-
         if _SETUP.redis_hostname is None:
             raise ValueError("REDIS_HOSTNAME env variable is missing")
         elif _SETUP.redis_port is None:
             raise ValueError("REDIS_PORT env variable is missing")
 
-        kwargs = {
-            "hostname": _SETUP.redis_hostname,
-            "port": _SETUP.redis_port,
-            "password": _SETUP.redis_password,
-            "db": db,
-            "namespace": namespace,
-            "ttl": ttl,
-        }
-        return cls(**kwargs)
+        return cls(
+            hostname=_SETUP.redis_hostname,
+            port=_SETUP.redis_port,
+            password=_SETUP.redis_password,
+            db=db,
+            namespace=namespace,
+            ttl=ttl,
+        )
 
 
 class RedisCacher(ABC):
