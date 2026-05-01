@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import hashlib
 import json
 import logging
 from pydantic import BaseModel
@@ -54,6 +55,7 @@ class RedisCacher(ABC):
     serialized call arguments (including Pydantic models), so identical
     calls always map to the same cache entry.
     """
+    _key_encoding = "ascii"
 
     def __init__(
         self,
@@ -88,14 +90,15 @@ class RedisCacher(ABC):
                 ),
             )
 
-    @staticmethod
-    def _stable_key(payload: Dict[str, Any]) -> str:
-        """Serialize a payload dict to a compact, deterministic JSON string.
+    def _stable_key(self, payload: Dict[str, Any]) -> str:
+        """Serialize a payload dict to a compact, deterministic sha256 hash.
 
         Args:
             payload: Dict to serialize as a cache key.
         """
-        return json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+        json_str = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+        key = hashlib.sha256(json_str.encode('utf-8')).hexdigest()
+        return f"{payload['cls']}_{key}"
 
     @staticmethod
     def _serialize_object(obj: Any) -> Any:
