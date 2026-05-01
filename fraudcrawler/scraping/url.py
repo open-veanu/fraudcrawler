@@ -197,9 +197,12 @@ class DistributedURLCollector(URLCollector, DomainUtils):
     def _get_redis_key(self, url: str) -> str:
         """Return a Redis key of the form ``{domain}_{sha256_hex}``.
 
-        The SHA-256 digest is computed over the URL concatenated with
-        ``id_suffix``. The domain prefix (via ``DomainUtils._get_domain``)
-        keeps keys inspectable in redis-cli.
+        Note:
+          - The SHA-256 digest is computed over the URL concatenated with
+            ``id_suffix``. The domain prefix (via ``DomainUtils._get_domain``)
+            keeps keys inspectable in redis-cli.
+          - As here we are using RedisBackend, we need to manually put a ":" 
+            in front of the key to split it in folders
 
         Args:
             url: Tracking-parameter-free URL to hash.
@@ -207,7 +210,7 @@ class DistributedURLCollector(URLCollector, DomainUtils):
         payload = f"{url}{self._id_suffix}".encode("utf-8")
         digest = hashlib.sha256(payload).hexdigest()
         domain = self._get_domain(url)
-        return f"{domain}_{digest}"
+        return f":{domain}_{digest}"
 
     async def add_previously_collected_urls(self, urls: List[str]) -> None:
         """Seed Redis with already-seen URLs.
