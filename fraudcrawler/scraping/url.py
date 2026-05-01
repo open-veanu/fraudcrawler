@@ -6,7 +6,7 @@ from urllib.parse import urlparse, parse_qsl, urlencode, quote, urlunparse, Pars
 
 from aiocache.backends.redis import RedisBackend
 
-from fraudcrawler.base.base import FilteredAtStage, ProductItem
+from fraudcrawler.base.base import DomainUtils, FilteredAtStage, ProductItem
 from fraudcrawler.cache.cacher import RedisConfig
 from fraudcrawler.settings import KNOWN_TRACKERS
 
@@ -159,14 +159,15 @@ class LocalURLCollector(URLCollector):
         return product
 
 
-class DistributedURLCollector(URLCollector):
+class DistributedURLCollector(URLCollector, DomainUtils):
     """A URL collector that de-duplicates across pipeline runs using Redis.
 
-    Seen URLs are stored under a namespaced Redis key computed as
-    ``md5(cleaned_url + id_suffix)``. Hashing keeps keys fixed-length and
-    bounded in memory regardless of URL length. An optional ``id_suffix``
-    scopes deduplication beyond the Redis namespace (e.g. per-tenant,
-    per-campaign) by changing the hash input.
+    Seen URLs are stored under a namespaced Redis key of the form
+    ``{domain}_{sha256(cleaned_url + id_suffix)}``. The domain prefix keeps
+    keys inspectable in redis-cli; the hash bounds key length regardless of
+    URL size. An optional ``id_suffix`` scopes deduplication beyond the
+    Redis namespace (e.g. per-tenant, per-campaign) by changing the hash
+    input.
     """
 
     def __init__(
@@ -194,15 +195,19 @@ class DistributedURLCollector(URLCollector):
         )
 
     def _get_redis_key(self, url: str) -> str:
-        """Return the MD5 hex digest of the `cleaned_url` concatenated with `id_suffix`.
+        """Return a Redis key of the form ``{domain}_{sha256_hex}``.
 
-        MD5 is used for deduplication only (not for security).
+        The SHA-256 digest is computed over the URL concatenated with
+        ``id_suffix``. The domain prefix (via ``DomainUtils._get_domain``)
+        keeps keys inspectable in redis-cli.
 
         Args:
             url: Tracking-parameter-free URL to hash.
         """
         payload = f"{url}{self._id_suffix}".encode("utf-8")
-        return hashlib.md5(payload, usedforsecurity=False).hexdigest()
+        digest = hashlib.sha256(payload).hexdigest()
+        domain = self._get_domain(url)
+        return f"{domain}_{digest}"
 
     async def add_previously_collected_urls(self, urls: List[str]) -> None:
         """Seed Redis with already-seen URLs.

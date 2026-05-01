@@ -680,7 +680,9 @@ def test_distributed_collector_hash_is_deterministic():
 
     assert h1 == h2
     assert h1 != h3
-    assert len(h1) == 32  # md5 hex digest length
+    domain, _, digest = h1.partition("_")
+    assert domain == "example.com"
+    assert len(digest) == 64  # sha256 hex digest length
 
 
 def test_remove_tracking_parameters_known_trackers(url_collector):
