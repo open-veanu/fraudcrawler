@@ -49,7 +49,6 @@ class Setup(BaseSettings):
     dataforseo_pwd: str
     zyteapi_key: str
     openaiapi_key: str
-    pypy_token: str
 
     # Redis cache
     redis_use_cache: bool = REDIS_USE_CACHE
