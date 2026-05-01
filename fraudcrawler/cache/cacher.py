@@ -161,17 +161,17 @@ class RedisCacher(ABC):
         exists = await self._cache.exists(key=key)
         if exists:
             logger.debug(
-                f"Found cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})"
+                f"Found cached response for {self.__class__.__name__}.apply(...) and key={key}"
             )
             result = await self._cache.get(key=key)
         else:
             logger.debug(
-                f"No cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})"
+                f"No cached response for {self.__class__.__name__}.apply(...) and key={key}"
             )
             result = await self.apply(*args, **kwargs)
 
             logger.debug(
-                f"Set cached response for {self.__class__.__name__}.apply(args={args}, kwargs={kwargs})"
+                f"Set cached response for {self.__class__.__name__}.apply(...) and key={key}"
             )
             await self._cache.set(key=key, value=result, ttl=self._config.ttl)
 
