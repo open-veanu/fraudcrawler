@@ -544,7 +544,11 @@ class Toppreise(SearchEngine):
     _endpoint = "https://www.toppreise.ch/"
 
     def __init__(
-        self, http_client: httpx.AsyncClient, zyteapi_key: str, redis_use_cache: bool
+        self,
+        http_client: httpx.AsyncClient,
+        zyteapi_key: str,
+        redis_use_cache: bool,
+        redis_config: RedisConfig | None = None,
     ):
         """Initializes the Toppreise client.
 
@@ -552,12 +556,14 @@ class Toppreise(SearchEngine):
             http_client: An httpx.AsyncClient to use for the async requests.
             zyteapi_key: ZyteAPI key for fallback when direct access fails.
             redis_use_cache: Whether to use cache (passed to internal ZyteAPI).
+            redis_config: Redis configuration object (mandatory if redis_use_cache=True).
         """
         super().__init__(http_client=http_client)
         self._zyteapi = ZyteAPI(
             http_client=http_client,
             api_key=zyteapi_key,
             redis_use_cache=redis_use_cache,
+            redis_config=redis_config,
         )
 
     async def http_client_get_with_fallback(self, url: str) -> bytes:
@@ -753,6 +759,29 @@ class WebsiteSearch(SearchEngine):
     _saved_search_query_param_keys = ["q", "query", "keyword", "search"]
     _max_image_urls_per_candidate = 5
 
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        zyteapi_key: str,
+        redis_use_cache: bool,
+        redis_config: RedisConfig | None = None,
+    ):
+        """Search engine for website-source ingestion.
+
+        Args:
+            http_client: An httpx.AsyncClient to use for the async requests.
+            zyteapi_key: ZyteAPI key. 
+            redis_use_cache: Whether to use caching by a redis instance or not.
+            redis_config: Redis configuration object (mandatory if redis_use_cache=True).
+        """
+        super().__init__(http_client=http_client)
+        self._zyteapi = ZyteAPI(
+            http_client=http_client,
+            api_key=zyteapi_key,
+            redis_use_cache=redis_use_cache,
+            redis_config=redis_config,
+        )
+
     @staticmethod
     def _build_website_source_engine_name(source_name: str) -> str:
         """Build a stable engine-like name from a website-source name."""
@@ -766,19 +795,6 @@ class WebsiteSearch(SearchEngine):
         normalized = re.sub(r"_+", "_", normalized).strip("_")
         slug = normalized or "website_source"
         return f"{slug}_search_engine"
-
-    def __init__(
-        self,
-        http_client: httpx.AsyncClient,
-        zyteapi_key: str,
-        redis_use_cache: bool = REDIS_USE_CACHE,
-    ):
-        super().__init__(http_client=http_client)
-        self._zyteapi = ZyteAPI(
-            http_client=http_client,
-            api_key=zyteapi_key,
-            redis_use_cache=redis_use_cache,
-        )
 
     @property
     def _search_engine_name(self) -> str:
@@ -1170,11 +1186,13 @@ class Searcher(RedisCacher, DomainUtils):
             http_client=http_client,
             zyteapi_key=zyteapi_key,
             redis_use_cache=redis_use_cache,
+            redis_config=redis_config,
         )
         self._saved_search_engine = WebsiteSearch(
             http_client=http_client,
             zyteapi_key=zyteapi_key,
             redis_use_cache=redis_use_cache,
+            redis_config=redis_config,
         )
         self._search_handlers: Dict[
             SearchEngineName,

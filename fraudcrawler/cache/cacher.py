@@ -80,7 +80,7 @@ class RedisCacher(ABC):
                 Cache(
                     cache_class=Cache.REDIS,  # type: ignore[reportArgumentType]
                     serializer=PickleSerializer(),
-                    hostname=self._config.hostname,
+                    endpoint=self._config.hostname,
                     port=self._config.port,
                     password=self._config.password,
                     db=self._config.db,

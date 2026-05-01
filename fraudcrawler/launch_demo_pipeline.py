@@ -24,7 +24,10 @@ from fraudcrawler.scraping.search import WebsiteSearch
 from fraudcrawler.scraping.utils import build_website_source_profile
 from fraudcrawler.settings import (
     REDIS_CACHE_DB,
-    REDIS_CACHE_NAMESPACE_OPENAI,
+    REDIS_CACHE_NAMESPACE_SEARCHER,
+    REDIS_CACHE_NAMESPACE_ENRICHER,
+    REDIS_CACHE_NAMESPACE_ZYTEAPI,
+    REDIS_CACHE_NAMESPACE_WORKFLOWS,
     REDIS_CACHE_TTL,
     REDIS_URL_COLLECTOR_DB,
     REDIS_URL_COLLECTOR_NAMESPACE,
@@ -122,10 +125,9 @@ def _setup_workflows(
         "        - Related Topics/Content: Any text or media that discusses or elaborates on the topic without offering a tangible product for sale.\n"
         "Make your decision based solely on the context and details provided in the search result. Respond only with the number 1 or 0."
     )
-    namespace = REDIS_CACHE_NAMESPACE_OPENAI
     redis_config = RedisConfig.from_setup(
         db=REDIS_CACHE_DB,
-        namespace=namespace,
+        namespace=REDIS_CACHE_NAMESPACE_WORKFLOWS,
         ttl=REDIS_CACHE_TTL,
     )
     return [
@@ -184,31 +186,49 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
     # ]
 
     # Setup clients
+    redis_config_searcher = RedisConfig.from_setup(
+        db=REDIS_CACHE_DB,
+        namespace=REDIS_CACHE_NAMESPACE_SEARCHER,
+        ttl=REDIS_CACHE_TTL,
+    )
     searcher = Searcher(
         http_client=http_client,
         serpapi_key=SETUP.serpapi_key,
         zyteapi_key=SETUP.zyteapi_key,
         redis_use_cache=SETUP.redis_use_cache,
+        redis_config=redis_config_searcher,
+    )
+    redis_config_enricher = RedisConfig.from_setup(
+        db=REDIS_CACHE_DB,
+        namespace=REDIS_CACHE_NAMESPACE_SEARCHER,
+        ttl=REDIS_CACHE_TTL,
     )
     enricher = Enricher(
         http_client=http_client,
         user=SETUP.dataforseo_user,
         pwd=SETUP.dataforseo_pwd,
         redis_use_cache=SETUP.redis_use_cache,
+        redis_config=redis_config_enricher,
     )
     # url_collector = LocalURLCollector()
-    redis_config = RedisConfig.from_setup(
+    redis_config_url = RedisConfig.from_setup(
         db=REDIS_URL_COLLECTOR_DB,
         namespace=REDIS_URL_COLLECTOR_NAMESPACE,
         ttl=REDIS_URL_COLLECTOR_TTL,
     )
     url_collector = DistributedURLCollector(
-        redis_config=redis_config,
+        redis_config=redis_config_url,
+    )
+    redis_config_zyteapi = RedisConfig.from_setup(
+        db=REDIS_CACHE_DB,
+        namespace=REDIS_CACHE_NAMESPACE_ZYTEAPI,
+        ttl=REDIS_CACHE_TTL,
     )
     zyteapi = ZyteAPI(
         http_client=http_client,
         api_key=SETUP.zyteapi_key,
         redis_use_cache=SETUP.redis_use_cache,
+        redis_config=redis_config_zyteapi,
     )
     workflows = _setup_workflows(
         http_client=http_client, redis_use_cache=SETUP.redis_use_cache
