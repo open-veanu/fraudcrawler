@@ -1,4 +1,4 @@
-import pickle
+import pickle  # nosec B403  # values are produced by our own dumps() and read from our own Redis
 import zlib
 from typing import Any, ClassVar
 
@@ -21,4 +21,4 @@ class CompressedPickleSerializer(BaseSerializer):
     def loads(self, value: bytes | None) -> Any:
         if value is None:
             return None
-        return pickle.loads(zlib.decompress(value))  # noqa: S301
+        return pickle.loads(zlib.decompress(value))  # noqa: S301  # nosec B301
