@@ -201,7 +201,7 @@ class DistributedURLCollector(URLCollector, DomainUtils):
           - The SHA-256 digest is computed over the URL concatenated with
             ``id_suffix``. The domain prefix (via ``DomainUtils._get_domain``)
             keeps keys inspectable in redis-cli.
-          - As here we are using RedisBackend, we need to manually put a ":" 
+          - As here we are using RedisBackend, we need to manually put a ":"
             in front of the key to split it in folders
 
         Args:

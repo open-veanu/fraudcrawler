@@ -681,7 +681,7 @@ def test_distributed_collector_hash_is_deterministic():
     assert h1 == h2
     assert h1 != h3
     domain, _, digest = h1.partition("_")
-    assert domain == "example.com"
+    assert domain == ":example.com"
     assert len(digest) == 64  # sha256 hex digest length
 
 
@@ -862,20 +862,22 @@ async def test_searcher_apply_saved_search_without_source_returns_empty(
 async def test_searcher_apply_saved_search_dispatches_via_engine(searcher, monkeypatch):
     language = Language(name="German")
     location = Location(name="Switzerland")
-    source = WebsiteSource(
-        name="Boost Galaxus",
-        urls=[
-            {
-                "baseUrl": "https://www.galaxus.ch/",
-                "searchableUrls": [
-                    {
-                        "filterUrl": "de/search?q={search_term}",
-                        "includeSubstrings": [],
-                        "excludeSubstrings": [],
-                    }
-                ],
-            }
-        ],
+    source = WebsiteSource.model_validate(
+        {
+            "name": "Boost Galaxus",
+            "urls": [
+                {
+                    "baseUrl": "https://www.galaxus.ch/",
+                    "searchableUrls": [
+                        {
+                            "filterUrl": "de/search?q={search_term}",
+                            "includeSubstrings": [],
+                            "excludeSubstrings": [],
+                        }
+                    ],
+                }
+            ],
+        }
     )
 
     async def _fake_saved_search(**kwargs):
@@ -916,28 +918,30 @@ async def test_searcher_apply_saved_search_dispatches_via_engine(searcher, monke
 async def test_websitesearch_search_attaches_website_source_metadata(
     searcher, monkeypatch
 ):
-    source = WebsiteSource(
-        name="Boost Galaxus",
-        urls=[
-            {
-                "baseUrl": "https://www.galaxus.ch/",
-                "searchableUrls": [
-                    {
-                        "filterUrl": "de/search?q={search_term}",
-                        "includeSubstrings": [],
-                        "excludeSubstrings": [],
-                    }
-                ],
-            }
-        ],
-        searchFilterConfig={
-            "renderOptions": {
-                "javascript": True,
-                "includeIframes": False,
-                "actions": [],
-                "networkCapture": [],
-            }
-        },
+    source = WebsiteSource.model_validate(
+        {
+            "name": "Boost Galaxus",
+            "urls": [
+                {
+                    "baseUrl": "https://www.galaxus.ch/",
+                    "searchableUrls": [
+                        {
+                            "filterUrl": "de/search?q={search_term}",
+                            "includeSubstrings": [],
+                            "excludeSubstrings": [],
+                        }
+                    ],
+                }
+            ],
+            "searchFilterConfig": {
+                "renderOptions": {
+                    "javascript": True,
+                    "includeIframes": False,
+                    "actions": [],
+                    "networkCapture": [],
+                }
+            },
+        }
     )
 
     async def _fake_ingest_source(**kwargs):
@@ -983,20 +987,22 @@ async def test_searcher_apply_accepts_legacy_saved_search_source_keyword(
 ):
     language = Language(name="German")
     location = Location(name="Switzerland")
-    source = WebsiteSource(
-        name="Boost Galaxus",
-        urls=[
-            {
-                "baseUrl": "https://www.galaxus.ch/",
-                "searchableUrls": [
-                    {
-                        "filterUrl": "de/search?q={search_term}",
-                        "includeSubstrings": [],
-                        "excludeSubstrings": [],
-                    }
-                ],
-            }
-        ],
+    source = WebsiteSource.model_validate(
+        {
+            "name": "Boost Galaxus",
+            "urls": [
+                {
+                    "baseUrl": "https://www.galaxus.ch/",
+                    "searchableUrls": [
+                        {
+                            "filterUrl": "de/search?q={search_term}",
+                            "includeSubstrings": [],
+                            "excludeSubstrings": [],
+                        }
+                    ],
+                }
+            ],
+        }
     )
 
     async def _fake_saved_search(**kwargs):

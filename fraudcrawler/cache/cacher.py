@@ -55,6 +55,7 @@ class RedisCacher(ABC):
     serialized call arguments (including Pydantic models), so identical
     calls always map to the same cache entry.
     """
+
     _key_encoding = "ascii"
 
     def __init__(
@@ -96,8 +97,10 @@ class RedisCacher(ABC):
         Args:
             payload: Dict to serialize as a cache key.
         """
-        json_str = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
-        key = hashlib.sha256(json_str.encode('utf-8')).hexdigest()
+        json_str = json.dumps(
+            payload, sort_keys=True, default=str, separators=(",", ":")
+        )
+        key = hashlib.sha256(json_str.encode("utf-8")).hexdigest()
         return f"{payload['cls']}_{key}"
 
     @staticmethod

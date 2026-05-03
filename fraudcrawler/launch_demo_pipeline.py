@@ -25,7 +25,6 @@ from fraudcrawler.scraping.utils import build_website_source_profile
 from fraudcrawler.settings import (
     REDIS_CACHE_DB,
     REDIS_CACHE_NAMESPACE_SEARCHER,
-    REDIS_CACHE_NAMESPACE_ENRICHER,
     REDIS_CACHE_NAMESPACE_ZYTEAPI,
     REDIS_CACHE_NAMESPACE_WORKFLOWS,
     REDIS_CACHE_TTL,

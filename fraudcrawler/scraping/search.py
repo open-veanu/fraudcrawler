@@ -770,7 +770,7 @@ class WebsiteSearch(SearchEngine):
 
         Args:
             http_client: An httpx.AsyncClient to use for the async requests.
-            zyteapi_key: ZyteAPI key. 
+            zyteapi_key: ZyteAPI key.
             redis_use_cache: Whether to use caching by a redis instance or not.
             redis_config: Redis configuration object (mandatory if redis_use_cache=True).
         """
