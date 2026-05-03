@@ -105,7 +105,7 @@ async def test_ingest_source_maps_product_list_candidates():
                 ]
             )
 
-        website_search._zyteapi.fetch_rendered_page = render_fetcher  # type: ignore[method-assign]
+        website_search._zyteapi.fetch_rendered_page = render_fetcher  # type: ignore[method-assign,assignment]
         result = await website_search.ingest_source(
             source=source,
             search_term="mini fridge",
@@ -145,7 +145,7 @@ async def test_ingest_source_applies_include_and_exclude_url_filters():
                 ]
             )
 
-        website_search._zyteapi.fetch_rendered_page = render_fetcher  # type: ignore[method-assign]
+        website_search._zyteapi.fetch_rendered_page = render_fetcher  # type: ignore[method-assign,assignment]
         result = await website_search.ingest_source(
             source=source,
             search_term="k",
@@ -170,7 +170,7 @@ async def test_ingest_source_records_render_errors():
         async def render_fetcher(**kwargs):
             raise RuntimeError("render failed")
 
-        website_search._zyteapi.fetch_rendered_page = render_fetcher  # type: ignore[method-assign]
+        website_search._zyteapi.fetch_rendered_page = render_fetcher  # type: ignore[method-assign,assignment]
         result = await website_search.ingest_source(
             source=source,
             search_term="k",

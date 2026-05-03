@@ -4,11 +4,13 @@ from typing import Sequence
 
 from fraudcrawler.base.base import Setup
 from fraudcrawler import (
+    RedisConfig,
     FraudCrawlerClient,
     HttpxAsyncClient,
     Searcher,
     Enricher,
-    URLCollector,
+    # LocalURLCollector,
+    DistributedURLCollector,
     ZyteAPI,
     SearchEngineName,
     Language,
@@ -20,11 +22,20 @@ from fraudcrawler import (
 )
 from fraudcrawler.scraping.search import WebsiteSearch
 from fraudcrawler.scraping.utils import build_website_source_profile
+from fraudcrawler.settings import (
+    REDIS_CACHE_DB,
+    REDIS_CACHE_NAMESPACE_SEARCHER,
+    REDIS_CACHE_NAMESPACE_ZYTEAPI,
+    REDIS_CACHE_NAMESPACE_WORKFLOWS,
+    REDIS_CACHE_TTL,
+    REDIS_URL_COLLECTOR_DB,
+    REDIS_URL_COLLECTOR_NAMESPACE,
+    REDIS_URL_COLLECTOR_TTL,
+)
 
 LOG_FMT = "%(asctime)s | %(name)s | %(funcName)s | %(levelname)s | %(message)s"
 LOG_LVL = "INFO"
 DATE_FMT = "%Y-%m-%d %H:%M:%S"
-REDIS_USE_CACHE = False
 SETUP = Setup()  # type: ignore[call-arg]
 logging.basicConfig(format=LOG_FMT, level=LOG_LVL, datefmt=DATE_FMT)
 
@@ -113,6 +124,11 @@ def _setup_workflows(
         "        - Related Topics/Content: Any text or media that discusses or elaborates on the topic without offering a tangible product for sale.\n"
         "Make your decision based solely on the context and details provided in the search result. Respond only with the number 1 or 0."
     )
+    redis_config = RedisConfig.from_setup(
+        db=REDIS_CACHE_DB,
+        namespace=REDIS_CACHE_NAMESPACE_WORKFLOWS,
+        ttl=REDIS_CACHE_TTL,
+    )
     return [
         OpenAIClassification(
             http_client=http_client,
@@ -123,6 +139,7 @@ def _setup_workflows(
             system_prompt=_AVAILABILITY_SYSTEM_PROMPT,
             allowed_classes=[0, 1],
             redis_use_cache=redis_use_cache,
+            redis_config=redis_config,
         ),
         OpenAIClassification(
             http_client=http_client,
@@ -133,6 +150,7 @@ def _setup_workflows(
             system_prompt=_SERIOUSNESS_SYSTEM_PROMPT,
             allowed_classes=[0, 1],
             redis_use_cache=redis_use_cache,
+            redis_config=redis_config,
         ),
     ]
 
@@ -167,26 +185,52 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
     # ]
 
     # Setup clients
+    redis_config_searcher = RedisConfig.from_setup(
+        db=REDIS_CACHE_DB,
+        namespace=REDIS_CACHE_NAMESPACE_SEARCHER,
+        ttl=REDIS_CACHE_TTL,
+    )
     searcher = Searcher(
         http_client=http_client,
         serpapi_key=SETUP.serpapi_key,
         zyteapi_key=SETUP.zyteapi_key,
-        redis_use_cache=REDIS_USE_CACHE,
+        redis_use_cache=SETUP.redis_use_cache,
+        redis_config=redis_config_searcher,
+    )
+    redis_config_enricher = RedisConfig.from_setup(
+        db=REDIS_CACHE_DB,
+        namespace=REDIS_CACHE_NAMESPACE_SEARCHER,
+        ttl=REDIS_CACHE_TTL,
     )
     enricher = Enricher(
         http_client=http_client,
         user=SETUP.dataforseo_user,
         pwd=SETUP.dataforseo_pwd,
-        redis_use_cache=REDIS_USE_CACHE,
+        redis_use_cache=SETUP.redis_use_cache,
+        redis_config=redis_config_enricher,
     )
-    url_collector = URLCollector()
+    # url_collector = LocalURLCollector()
+    redis_config_url = RedisConfig.from_setup(
+        db=REDIS_URL_COLLECTOR_DB,
+        namespace=REDIS_URL_COLLECTOR_NAMESPACE,
+        ttl=REDIS_URL_COLLECTOR_TTL,
+    )
+    url_collector = DistributedURLCollector(
+        redis_config=redis_config_url,
+    )
+    redis_config_zyteapi = RedisConfig.from_setup(
+        db=REDIS_CACHE_DB,
+        namespace=REDIS_CACHE_NAMESPACE_ZYTEAPI,
+        ttl=REDIS_CACHE_TTL,
+    )
     zyteapi = ZyteAPI(
         http_client=http_client,
         api_key=SETUP.zyteapi_key,
-        redis_use_cache=REDIS_USE_CACHE,
+        redis_use_cache=SETUP.redis_use_cache,
+        redis_config=redis_config_zyteapi,
     )
     workflows = _setup_workflows(
-        http_client=http_client, redis_use_cache=REDIS_USE_CACHE
+        http_client=http_client, redis_use_cache=SETUP.redis_use_cache
     )
     processor = Processor(workflows=workflows)
 
@@ -238,7 +282,7 @@ async def run_website_source_demo(http_client: HttpxAsyncClient, search_term: st
     website_search = WebsiteSearch(
         http_client=http_client,
         zyteapi_key=SETUP.zyteapi_key,
-        redis_use_cache=REDIS_USE_CACHE,
+        redis_use_cache=SETUP.redis_use_cache,
     )
     result = await website_search.ingest_source(
         source=FUST_WEBSITE_SOURCE_PROFILE,

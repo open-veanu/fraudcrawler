@@ -12,7 +12,7 @@ from fraudcrawler.base.base import (
 
 
 def test_setup():
-    setup = Setup()
+    setup = Setup()  # type: ignore[call-arg]
     assert setup.serpapi_key
     assert setup.dataforseo_user
     assert setup.dataforseo_pwd

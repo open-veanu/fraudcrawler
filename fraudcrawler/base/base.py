@@ -23,6 +23,9 @@ from fraudcrawler.settings import (
     DEFAULT_HTTPX_TIMEOUT,
     DEFAULT_HTTPX_LIMITS,
     DEFAULT_HTTPX_REDIRECTS,
+    REDIS_USE_CACHE,
+    REDIS_DEFAULT_HOSTNAME,
+    REDIS_DEFAULT_PORT,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,10 +49,12 @@ class Setup(BaseSettings):
     dataforseo_pwd: str
     zyteapi_key: str
     openaiapi_key: str
-    pypy_token: str
 
     # Redis cache
-    redis_use_cache: bool
+    redis_use_cache: bool = REDIS_USE_CACHE
+    redis_hostname: str = REDIS_DEFAULT_HOSTNAME
+    redis_port: int = REDIS_DEFAULT_PORT
+    redis_password: str | None = None
 
     class Config:
         env_file = ".env"
