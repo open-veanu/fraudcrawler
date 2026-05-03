@@ -8,10 +8,10 @@ import uuid
 
 from aiocache import Cache
 from aiocache.backends.redis import RedisCache
-from aiocache.serializers import PickleSerializer
 
 from fraudcrawler.base.base import Setup
-from fraudcrawler.settings import REDIS_USE_CACHE
+from fraudcrawler.cache.serializers import CompressedPickleSerializer
+from fraudcrawler.settings import REDIS_CONNECTION_TIMEOUT, REDIS_USE_CACHE
 
 
 logger = logging.getLogger(__name__)
@@ -82,12 +82,13 @@ class RedisCacher(ABC):
                 RedisCache,
                 Cache(
                     cache_class=Cache.REDIS,  # type: ignore[reportArgumentType]
-                    serializer=PickleSerializer(),
+                    serializer=CompressedPickleSerializer(),
                     endpoint=self._config.hostname,
                     port=self._config.port,
                     password=self._config.password,
                     db=self._config.db,
                     namespace=self._config.namespace,
+                    timeout=REDIS_CONNECTION_TIMEOUT,
                 ),
             )
 

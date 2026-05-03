@@ -109,6 +109,13 @@ REDIS_USE_CACHE = False
 REDIS_DEFAULT_HOSTNAME = "localhost"
 REDIS_DEFAULT_PORT = 6379
 REDIS_NAMESPACE = "fraudcrawler"
+# Forwarded to aiocache.Cache(timeout=); raises aiocache's 5s default so multi-MB
+# values still fit when the event loop or Redis is briefly busy. Compression should
+# put us comfortably under 5s, but the headroom protects the long tail.
+REDIS_CONNECTION_TIMEOUT = 15
+# zlib level for cached values: 1=fastest, 9=smallest. Don't go above 5 — the CPU
+# cost on HTML payloads dwarfs the marginal size win.
+REDIS_COMPRESSION_LEVEL = 3
 
 REDIS_CACHE_DB = 0
 REDIS_CACHE_NAMESPACE = f"{REDIS_NAMESPACE}:cache"
