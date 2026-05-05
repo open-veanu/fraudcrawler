@@ -38,6 +38,10 @@ class RedisCacher(ABC):
     Cache keys are built deterministically from the class name and the
     serialized call arguments (including Pydantic models), so identical
     calls always map to the same cache entry.
+
+    TTL is sliding: every cache hit refreshes the entry's expiration back
+    to the configured ttl, so frequently-used entries stay warm and only
+    untouched entries are evicted.
     """
 
     _key_encoding = "ascii"
@@ -149,8 +153,9 @@ class RedisCacher(ABC):
     async def _cached_apply(self, *args: Any, **kwargs: Any) -> Any:
         """Execute apply() with a Redis cache lookup.
 
-        Returns the cached result on a hit; otherwise calls apply(), stores
-        the result, and returns it.
+        Returns the cached result on a hit (and refreshes its TTL back to
+        the configured value, implementing a sliding window); otherwise
+        calls apply(), stores the result, and returns it.
 
         Args:
             *args: Positional arguments forwarded to apply().
@@ -194,6 +199,26 @@ class RedisCacher(ABC):
             logger.debug(
                 f"Found cached response for {self.__class__.__name__}.apply(...) and key={key}"
             )
+
+            # Sliding TTL: refresh on hit so hot keys never expire mid-use.
+            retry = get_async_retry()
+            retry.before = lambda retry_state: self._log_cache_before(
+                op="expire", key=key, retry_state=retry_state
+            )
+            retry.before_sleep = lambda retry_state: self._log_cache_before_sleep(
+                op="expire", key=key, retry_state=retry_state
+            )
+            try:
+                async for attempt in retry:
+                    with attempt:
+                        await self._cache.expire(key=key, ttl=self._config.ttl)
+            except Exception:
+                logger.warning(
+                    f"Cache expire(key={key}) failed after retries. "
+                    f"TTL not refreshed; entry will expire at its original time.",
+                    exc_info=True,
+                )
+
             return result
 
         logger.debug(
