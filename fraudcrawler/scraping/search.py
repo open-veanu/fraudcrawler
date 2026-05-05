@@ -262,6 +262,7 @@ class SerpAPI(SearchEngine):
         language: Language,
         location: Location,
         num_results: int,
+        filter: bool = True,
     ) -> List[str]:
         """Performs a search using SerpAPI and returns the URLs of the results.
 
@@ -270,6 +271,7 @@ class SerpAPI(SearchEngine):
             language: The language to use for the query ('hl' parameter).
             location: The location to use for the query ('gl' parameter).
             num_results: Max number of results to return.
+            filter: SerpAPI's Similar Results filter (default=True)
 
         The SerpAPI parameters are:
             engine: The search engine to use ('google', 'google_shopping' etc.).
@@ -280,6 +282,7 @@ class SerpAPI(SearchEngine):
             gl: The country code to use for the search.
             hl: The language code to use for the search.
             api_key: The API key to use for the search.
+            filter: Filter similar results (SerpAPI's default is 0=False).
 
         Pagination:
             The 'num' parameter is not reliably supported by SerpAPI for google
@@ -313,6 +316,8 @@ class SerpAPI(SearchEngine):
             "hl": language.code,
             "api_key": self._api_key,
         }
+        if not filter:
+            params["filter"] = 0
         logger.debug(f"SerpAPI search with params: {params}")
 
         # Extract urls for the first page
@@ -432,6 +437,7 @@ class SerpAPIGoogle(SerpAPI):
             language=language,
             location=location,
             num_results=num_results,
+            filter=not marketplaces,
         )
         urls = urls[:num_results]
 
@@ -523,6 +529,7 @@ class SerpAPIGoogleShopping(SerpAPI):
             language=language,
             location=location,
             num_results=num_results,
+            filter=not marketplaces,
         )
 
         # !!! NOTE !!!: Google Shopping results do not properly support the 'num' parameter,

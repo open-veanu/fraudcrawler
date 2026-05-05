@@ -241,6 +241,41 @@ async def test_serpapi_google_search_marketplaces(serpapi_google):
 
 
 @pytest.mark.asyncio
+async def test_serpapi_google_filter_param(serpapi_google, monkeypatch):
+    """SerpAPI 'filter' is sent as 0 only when marketplaces are given."""
+
+    class _StubResponse:
+        @staticmethod
+        def json():
+            return {"organic_results": []}
+
+    captured: dict = {}
+
+    async def _capture(url, params=None, headers=None):
+        captured["params"] = params
+        return _StubResponse()
+
+    monkeypatch.setattr(serpapi_google, "http_client_get", _capture)
+
+    await serpapi_google.search(
+        search_term="Kaffee",
+        language=Language(name="German"),
+        location=Location(name="Switzerland"),
+        num_results=5,
+    )
+    assert "filter" not in captured["params"]
+
+    await serpapi_google.search(
+        search_term="Kaffee",
+        language=Language(name="German"),
+        location=Location(name="Switzerland"),
+        num_results=5,
+        marketplaces=[Host(name="Ricardo", domains="ricardo.ch")],
+    )
+    assert captured["params"]["filter"] == 0
+
+
+@pytest.mark.asyncio
 async def test_toppreise_search(toppreise):
     search_term = "Liebherr CT 2531"
     language = Language(name="German")
