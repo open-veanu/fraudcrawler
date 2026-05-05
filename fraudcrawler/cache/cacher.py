@@ -8,8 +8,10 @@ import uuid
 
 from aiocache import Cache
 from aiocache.backends.redis import RedisCache
+from tenacity import RetryCallState
 
 from fraudcrawler.base.base import Setup
+from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.serializers import CompressedPickleSerializer
 from fraudcrawler.settings import REDIS_CONNECTION_TIMEOUT, REDIS_USE_CACHE
 
@@ -141,6 +143,27 @@ class RedisCacher(ABC):
             }
         )
 
+    @classmethod
+    def _log_cache_before(cls, op: str, key: str, retry_state: RetryCallState) -> None:
+        """Context aware logging before a Redis attempt."""
+        if retry_state.attempt_number > 1:
+            logger.debug(
+                f"Retry attempt {retry_state.attempt_number} of "
+                f"{cls.__name__} cache {op}(key={key})."
+            )
+
+    @classmethod
+    def _log_cache_before_sleep(
+        cls, op: str, key: str, retry_state: RetryCallState
+    ) -> None:
+        """Context aware logging before sleeping after a failed Redis attempt."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f"Attempt {retry_state.attempt_number} of {cls.__name__} cache "
+                f"{op}(key={key}) failed with error: {retry_state.outcome.exception()}. "
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
+            )
+
     async def _cached_apply(self, *args: Any, **kwargs: Any) -> Any:
         """Execute apply() with a Redis cache lookup.
 
@@ -162,22 +185,58 @@ class RedisCacher(ABC):
 
         key = self._build_key(*args, **kwargs)
 
-        exists = await self._cache.exists(key=key)
-        if exists:
+        # Cache lookup with retry; fall back to "miss" on exhaustion.
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_cache_before(
+            op="get", key=key, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_cache_before_sleep(
+            op="get", key=key, retry_state=retry_state
+        )
+        result: Any = None
+        try:
+            async for attempt in retry:
+                with attempt:
+                    result = await self._cache.get(key=key)
+        except Exception:
+            logger.warning(
+                f"Cache get(key={key}) failed after retries. "
+                f"Falling back to live collection.",
+                exc_info=True,
+            )
+            result = None
+
+        if result is not None:
             logger.debug(
                 f"Found cached response for {self.__class__.__name__}.apply(...) and key={key}"
             )
-            result = await self._cache.get(key=key)
-        else:
-            logger.debug(
-                f"No cached response for {self.__class__.__name__}.apply(...) and key={key}"
-            )
-            result = await self.apply(*args, **kwargs)
+            return result
 
-            logger.debug(
-                f"Set cached response for {self.__class__.__name__}.apply(...) and key={key}"
+        logger.debug(
+            f"No cached response for {self.__class__.__name__}.apply(...) and key={key}"
+        )
+        result = await self.apply(*args, **kwargs)
+
+        # Cache write with retry; on exhaustion log + continue (next call recomputes).
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_cache_before(
+            op="set", key=key, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_cache_before_sleep(
+            op="set", key=key, retry_state=retry_state
+        )
+        try:
+            async for attempt in retry:
+                with attempt:
+                    await self._cache.set(key=key, value=result, ttl=self._config.ttl)
+        except Exception:
+            logger.warning(
+                f"Cache set(key={key}) failed after retries. "
+                f"Result not cached, will be recomputed next call.",
+                exc_info=True,
             )
-            await self._cache.set(key=key, value=result, ttl=self._config.ttl)
 
         return result
 
