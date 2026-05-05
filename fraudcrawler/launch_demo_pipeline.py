@@ -125,6 +125,7 @@ def _setup_workflows(
         "Make your decision based solely on the context and details provided in the search result. Respond only with the number 1 or 0."
     )
     redis_config = RedisConfig.from_setup(
+        setup=SETUP,
         db=REDIS_CACHE_DB,
         namespace=REDIS_CACHE_NAMESPACE_WORKFLOWS,
         ttl=REDIS_CACHE_TTL,
@@ -186,6 +187,7 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
 
     # Setup clients
     redis_config_searcher = RedisConfig.from_setup(
+        setup=SETUP,
         db=REDIS_CACHE_DB,
         namespace=REDIS_CACHE_NAMESPACE_SEARCHER,
         ttl=REDIS_CACHE_TTL,
@@ -198,6 +200,7 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
         redis_config=redis_config_searcher,
     )
     redis_config_enricher = RedisConfig.from_setup(
+        setup=SETUP,
         db=REDIS_CACHE_DB,
         namespace=REDIS_CACHE_NAMESPACE_SEARCHER,
         ttl=REDIS_CACHE_TTL,
@@ -211,6 +214,7 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
     )
     # url_collector = LocalURLCollector()
     redis_config_url = RedisConfig.from_setup(
+        setup=SETUP,
         db=REDIS_URL_COLLECTOR_DB,
         namespace=REDIS_URL_COLLECTOR_NAMESPACE,
         ttl=REDIS_URL_COLLECTOR_TTL,
@@ -219,6 +223,7 @@ async def run(http_client: HttpxAsyncClient, search_term: str):
         redis_config=redis_config_url,
     )
     redis_config_zyteapi = RedisConfig.from_setup(
+        setup=SETUP,
         db=REDIS_CACHE_DB,
         namespace=REDIS_CACHE_NAMESPACE_ZYTEAPI,
         ttl=REDIS_CACHE_TTL,
