@@ -3,14 +3,13 @@ import hashlib
 import json
 import logging
 from pydantic import BaseModel
-from typing import Any, cast, Dict, Self, Sequence
+from typing import Any, cast, Dict, Sequence
 import uuid
 
 from aiocache import Cache
 from aiocache.backends.redis import RedisCache
 from tenacity import RetryCallState
 
-from fraudcrawler.base.base import Setup
 from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.serializers import CompressedPickleSerializer
 from fraudcrawler.settings import REDIS_CONNECTION_TIMEOUT, REDIS_USE_CACHE
@@ -26,22 +25,6 @@ class RedisConfig(BaseModel):
     db: int
     namespace: str
     ttl: int
-
-    @classmethod
-    def from_setup(cls, setup: Setup, db: int, namespace: str, ttl: int) -> Self:
-        if setup.redis_hostname is None:
-            raise ValueError("REDIS_HOSTNAME env variable is missing")
-        elif setup.redis_port is None:
-            raise ValueError("REDIS_PORT env variable is missing")
-
-        return cls(
-            hostname=setup.redis_hostname,
-            port=setup.redis_port,
-            password=setup.redis_password,
-            db=db,
-            namespace=namespace,
-            ttl=ttl,
-        )
 
 
 class RedisCacher(ABC):
