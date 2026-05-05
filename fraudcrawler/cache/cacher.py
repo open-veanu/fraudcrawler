@@ -17,7 +17,6 @@ from fraudcrawler.settings import REDIS_CONNECTION_TIMEOUT, REDIS_USE_CACHE
 
 
 logger = logging.getLogger(__name__)
-_SETUP = Setup()  # type: ignore
 
 
 class RedisConfig(BaseModel):
@@ -29,16 +28,16 @@ class RedisConfig(BaseModel):
     ttl: int
 
     @classmethod
-    def from_setup(cls, db: int, namespace: str, ttl: int) -> Self:
-        if _SETUP.redis_hostname is None:
+    def from_setup(cls, setup: Setup, db: int, namespace: str, ttl: int) -> Self:
+        if setup.redis_hostname is None:
             raise ValueError("REDIS_HOSTNAME env variable is missing")
-        elif _SETUP.redis_port is None:
+        elif setup.redis_port is None:
             raise ValueError("REDIS_PORT env variable is missing")
 
         return cls(
-            hostname=_SETUP.redis_hostname,
-            port=_SETUP.redis_port,
-            password=_SETUP.redis_password,
+            hostname=setup.redis_hostname,
+            port=setup.redis_port,
+            password=setup.redis_password,
             db=db,
             namespace=namespace,
             ttl=ttl,
