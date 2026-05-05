@@ -116,6 +116,7 @@ REDIS_CONNECTION_TIMEOUT = 15
 # zlib level for cached values: 1=fastest, 9=smallest. Don't go above 5 — the CPU
 # cost on HTML payloads dwarfs the marginal size win.
 REDIS_COMPRESSION_LEVEL = 3
+REDIS_MULTI_SET_BATCH_SIZE = 1000
 
 REDIS_CACHE_DB = 0
 REDIS_CACHE_NAMESPACE = f"{REDIS_NAMESPACE}:cache"

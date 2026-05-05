@@ -5,10 +5,16 @@ from typing import List, Set, Tuple
 from urllib.parse import urlparse, parse_qsl, urlencode, quote, urlunparse, ParseResult
 
 from aiocache.backends.redis import RedisBackend
+from tenacity import RetryCallState
 
 from fraudcrawler.base.base import DomainUtils, FilteredAtStage, ProductItem
+from fraudcrawler.base.retry import get_async_retry
 from fraudcrawler.cache.cacher import RedisConfig
-from fraudcrawler.settings import KNOWN_TRACKERS
+from fraudcrawler.settings import (
+    KNOWN_TRACKERS,
+    REDIS_CONNECTION_TIMEOUT,
+    REDIS_MULTI_SET_BATCH_SIZE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,16 +189,37 @@ class DistributedURLCollector(URLCollector, DomainUtils):
         """
         self._id_suffix = id_suffix
         self._ttl = redis_config.ttl
-        # Uses RedisBackend + default StringSerializer (RedisCacher uses
-        # Cache+PickleSerializer): dedup markers are short strings and stay
-        # inspectable in redis-cli.
+
+        # Uses RedisBackend + default StringSerializer
         self._cache: RedisBackend = RedisBackend(
             endpoint=redis_config.hostname,
             port=redis_config.port,
             db=redis_config.db,
             password=redis_config.password,
             namespace=redis_config.namespace,
+            timeout=REDIS_CONNECTION_TIMEOUT,
         )
+
+    @classmethod
+    def _log_cache_before(cls, op: str, key: str, retry_state: RetryCallState) -> None:
+        """Context aware logging before a Redis attempt."""
+        if retry_state.attempt_number > 1:
+            logger.debug(
+                f"Retry attempt {retry_state.attempt_number} of "
+                f"{cls.__name__} cache {op}(key={key})."
+            )
+
+    @classmethod
+    def _log_cache_before_sleep(
+        cls, op: str, key: str, retry_state: RetryCallState
+    ) -> None:
+        """Context aware logging before sleeping after a failed Redis attempt."""
+        if retry_state and retry_state.outcome:
+            logger.warning(
+                f"Attempt {retry_state.attempt_number} of {cls.__name__} cache "
+                f"{op}(key={key}) failed with error: {retry_state.outcome.exception()}. "
+                f"Retrying in {retry_state.upcoming_sleep:.0f} seconds."
+            )
 
     def _get_redis_key(self, url: str) -> str:
         """Return a Redis key of the form ``{domain}_{sha256_hex}``.
@@ -212,19 +239,69 @@ class DistributedURLCollector(URLCollector, DomainUtils):
         domain = self._get_domain(url)
         return f":{domain}_{digest}"
 
-    async def add_previously_collected_urls(self, urls: List[str]) -> None:
-        """Seed Redis with already-seen URLs.
+    async def _add_url(self, key: str, value: str) -> None:
+        """Set a URL marker in Redis under `get_async_retry`.
 
-        Each URL is cleaned of tracking parameters, hashed and stored in
-        Redis with TTL so subsequent ``apply()`` calls filter it out.
+        Args:
+            key: Redis key (already namespaced/hashed via `_get_redis_key`).
+            value: One of ``FilteredAtStage.URL_COLLECTION_*`` markers.
+        """
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_cache_before(
+            op="set", key=key, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_cache_before_sleep(
+            op="set", key=key, retry_state=retry_state
+        )
+        try:
+            async for attempt in retry:
+                with attempt:
+                    await self._cache.set(key=key, value=value, ttl=self._ttl)
+        except Exception:
+            logger.warning(
+                f"Cache set(key={key}) failed after retries. "
+                f"URL marker not stored; URL may be re-crawled.",
+                exc_info=True,
+            )
+
+    async def add_previously_collected_urls(self, urls: List[str]) -> None:
+        """Seed Redis with already-seen URL.
 
         Args:
             urls: URLs collected in previous runs.
         """
-        for url in urls:
-            key = self._get_redis_key(url)
-            value = FilteredAtStage.URL_COLLECTION_PREVIOUS.value
-            await self._cache.set(key=key, value=value, ttl=self._ttl)
+        if not urls:
+            return
+
+        pairs = [
+            (self._get_redis_key(url), FilteredAtStage.URL_COLLECTION_PREVIOUS.value)
+            for url in urls
+        ]
+
+        for start in range(0, len(pairs), REDIS_MULTI_SET_BATCH_SIZE):
+            end = start + REDIS_MULTI_SET_BATCH_SIZE
+            chunk = pairs[start:end]
+            log_key = f"<bulk:{len(chunk)}@{start}>"
+
+            retry = get_async_retry()
+            retry.before = lambda retry_state, _lk=log_key: self._log_cache_before(  # type: ignore[misc]
+                op="multi_set", key=_lk, retry_state=retry_state
+            )
+            retry.before_sleep = (
+                lambda retry_state, _lk=log_key: self._log_cache_before_sleep(  # type: ignore[misc]
+                    op="multi_set", key=_lk, retry_state=retry_state
+                )
+            )
+            try:
+                async for attempt in retry:
+                    with attempt:
+                        await self._cache.multi_set(pairs=chunk, ttl=self._ttl)
+            except Exception:
+                logger.warning(
+                    f"Cache multi_set chunk ({len(chunk)} URLs @ offset {start}) "
+                    f"failed after retries. Markers in this chunk not stored.",
+                    exc_info=True,
+                )
 
     async def apply(self, product: ProductItem) -> ProductItem:
         """De-duplicate product cross-run using Redis.
@@ -239,7 +316,29 @@ class DistributedURLCollector(URLCollector, DomainUtils):
         product.url = url
 
         key = self._get_redis_key(url)
-        value = await self._cache.get(key=key)
+
+        # Cache lookup with retry; fall back to "first sighting" on exhaustion.
+        #  - `before`: before the request is made (and before retrying)
+        #  - `before_sleep`: if the request fails before sleeping
+        retry = get_async_retry()
+        retry.before = lambda retry_state: self._log_cache_before(
+            op="get", key=key, retry_state=retry_state
+        )
+        retry.before_sleep = lambda retry_state: self._log_cache_before_sleep(
+            op="get", key=key, retry_state=retry_state
+        )
+        value: str | None = None
+        try:
+            async for attempt in retry:
+                with attempt:
+                    value = await self._cache.get(key=key)
+        except Exception:
+            logger.warning(
+                f"Cache get(key={key}) failed after retries. "
+                f"Falling back to live collection.",
+                exc_info=True,
+            )
+            value = None
 
         # already seen in current run
         if value == FilteredAtStage.URL_COLLECTION_CURRENT.value:
@@ -253,13 +352,11 @@ class DistributedURLCollector(URLCollector, DomainUtils):
             product.filtered_at_stage = FilteredAtStage.URL_COLLECTION_PREVIOUS.value
             logger.debug(f"URL {url} already collected in previous run (distributed)")
 
-        # first sighting -> mark as current
+        # first sighting (genuine miss OR retry-exhausted) -> mark as current
         elif value is None:
             logger.debug(f"Add url={url} to currently collected urls in redis")
-            await self._cache.set(
-                key=key,
-                value=FilteredAtStage.URL_COLLECTION_CURRENT.value,
-                ttl=self._ttl,
+            await self._add_url(
+                key=key, value=FilteredAtStage.URL_COLLECTION_CURRENT.value
             )
 
         else:
