@@ -132,11 +132,13 @@ class RedisCacher(ABC):
     @classmethod
     def _log_cache_before(cls, op: str, key: str, retry_state: RetryCallState) -> None:
         """Context aware logging before a Redis attempt."""
-        if retry_state.attempt_number > 1:
+        if retry_state:
             logger.debug(
                 f"Retry attempt {retry_state.attempt_number} of "
                 f"{cls.__name__} cache {op}(key={key})."
             )
+        else:
+            logger.debug(f"retry_state is {retry_state}; not logging before.")
 
     @classmethod
     def _log_cache_before_sleep(
