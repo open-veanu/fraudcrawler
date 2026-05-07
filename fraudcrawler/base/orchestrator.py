@@ -587,8 +587,8 @@ class Orchestrator(ABC):
             )
 
         # Handle previously collected URLs
-        if pcurls := previously_collected_urls:
-            await self._url_collector.add_previously_collected_urls(urls=pcurls)
+        if previously_collected_urls:
+            await self._url_collector.add_previously_collected_urls(urls=previously_collected_urls)
 
         # Setup the async framework
         n_saved_sources = len(website_source_sources or [])
