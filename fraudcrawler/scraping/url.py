@@ -282,7 +282,9 @@ class DistributedURLCollector(URLCollector, DomainUtils):
 
         for start in range(0, len(pairs), REDIS_MULTI_SET_BATCH_SIZE):
             end = start + REDIS_MULTI_SET_BATCH_SIZE
-            logger.debug(f"adding batch of previously collected urls (start={start}; end={end})")
+            logger.debug(
+                f"adding batch of previously collected urls (start={start}; end={end})"
+            )
             chunk = pairs[start:end]
             log_key = f"<bulk:{len(chunk)}@{start}>"
 
