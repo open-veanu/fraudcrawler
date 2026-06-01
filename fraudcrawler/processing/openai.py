@@ -366,7 +366,7 @@ class OpenAIClassification(OpenAIWorkflow):
         which the classification should happen.
     """
 
-    _max_tokens: int = 1
+    _max_completion_tokens: int = 1
 
     def __init__(
         self,
@@ -457,7 +457,7 @@ class OpenAIClassification(OpenAIWorkflow):
             product=product,
             system_prompt=self._system_prompt,
             user_prompt=user_prompt,
-            max_tokens=self._max_tokens,
+            max_completion_tokens=self._max_completion_tokens,
         )
 
         if clfn.result not in self._allowed_classes:
